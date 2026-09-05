@@ -11,7 +11,7 @@
 //! tick, so a slow frame cannot make it drift.
 
 use launcher::{
-    Action, App, AppFactory, Ctx, Dirty, Feedback, IconId, InputEvent, Manifest, Outcome, ViewId,
+    App, AppFactory, Ctx, Dirty, Feedback, IconId, InputEvent, Manifest, Outcome, ViewId,
 };
 use ui::{PomodoroState, Shell};
 
@@ -202,11 +202,7 @@ impl App for Pomodoro {
             self.started_ms = None;
             // Haptic rather than a beep: a finished pomodoro should be felt
             // even if the device is face-down or the room is noisy.
-            return Outcome {
-                dirty: Dirty::Full,
-                action: Action::None,
-                feedback: Some(Feedback::Haptic),
-            };
+            return Outcome::buzz(Dirty::Full, Feedback::Haptic);
         }
         Outcome::dirty(Dirty::Full)
     }

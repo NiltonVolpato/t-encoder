@@ -1,0 +1,110 @@
+// BLE macropad.
+//
+// A vertical list of macros with the selected one centred and lit, on the same
+// true-black ground as the rest of the shell. The round panel means the list
+// has to fade at the edges rather than clip at a hard rectangle, so entries
+// dim with distance from the centre.
+
+export struct MacroEntry {
+    label: string,
+    // Pre-formatted chord, e.g. "⌘C". Built in Rust so the markup does no
+    // string work.
+    chord: string,
+}
+
+export struct MacropadState {
+    entries: [MacroEntry],
+    selected: int,
+    accent: color,
+    // Whether a host is connected. Drives the status dot: an unconnected
+    // macropad looks identical to a connected one otherwise, which is the
+    // single most confusing thing it could do.
+    linked: bool,
+    // Shown under the list — the paired host, or why there isn't one.
+    status: string,
+}
+
+export component Macropad inherits Rectangle {
+    in property <MacropadState> state;
+
+    // Row pitch. Three rows fit inside the round panel with room for the
+    // status line.
+    property <length> pitch: 72px;
+
+    background: #000000;
+
+    // Connection dot, top centre. Green when a host is listening, otherwise a
+    // dim outline — present either way so its absence is never ambiguous.
+    Rectangle {
+        y: 34px;
+        x: (parent.width - 12px) / 2;
+        width: 12px;
+        height: 12px;
+        border-radius: 6px;
+        background: state.linked ? #34c759 : #000000;
+        border-width: state.linked ? 0px : 1.5px;
+        border-color: #555555;
+    }
+
+    for entry[i] in state.entries: Rectangle {
+        property <int> offset: i - state.selected;
+        property <bool> focal: offset == 0;
+        // Fade with distance so the list reads as a wheel on a round panel
+        // instead of a list clipped by one.
+        property <float> dim: offset == 0 ? 1.0 : (abs(offset) == 1 ? 0.45 : 0.15);
+
+        y: parent.height / 2 - pitch / 2 + offset * pitch;
+        x: 0;
+        width: parent.width;
+        height: pitch;
+        // Only the focal row is visible enough to matter; the rest are hints.
+        opacity: dim;
+
+        // Selection pill behind the focal row.
+        Rectangle {
+            visible: focal;
+            x: 46px;
+            width: parent.width - 92px;
+            height: 58px;
+            y: (parent.height - 58px) / 2;
+            border-radius: 29px;
+            background: state.accent;
+            opacity: 0.16;
+            border-width: 1.5px;
+            border-color: state.accent;
+        }
+
+        HorizontalLayout {
+            padding-left: 64px;
+            padding-right: 64px;
+            spacing: 12px;
+            alignment: space-between;
+
+            Text {
+                text: entry.label;
+                color: focal ? #ffffff : #cccccc;
+                font-size: focal ? 26px : 22px;
+                font-weight: focal ? 700 : 400;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+
+            Text {
+                text: entry.chord;
+                color: focal ? state.accent : #888888;
+                font-size: focal ? 24px : 20px;
+                vertical-alignment: center;
+            }
+        }
+    }
+
+    Text {
+        y: parent.height - 62px;
+        width: parent.width;
+        text: state.status;
+        color: #777777;
+        font-size: 16px;
+        horizontal-alignment: center;
+        overflow: elide;
+    }
+}

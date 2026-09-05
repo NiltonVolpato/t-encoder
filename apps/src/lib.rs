@@ -8,6 +8,8 @@
 
 extern crate alloc;
 
+mod macropad;
 mod pomodoro;
 
+pub use macropad::{Macropad, MacropadFactory};
 pub use pomodoro::{Pomodoro, PomodoroFactory};

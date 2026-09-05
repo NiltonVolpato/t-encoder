@@ -7,8 +7,8 @@ use alloc::boxed::Box;
 use core::cell::Cell;
 
 use crate::{
-    Action, App, AppFactory, Ctx, Dirty, Feedback, IconId, Input, InputEvent, Manifest, Outcome,
-    Router, View, ViewId, default_carousel, geometry,
+    Action, App, AppFactory, Ctx, Dirty, Feedback, IconId, Input, InputEvent, KeyChord, Manifest,
+    Outcome, Router, View, ViewId, default_carousel, geometry,
 };
 
 /// Shared counters, so a test can observe an app that the router created and
@@ -26,6 +26,7 @@ struct StubApp<'a> {
     log: &'a Log,
     action: Action,
     feedback: Option<Feedback>,
+    keys: Option<KeyChord>,
 }
 
 impl App for StubApp<'_> {
@@ -40,6 +41,7 @@ impl App for StubApp<'_> {
                 dirty: Dirty::Full,
                 action: Action::None,
                 feedback: self.feedback,
+                keys: self.keys,
             },
             Action::Exit => Outcome::exit(),
         }
@@ -62,6 +64,7 @@ struct StubFactory<'a> {
     log: &'a Log,
     action: Action,
     feedback: Option<Feedback>,
+    keys: Option<KeyChord>,
 }
 
 impl<'a> StubFactory<'a> {
@@ -76,6 +79,7 @@ impl<'a> StubFactory<'a> {
             log,
             action: Action::None,
             feedback: None,
+            keys: None,
         }
     }
 
@@ -100,6 +104,7 @@ impl AppFactory for StubFactory<'_> {
             log: self.log,
             action: self.action,
             feedback: self.feedback,
+            keys: self.keys,
         })
     }
 }

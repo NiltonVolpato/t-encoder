@@ -13,6 +13,7 @@
 use bt_hci::controller::ExternalController;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
+use enc_state::AppState;
 use esp_hal::peripherals::BT;
 use esp_hal::rng::Trng;
 use esp_radio::ble::controller::BleConnector;
@@ -29,6 +30,16 @@ const KEY_QUEUE: usize = 4;
 
 /// Reports waiting to go out. The app pushes, [`run`] delivers.
 pub static KEYS: Channel<CriticalSectionRawMutex, Report, KEY_QUEUE> = Channel::new();
+
+/// Queues one chord as a press followed by a release, so the host sees a
+/// complete keystroke. Drops silently if the queue is full: a macropad with no
+/// host paired must not stall the UI loop.
+pub fn send_chord(modifiers: u8, usage: u8) {
+    let press: Report = [modifiers, 0, usage, 0, 0, 0, 0, 0];
+    if KEYS.try_send(press).is_err() || KEYS.try_send([0; 8]).is_err() {
+        log::warn!("ble: key queue full, chord dropped");
+    }
+}
 
 /// How the host should describe us. 0x03C1 is "Keyboard" under the HID
 /// category, which is what makes the picker show a keyboard icon.
@@ -128,7 +139,7 @@ struct Server {
 /// advertising rather than giving up — the only alternative on a keyboard is to
 /// stop being a keyboard. It returns only if the radio never came up at all.
 #[embassy_executor::task]
-pub async fn task(bt: BT<'static>) {
+pub async fn task(bt: BT<'static>, state: &'static AppState) {
     let connector = BleConnector::new(bt, esp_radio::ble::Config::default());
     let connector = match connector {
         Ok(connector) => connector,
@@ -194,7 +205,7 @@ pub async fn task(bt: BT<'static>) {
 
     let sessions = async {
         loop {
-            match advertise_and_serve(&mut peripheral, &server).await {
+            match advertise_and_serve(&mut peripheral, &server, state).await {
                 Ok(()) => log::info!("ble: host disconnected"),
                 Err(e) => log::error!("ble: session failed: {e:?}"),
             }
@@ -208,6 +219,7 @@ pub async fn task(bt: BT<'static>) {
 async fn advertise_and_serve<C: Controller>(
     peripheral: &mut Peripheral<'_, C, DefaultPacketPool>,
     server: &Server<'_>,
+    state: &'static AppState,
 ) -> Result<(), BleHostError<C::Error>> {
     let mut adv_data = [0u8; 31];
     let len = AdStructure::encode_slice(
@@ -235,12 +247,14 @@ async fn advertise_and_serve<C: Controller>(
         .await?;
     let conn = advertiser.accept().await?.with_attribute_server(server)?;
     log::info!("ble: host connected");
+    state.set_ble_linked(true);
 
     loop {
         match embassy_futures::select::select(conn.next(), KEYS.receive()).await {
             embassy_futures::select::Either::First(event) => match event {
                 GattConnectionEvent::Disconnected { reason } => {
                     log::info!("ble: disconnected ({reason:?})");
+                    state.set_ble_linked(false);
                     return Ok(());
                 }
                 GattConnectionEvent::Gatt { event } => {

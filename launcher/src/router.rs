@@ -9,7 +9,7 @@ use enc_ui::{Dirty, InputEvent};
 
 use alloc::boxed::Box;
 
-use crate::app::{Action, App, AppFactory, Ctx, Feedback, ViewId};
+use crate::app::{Action, App, AppFactory, Ctx, Feedback, KeyChord, ViewId};
 use crate::carousel::Carousel;
 
 /// Raw, denormalized input from the hardware loop.
@@ -44,6 +44,7 @@ pub struct Router<'a> {
     /// never survives leaving.
     active: Option<Box<dyn App + 'a>>,
     feedback: Option<Feedback>,
+    keys: Option<KeyChord>,
 }
 
 impl<'a> Router<'a> {
@@ -60,6 +61,7 @@ impl<'a> Router<'a> {
             selected: 0,
             active: None,
             feedback: None,
+            keys: None,
         }
     }
 
@@ -123,6 +125,7 @@ impl<'a> Router<'a> {
         };
         let outcome = app.tick(ctx);
         self.feedback = self.feedback.or(outcome.feedback);
+        self.keys = self.keys.or(outcome.keys);
         match outcome.action {
             Action::None => outcome.dirty,
             Action::Exit => self.go_home(),
@@ -140,6 +143,13 @@ impl<'a> Router<'a> {
     /// themselves; the firmware polls this after driving the router.
     pub fn take_feedback(&mut self) -> Option<Feedback> {
         self.feedback.take()
+    }
+
+    /// Takes any pending keystroke. Apps cannot reach the radio themselves;
+    /// the firmware polls this after driving the router, exactly as it does
+    /// for [`Self::take_feedback`].
+    pub fn take_keys(&mut self) -> Option<KeyChord> {
+        self.keys.take()
     }
 
     fn handle_launcher(&mut self, input: Input, ctx: &Ctx<'_>) -> Dirty {
@@ -188,6 +198,7 @@ impl<'a> Router<'a> {
         };
         let outcome = app.handle(event, ctx);
         self.feedback = self.feedback.or(outcome.feedback);
+        self.keys = self.keys.or(outcome.keys);
         match outcome.action {
             Action::None => outcome.dirty,
             Action::Exit => self.go_home(),

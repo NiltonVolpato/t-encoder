@@ -211,7 +211,7 @@ async fn main(spawner: Spawner) -> ! {
     let _trng_source = esp_hal::rng::TrngSource::new(peripherals.RNG, peripherals.ADC1);
 
     // BLE HID keyboard for the macropad app.
-    match ble::task(peripherals.BT) {
+    match ble::task(peripherals.BT, &APP_STATE) {
         Ok(token) => spawner.spawn(token),
         Err(_) => log::error!("boot: failed to spawn ble task"),
     }
@@ -279,7 +279,8 @@ async fn main(spawner: Spawner) -> ! {
         // here — no enum variant, no match arm. `main` never returns, so these
         // locals live for the whole program and need no `StaticCell`.
         let pomodoro = apps::PomodoroFactory::new(slint_ui.shell().as_weak());
-        let registry: [&dyn AppFactory; 1] = [&pomodoro];
+        let macropad = apps::MacropadFactory::new(slint_ui.shell().as_weak());
+        let registry: [&dyn AppFactory; 2] = [&pomodoro, &macropad];
         let mut router = Router::new(&registry, launcher::default_carousel(0));
 
         slint_ui.shell().set_cards(app_cards(router.factories()));
@@ -456,6 +457,13 @@ async fn main(spawner: Spawner) -> ! {
                         router.sync_app();
                     }
                 }
+            }
+
+            // Apps cannot reach the radio either; a chord becomes a press and
+            // release report, dropped if the queue is full rather than blocking
+            // the UI loop for a host that may not even be paired.
+            if let Some(chord) = router.take_keys() {
+                ble::send_chord(chord.modifiers, chord.usage);
             }
 
             // Apps cannot reach the buzzer; the router collects their requests.

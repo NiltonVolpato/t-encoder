@@ -72,8 +72,22 @@ pub enum Feedback {
     Haptic,
 }
 
+/// A keystroke an app wants sent to whatever host is listening.
+///
+/// Modifiers and usage are USB HID values, which is what both BLE and USB
+/// keyboards speak — but the app has no idea which transport carries it, or
+/// whether one is even connected. The firmware owns that, exactly as it owns
+/// the buzzer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct KeyChord {
+    /// HID modifier bitmap: ctrl 0x01, shift 0x02, alt 0x04, gui 0x08.
+    pub modifiers: u8,
+    /// HID keyboard usage id.
+    pub usage: u8,
+}
+
 /// An app's response to an event: what changed, where to go next, and whether
-/// to buzz.
+/// to buzz or send a keystroke.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Outcome {
     /// Region that needs repainting.
@@ -82,6 +96,8 @@ pub struct Outcome {
     pub action: Action,
     /// Optional buzzer/haptic request.
     pub feedback: Option<Feedback>,
+    /// Optional keystroke to send to a paired host.
+    pub keys: Option<KeyChord>,
 }
 
 impl Outcome {
@@ -90,6 +106,7 @@ impl Outcome {
         dirty: Dirty::None,
         action: Action::None,
         feedback: None,
+        keys: None,
     };
 
     /// Repaint `dirty`, stay in the app.
@@ -99,6 +116,7 @@ impl Outcome {
             dirty,
             action: Action::None,
             feedback: None,
+            keys: None,
         }
     }
 
@@ -109,6 +127,18 @@ impl Outcome {
             dirty,
             action: Action::None,
             feedback: Some(feedback),
+            keys: None,
+        }
+    }
+
+    /// Send `keys` to the paired host, buzz to confirm, and repaint `dirty`.
+    #[must_use]
+    pub const fn send_keys(dirty: Dirty, keys: KeyChord, feedback: Feedback) -> Outcome {
+        Outcome {
+            dirty,
+            action: Action::None,
+            feedback: Some(feedback),
+            keys: Some(keys),
         }
     }
 
@@ -119,6 +149,7 @@ impl Outcome {
             dirty: Dirty::Full,
             action: Action::Exit,
             feedback: None,
+            keys: None,
         }
     }
 }
