@@ -1,0 +1,26 @@
+[package]
+name = "spike-slint"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "P2 spike: does Slint's no_std software renderer work on this board? Disposable."
+
+[dependencies]
+# no_std MCU configuration: no OS backend, single-threaded, libm for the maths,
+# and the software renderer that paints into a buffer we own.
+slint = { version = "1.17.1", default-features = false, features = [
+    "compat-1-2",
+    "unsafe-single-threaded",
+    "libm",
+    "renderer-software",
+] }
+embedded-graphics = { workspace = true }
+enc-co5300 = { workspace = true }
+
+[build-dependencies]
+slint-build = "1.17.1"
+
+[lints]
+workspace = true

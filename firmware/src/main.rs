@@ -269,6 +269,34 @@ async fn main(spawner: Spawner) -> ! {
     // actually mapped and large enough (else `from_raw_parts_mut` is UB).
     let framebuffer = psram_framebuffer(psram_start, psram_size, psram_ok);
     if let (Some(panel), Some(fb_buf)) = (panel.as_mut(), framebuffer) {
+        // P2 Slint spike: paint one Slint frame straight into the PSRAM buffer
+        // before it is wrapped as a `FrameBuffer`, timing the render so the
+        // frame-time criterion has a real number. The frame stays on screen
+        // until the first repaint, which is convenient for eyeballing quality.
+        #[cfg(feature = "slint-spike")]
+        match spike_slint::init() {
+            Ok((window, _ui)) => {
+                spike_slint::set_now_ms(now_ms());
+                let started = Instant::now();
+                let drawn = spike_slint::render_frame(&window, fb_buf);
+                let render_us = started.elapsed().as_micros();
+
+                let started = Instant::now();
+                let flush_ok = panel.driver.flush(fb_buf, display::DMA_CHUNK).is_ok();
+                let flush_us = started.elapsed().as_micros();
+
+                log::info!(
+                    "slint: drawn={drawn} render={render_us}us flush={flush_us}us ok={flush_ok}"
+                );
+                log::info!(
+                    "slint: heap internal free={} used={}",
+                    esp_alloc::HEAP.free(),
+                    esp_alloc::HEAP.used(),
+                );
+            }
+            Err(e) => log::error!("slint: init failed: {e}"),
+        }
+
         let mut fb = FrameBuffer::new(fb_buf, DISPLAY_W, DISPLAY_H);
 
         // Initial paint: the launcher, since that is where the router starts.
@@ -276,8 +304,16 @@ async fn main(spawner: Spawner) -> ! {
             now_ms: now_ms(),
             state: &APP_STATE,
         };
+        // Timed once at boot so the embedded-graphics baseline has the same
+        // numbers the Slint spike reports, rather than an estimate.
+        let started = Instant::now();
         render_launcher(&router, &ctx, &mut fb);
-        if panel.driver.flush(fb.bytes(), display::DMA_CHUNK).is_err() {
+        let render_us = started.elapsed().as_micros();
+        let started = Instant::now();
+        let flush_ok = panel.driver.flush(fb.bytes(), display::DMA_CHUNK).is_ok();
+        let flush_us = started.elapsed().as_micros();
+        log::info!("baseline: render={render_us}us flush={flush_us}us ok={flush_ok}");
+        if !flush_ok {
             log::error!("display: initial flush failed");
         }
 

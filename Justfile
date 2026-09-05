@@ -35,7 +35,7 @@ monitor:
 # Host-side unit tests for our pure crates. `firmware` is device-only, so it is
 # excluded; the exclusion list stays correct as pure crates are added.
 test *ARGS:
-    cargo test {{host}} --workspace --exclude firmware {{ARGS}}
+    cargo test {{host}} --workspace --exclude firmware --exclude spike-slint {{ARGS}}
 
 # Host tests for the vendored upstream crates (uses their workspace's
 # default-members, which already excludes their device-only crates).
@@ -44,7 +44,7 @@ test-vendor *ARGS:
 
 # Clippy on our pure crates (host target, warnings are errors).
 lint *ARGS:
-    cargo clippy {{host}} --workspace --exclude firmware --all-targets {{ARGS}} -- -D warnings
+    cargo clippy {{host}} --workspace --exclude firmware --exclude spike-slint --all-targets {{ARGS}} -- -D warnings
 
 # Clippy on the device firmware.
 lint-device *ARGS:
