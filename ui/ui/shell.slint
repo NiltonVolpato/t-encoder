@@ -5,28 +5,32 @@
 // drive their own properties and Slint repaints what changed.
 
 import { Launcher, CardData } from "launcher.slint";
+import { Pomodoro, PomodoroState } from "apps/pomodoro.slint";
 
-export { CardData }
+export { CardData, PomodoroState }
 
 // Which screen is live. Mirrors `launcher::View` on the Rust side.
 export enum ShellView {
     launcher,
-    app,
+    pomodoro,
 }
 
 export component Shell inherits Window {
-    // Panel geometry. The board is a 390x390 round AMOLED.
+    // The board is a 390x390 round AMOLED.
     width: 390px;
     height: 390px;
     // True black is free on AMOLED and makes the accents pop.
     background: #000000;
 
     in property <ShellView> view: ShellView.launcher;
+
+    // Launcher state.
     in property <[CardData]> cards;
     in property <int> selected: 0;
-    // Set by the active app so the shell can title it; apps own their own
-    // component for real content.
-    in property <string> app-title;
+
+    // Per-app state. Each app owns one property here and pushes to it; adding
+    // an app is one property, one import and one `if` arm.
+    in property <PomodoroState> pomodoro;
 
     if view == ShellView.launcher: Launcher {
         width: parent.width;
@@ -35,19 +39,9 @@ export component Shell inherits Window {
         selected: root.selected;
     }
 
-    if view == ShellView.app: Rectangle {
+    if view == ShellView.pomodoro: Pomodoro {
         width: parent.width;
         height: parent.height;
-        background: #000000;
-
-        Text {
-            text: root.app-title;
-            color: white;
-            font-size: 28px;
-            horizontal-alignment: center;
-            vertical-alignment: center;
-            width: parent.width;
-            height: parent.height;
-        }
+        state: root.pomodoro;
     }
 }

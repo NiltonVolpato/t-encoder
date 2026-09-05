@@ -4,7 +4,7 @@ use embedded_graphics::pixelcolor::Rgb565;
 use enc_state::AppState;
 
 use crate::{
-    Action, App, Canvas, Ctx, Dirty, IconId, Input, InputEvent, Manifest, Outcome, Router, View,
+    Action, App, Ctx, Dirty, Feedback, IconId, Input, InputEvent, Manifest, Outcome, Router, View,
     default_carousel, geometry,
 };
 
@@ -16,6 +16,8 @@ struct StubApp {
     events: u32,
     /// Returned from `handle`, letting a test drive self-exit.
     action: Action,
+    /// Returned from `handle`, letting a test drive buzzer requests.
+    feedback: Option<Feedback>,
 }
 
 impl StubApp {
@@ -30,6 +32,7 @@ impl StubApp {
             exited: 0,
             events: 0,
             action: Action::None,
+            feedback: None,
         }
     }
 }
@@ -50,12 +53,16 @@ impl App for StubApp {
     fn handle(&mut self, _event: InputEvent, _ctx: &Ctx<'_>) -> Outcome {
         self.events = self.events.saturating_add(1);
         match self.action {
-            Action::None => Outcome::dirty(Dirty::Full),
+            Action::None => Outcome {
+                dirty: Dirty::Full,
+                action: Action::None,
+                feedback: self.feedback,
+            },
             Action::Exit => Outcome::exit(),
         }
     }
 
-    fn render(&self, _ctx: &Ctx<'_>, _fb: &mut Canvas<'_>) {}
+    fn sync(&self) {}
 }
 
 /// Runs `body` with a two-app router. The registry borrow is fiddly enough
@@ -254,4 +261,26 @@ fn launcher_tick_is_never_dirty() {
         router.handle(Input::Rotate(1), ctx);
         assert_eq!(router.tick(ctx), Dirty::None);
     });
+}
+
+/// Apps cannot touch the buzzer directly, so the router collects their
+/// requests for the firmware to act on.
+#[test]
+fn feedback_requests_reach_the_router() {
+    let state = AppState::new(1);
+    let ctx = Ctx {
+        now_ms: 0,
+        state: &state,
+    };
+    let mut first = StubApp::new("First");
+    first.feedback = Some(Feedback::Haptic);
+    let mut registry: [&mut dyn App; 1] = [&mut first];
+    let mut router = Router::new(&mut registry, default_carousel(0));
+
+    router.handle(Input::ShortPress, &ctx); // launch; no app event yet
+    assert_eq!(router.take_feedback(), None);
+
+    router.handle(Input::ShortPress, &ctx); // now the app sees a Select
+    assert_eq!(router.take_feedback(), Some(Feedback::Haptic));
+    assert_eq!(router.take_feedback(), None, "taking clears it");
 }

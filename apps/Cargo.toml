@@ -5,13 +5,21 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 publish.workspace = true
-description = "The launcher's apps. Pure and host-testable."
+description = "The launcher's apps. State and logic; Slint does the painting."
 
 [dependencies]
 launcher = { path = "../launcher" }
+# For the generated component types apps push their state into. The Slint
+# runtime itself is linked once, by `ui`.
+ui = { path = "../ui" }
+slint = { version = "1.17.1", default-features = false, features = [
+    "compat-1-2",
+    "unsafe-single-threaded",
+    "libm",
+    "renderer-software",
+] }
 embedded-graphics = { workspace = true }
-enc-ui = { workspace = true }
-enc-state = { workspace = true }
+heapless = { workspace = true }
 
 [lints]
 workspace = true

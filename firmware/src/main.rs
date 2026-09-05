@@ -27,7 +27,6 @@ use embassy_executor::Spawner;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
 use embassy_time::{Duration, Instant, Timer};
-use enc_co5300::FrameBuffer;
 use enc_input::Encoder;
 use enc_state::{AppState, ConnState};
 use enc_touch::TouchPoint;
@@ -39,6 +38,8 @@ use esp_hal::rng::Rng;
 use esp_hal::timer::timg::TimerGroup;
 // `Input` is aliased to `UiInput`: esp-hal's GPIO `Input` already owns that name.
 use launcher::{App, Ctx, Dirty, Input as UiInput, Router, View};
+// `as_weak` on the generated Slint component comes from this trait.
+use slint::ComponentHandle;
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
@@ -47,7 +48,6 @@ static TOUCH_TAPS: Channel<CriticalSectionRawMutex, TouchPoint, 4> = Channel::ne
 
 /// Panel dimensions (mirror `enc_config::display`).
 const DISPLAY_W: u16 = 390;
-const DISPLAY_H: u16 = 390;
 const DISPLAY_BYTES: usize = enc_config::display::FRAMEBUFFER_BYTES;
 /// Quadrature counts per mechanical detent (this encoder emits 2 per click).
 const COUNTS_PER_DETENT: u8 = 2;
@@ -55,7 +55,7 @@ const COUNTS_PER_DETENT: u8 = 2;
 const PSRAM_PROBE_LEN: usize = 4096;
 
 /// Shared, lock-free app state mirrored between the UI loop and the Wi-Fi tasks.
-static APP_STATE: AppState = AppState::new(apps::MENU_ITEMS.len());
+static APP_STATE: AppState = AppState::new(1);
 
 /// Flushes a full-width horizontal band `[y, y+h)` of the framebuffer to the
 /// panel. Returns whether the band was flushed (false if out of range or DMA
@@ -290,50 +290,47 @@ async fn main(spawner: Spawner) -> ! {
         }
     }
 
-    // The app registry. Adding an app is its constructor plus one line here —
-    // no enum variant, no match arm. `main` never returns, so these locals
-    // live for the whole program and need no `StaticCell`.
-    let mut menu = apps::menu_app();
-    let mut clock = apps::clock_app();
-    let mut registry: [&mut dyn App; 2] = [&mut menu, &mut clock];
-    let mut router = Router::new(&mut registry, launcher::default_carousel(0));
-
     // The framebuffer lives at the base of PSRAM; only build it if PSRAM is
     // actually mapped and large enough (else `from_raw_parts_mut` is UB).
     let framebuffer = psram_framebuffer(psram_start, psram_size, psram_ok);
     if let (Some(panel), Some(fb_buf)) = (panel.as_mut(), framebuffer) {
-        // Slint owns the launcher; the framebuffer stays a plain byte slice so
-        // both it and the (still embedded-graphics) apps can borrow it in turn.
+        // Slint owns every pixel now, so the framebuffer stays a plain byte
+        // slice that only `ui` writes to.
         let slint_ui = match ui::Ui::new() {
-            Ok(slint_ui) => Some(slint_ui),
+            Ok(slint_ui) => slint_ui,
             Err(e) => {
                 log::error!("ui: Slint init failed: {e}");
-                None
+                loop {
+                    Timer::after(Duration::from_secs(5)).await;
+                }
             }
         };
-        if let Some(slint_ui) = slint_ui.as_ref() {
-            let cards = app_cards(router.apps());
-            slint_ui.shell().set_cards(cards);
-            slint_ui.shell().set_selected(0);
-        }
+
+        // The app registry. Adding an app is its constructor plus one line
+        // here — no enum variant, no match arm. `main` never returns, so these
+        // locals live for the whole program and need no `StaticCell`.
+        let mut pomodoro = apps::Pomodoro::new(slint_ui.shell().as_weak());
+        let mut registry: [&mut dyn App; 1] = [&mut pomodoro];
+        let mut router = Router::new(&mut registry, launcher::default_carousel(0));
+
+        slint_ui.shell().set_cards(app_cards(router.apps()));
+        slint_ui.shell().set_selected(0);
 
         // Initial paint: the launcher, since that is where the router starts.
         let ctx = Ctx {
             now_ms: now_ms(),
             state: &APP_STATE,
         };
-        if let Some(slint_ui) = slint_ui.as_ref() {
-            ui::set_now_ms(ctx.now_ms);
-            let started = Instant::now();
-            let rect = slint_ui.render(fb_buf);
-            let render_us = started.elapsed().as_micros();
-            let started = Instant::now();
-            let flushed = rect.is_some_and(|r| flush_band(panel, fb_buf, r.y, r.h));
-            let flush_us = started.elapsed().as_micros();
-            log::info!(
-                "slint: first frame {rect:?} render={render_us}us flush={flush_us}us ok={flushed}"
-            );
-        }
+        ui::set_now_ms(ctx.now_ms);
+        let started = Instant::now();
+        let rect = slint_ui.render(fb_buf);
+        let render_us = started.elapsed().as_micros();
+        let started = Instant::now();
+        let flushed = rect.is_some_and(|r| flush_band(panel, fb_buf, r.y, r.h));
+        let flush_us = started.elapsed().as_micros();
+        log::info!(
+            "slint: first frame {rect:?} render={render_us}us flush={flush_us}us ok={flushed}"
+        );
 
         let mut press_start: Option<Instant> = None;
         let mut had_ip = false;
@@ -459,44 +456,44 @@ async fn main(spawner: Spawner) -> ! {
             };
             dirty = dirty.merge(router.tick(&ctx));
 
-            // Launcher: Slint decides what changed. Its own animation clock
-            // keeps the frame coming while a slide is in flight, so our
-            // `dirty` only needs to say "something happened".
-            if let (View::Launcher, Some(slint_ui)) = (router.view(), slint_ui.as_ref()) {
-                slint_ui
-                    .shell()
-                    .set_selected(i32::try_from(router.selected()).unwrap_or(0));
-                slint_ui.shell().set_view(ui::ShellView::Launcher);
-                ui::set_now_ms(ctx.now_ms);
-                if let Some(rect) = slint_ui.render(fb_buf)
-                    && !flush_band(panel, fb_buf, rect.y, rect.h)
-                {
-                    log::error!("display: slint band flush failed {rect:?}");
+            // Everything is Slint now: publish state, then let it decide what
+            // actually changed. `draw_if_needed` is cheap when nothing did, so
+            // this runs unconditionally rather than being gated on `dirty`.
+            ui::set_now_ms(ctx.now_ms);
+            match router.view() {
+                View::Launcher => {
+                    slint_ui.shell().set_view(ui::ShellView::Launcher);
+                    slint_ui
+                        .shell()
+                        .set_selected(i32::try_from(router.selected()).unwrap_or(0));
                 }
-                continue;
-            }
-
-            if dirty != Dirty::None {
-                let mut fb = FrameBuffer::new(&mut fb_buf[..], DISPLAY_W, DISPLAY_H);
-                router.render_app(&ctx, &mut fb);
-                let flushed = match dirty {
-                    Dirty::Full => match panel.driver.flush(fb.bytes(), display::DMA_CHUNK) {
-                        Ok(()) => true,
-                        Err(e) => {
-                            log::error!("display: full flush failed: {e:?}");
-                            false
-                        }
-                    },
-                    Dirty::Band { y, h } => flush_band(panel, fb.bytes(), y, h),
-                    Dirty::None => true,
-                };
-                // Repair the whole frame if a band flush failed.
-                if !flushed {
-                    log::warn!("display: repairing frame after a failed flush");
-                    if let Err(e) = panel.driver.flush(fb.bytes(), display::DMA_CHUNK) {
-                        log::error!("display: repair flush also failed: {e:?}");
+                // One app, so one arm. When a second Slint app lands this
+                // wants a view id on `Manifest` rather than a match here —
+                // otherwise it becomes the per-app match the App trait exists
+                // to avoid.
+                View::App(_) => {
+                    slint_ui.shell().set_view(ui::ShellView::Pomodoro);
+                    // Only republish when the app says something changed:
+                    // setting a struct property unconditionally would dirty
+                    // Slint every tick and repaint at full loop speed.
+                    if dirty != Dirty::None {
+                        router.sync_app();
                     }
                 }
+            }
+
+            // Apps cannot reach the buzzer; the router collects their requests.
+            if let Some(feedback) = router.take_feedback() {
+                buzzer::signal(match feedback {
+                    launcher::Feedback::Beep => Feedback::Beep,
+                    launcher::Feedback::Haptic => Feedback::Haptic,
+                });
+            }
+
+            if let Some(rect) = slint_ui.render(fb_buf)
+                && !flush_band(panel, fb_buf, rect.y, rect.h)
+            {
+                log::error!("display: slint flush failed {rect:?}");
             }
         }
     }

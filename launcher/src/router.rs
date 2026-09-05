@@ -7,7 +7,7 @@
 
 use enc_ui::{Dirty, InputEvent};
 
-use crate::app::{Action, App, Canvas, Ctx};
+use crate::app::{Action, App, Ctx, Feedback};
 use crate::carousel::Carousel;
 
 /// Raw, denormalized input from the hardware loop.
@@ -38,6 +38,7 @@ pub struct Router<'a> {
     carousel: Carousel,
     view: View,
     selected: usize,
+    feedback: Option<Feedback>,
 }
 
 impl<'a> Router<'a> {
@@ -52,6 +53,7 @@ impl<'a> Router<'a> {
             carousel,
             view: View::Launcher,
             selected: 0,
+            feedback: None,
         }
     }
 
@@ -93,21 +95,33 @@ impl<'a> Router<'a> {
             // Slint drives its own animation clock and reports what changed,
             // so the launcher has no tick-driven dirty region of its own.
             View::Launcher => Dirty::None,
-            View::App(index) => self
-                .apps
-                .get_mut(index)
-                .map_or(Dirty::None, |app| app.tick(ctx)),
+            View::App(index) => {
+                let Some(app) = self.apps.get_mut(index) else {
+                    return Dirty::None;
+                };
+                let outcome = app.tick(ctx);
+                self.feedback = self.feedback.or(outcome.feedback);
+                match outcome.action {
+                    Action::None => outcome.dirty,
+                    Action::Exit => self.go_home(),
+                }
+            }
         }
     }
 
-    /// Paints the active app. The launcher's own view is drawn by the caller,
-    /// which owns the sprite/asset machinery this crate deliberately lacks.
-    pub fn render_app(&self, ctx: &Ctx<'_>, fb: &mut Canvas<'_>) {
+    /// Pushes the active app's state into the shared Slint tree.
+    pub fn sync_app(&self) {
         if let View::App(index) = self.view
             && let Some(app) = self.apps.get(index)
         {
-            app.render(ctx, fb);
+            app.sync();
         }
+    }
+
+    /// Takes any pending buzzer/haptic request. Apps cannot reach the buzzer
+    /// themselves; the firmware polls this after driving the router.
+    pub fn take_feedback(&mut self) -> Option<Feedback> {
+        self.feedback.take()
     }
 
     fn handle_launcher(&mut self, input: Input, ctx: &Ctx<'_>) -> Dirty {
@@ -155,6 +169,7 @@ impl<'a> Router<'a> {
             return self.go_home();
         };
         let outcome = app.handle(event, ctx);
+        self.feedback = self.feedback.or(outcome.feedback);
         match outcome.action {
             Action::None => outcome.dirty,
             Action::Exit => self.go_home(),

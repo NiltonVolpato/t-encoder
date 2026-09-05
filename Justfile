@@ -6,6 +6,13 @@
 
 set shell := ["bash", "-uc"]
 
+
+set unstable := true
+set lists := true
+set dotenv-load := true
+set dotenv-filename := [".env", ".env.local"]
+set dotenv-override := true
+
 export LIBCLANG_PATH := `ls -d ~/.rustup/toolchains/esp/xtensa-esp32-elf-clang/*/esp-clang/lib 2>/dev/null | head -1`
 xtensa_bin := `ls -d ~/.rustup/toolchains/esp/xtensa-esp-elf/*/xtensa-esp-elf/bin 2>/dev/null | head -1`
 export PATH := xtensa_bin + ":" + env('PATH')
@@ -35,7 +42,7 @@ monitor:
 # Host-side unit tests for our pure crates. `firmware` is device-only, so it is
 # excluded; the exclusion list stays correct as pure crates are added.
 test *ARGS:
-    cargo test {{host}} --workspace --exclude firmware --exclude ui {{ARGS}}
+    cargo test {{host}} --workspace --exclude firmware --exclude ui --exclude apps {{ARGS}}
 
 # Host tests for the vendored upstream crates (uses their workspace's
 # default-members, which already excludes their device-only crates).
@@ -44,7 +51,7 @@ test-vendor *ARGS:
 
 # Clippy on our pure crates (host target, warnings are errors).
 lint *ARGS:
-    cargo clippy {{host}} --workspace --exclude firmware --exclude ui --all-targets {{ARGS}} -- -D warnings
+    cargo clippy {{host}} --workspace --exclude firmware --exclude ui --exclude apps --all-targets {{ARGS}} -- -D warnings
 
 # Clippy on the device firmware.
 lint-device *ARGS:

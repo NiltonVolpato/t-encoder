@@ -38,13 +38,19 @@ component Card inherits Rectangle {
         spacing: 14px;
         alignment: center;
 
-        Rectangle {
-            height: 88px;
-            width: 88px;
-            border-radius: 44px;
-            background: data.accent;
-            // Placeholder for the real icon; swapped for an image once the
-            // asset pipeline lands.
+        // The icon needs its own HorizontalLayout: a fixed-width child of a
+        // VerticalLayout is left-aligned, not centred, which is what made the
+        // placeholder discs sit off-centre.
+        HorizontalLayout {
+            alignment: center;
+            Rectangle {
+                height: 88px;
+                width: 88px;
+                border-radius: 44px;
+                background: data.accent;
+                // Placeholder for the real icon; swapped for an image once the
+                // asset pipeline lands.
+            }
         }
 
         Text {

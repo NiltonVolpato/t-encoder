@@ -1,0 +1,59 @@
+// Pomodoro timer.
+//
+// Designed for the round 390x390 AMOLED: a progress ring hugging the rim, the
+// remaining time as the focal element, and a state label under it. True black
+// background so the ring is the only lit thing on the panel.
+
+export struct PomodoroState {
+    // Pre-formatted MM:SS. Zero-padding is done in Rust, where it is one
+    // `write!`, rather than fought with in the markup.
+    time-text: string,
+    // Remaining fraction, 0.0..1.0. Clamped below 1.0 by the caller so the arc
+    // never degenerates to a zero-length path.
+    progress: float,
+    label: string,
+    accent: color,
+}
+
+export component Pomodoro inherits Rectangle {
+    in property <PomodoroState> state;
+
+    background: #000000;
+
+    // Progress ring as 60 dots rather than a stroked arc: the software
+    // renderer has no `Path` support (vector paths need a GPU backend), and it
+    // cannot rotate rectangles either — so radial tick marks are out and dots,
+    // which look the same at every angle, are in. Reads as a watch bezel.
+    for tick[i] in 60: Rectangle {
+        // One dot per elapsed 1/60th, lit clockwise from 12 o'clock.
+        property <float> frac: i / 60.0;
+        property <bool> lit: frac < state.progress;
+
+        width: lit ? 9px : 6px;
+        height: self.width;
+        border-radius: self.width / 2;
+        x: parent.width / 2 - self.width / 2 + 168px * sin(frac * 360deg);
+        y: parent.height / 2 - self.height / 2 - 168px * cos(frac * 360deg);
+        background: lit ? state.accent : #161616;
+        animate background { duration: 180ms; }
+    }
+
+    VerticalLayout {
+        alignment: center;
+        spacing: 6px;
+
+        Text {
+            text: state.time-text;
+            color: white;
+            font-size: 64px;
+            horizontal-alignment: center;
+        }
+
+        Text {
+            text: state.label;
+            color: state.accent;
+            font-size: 20px;
+            horizontal-alignment: center;
+        }
+    }
+}

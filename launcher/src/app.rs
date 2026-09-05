@@ -10,13 +10,6 @@ use embedded_graphics::pixelcolor::Rgb565;
 use enc_state::AppState;
 use enc_ui::Dirty;
 
-/// The concrete render target every app paints onto.
-///
-/// Deliberately concrete rather than `impl DrawTarget`: there is exactly one
-/// target in this firmware, its error type is [`core::convert::Infallible`], and
-/// making it concrete is what keeps [`App`] object-safe.
-pub type Canvas<'a> = enc_co5300::FrameBuffer<'a>;
-
 /// Identifies an app's icon. Bound to a real sprite by the asset pipeline in
 /// P2; until then it is carried through the launcher untouched.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -54,13 +47,26 @@ pub enum Action {
     Exit,
 }
 
-/// An app's response to an event: what changed, and where to go next.
+/// Physical feedback an app can ask the firmware to produce. Apps cannot reach
+/// the buzzer directly — it is a hardware resource the firmware owns.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Feedback {
+    /// Short audible beep.
+    Beep,
+    /// Low-frequency buzz, felt rather than heard.
+    Haptic,
+}
+
+/// An app's response to an event: what changed, where to go next, and whether
+/// to buzz.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Outcome {
     /// Region that needs repainting.
     pub dirty: Dirty,
     /// Requested navigation.
     pub action: Action,
+    /// Optional buzzer/haptic request.
+    pub feedback: Option<Feedback>,
 }
 
 impl Outcome {
@@ -68,6 +74,7 @@ impl Outcome {
     pub const NONE: Outcome = Outcome {
         dirty: Dirty::None,
         action: Action::None,
+        feedback: None,
     };
 
     /// Repaint `dirty`, stay in the app.
@@ -76,6 +83,17 @@ impl Outcome {
         Outcome {
             dirty,
             action: Action::None,
+            feedback: None,
+        }
+    }
+
+    /// Repaint `dirty` and buzz.
+    #[must_use]
+    pub const fn buzz(dirty: Dirty, feedback: Feedback) -> Outcome {
+        Outcome {
+            dirty,
+            action: Action::None,
+            feedback: Some(feedback),
         }
     }
 
@@ -85,6 +103,7 @@ impl Outcome {
         Outcome {
             dirty: Dirty::Full,
             action: Action::Exit,
+            feedback: None,
         }
     }
 }
@@ -109,17 +128,21 @@ pub trait App {
     /// Handles one input event.
     fn handle(&mut self, event: enc_ui::InputEvent, ctx: &Ctx<'_>) -> Outcome;
 
-    /// Periodic update — animation, adopting external state changes.
-    fn tick(&mut self, ctx: &Ctx<'_>) -> Dirty {
+    /// Periodic update — countdowns, adopting external state changes.
+    fn tick(&mut self, ctx: &Ctx<'_>) -> Outcome {
         let _ = ctx;
-        Dirty::None
+        Outcome::NONE
     }
 
-    /// Paints the app.
+    /// Pushes current state into the shared Slint tree.
     ///
-    /// Takes `&self`, never `&mut self`: rendering must not mutate. All state
-    /// changes belong in [`App::handle`] or [`App::tick`]. This is what keeps a
+    /// Takes `&self`, never `&mut self`: publishing state must not mutate it.
+    /// All changes belong in [`App::handle`] or [`App::tick`]. That keeps a
     /// later update/render split across CPU cores a refactor rather than a
     /// rewrite — see the concurrency section of the architecture plan.
-    fn render(&self, ctx: &Ctx<'_>, fb: &mut Canvas<'_>);
+    ///
+    /// Deliberately argument-free: the app holds its own handle to its Slint
+    /// component, so this trait — and therefore `launcher` — stays free of any
+    /// dependency on the UI toolkit.
+    fn sync(&self) {}
 }

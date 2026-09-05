@@ -109,9 +109,10 @@ name = "apps"
 version = "0.1.0"
 dependencies = [
  "embedded-graphics",
- "enc-state",
- "enc-ui",
+ "heapless 0.9.3",
  "launcher",
+ "slint",
+ "ui",
 ]
 
 [[package]]
