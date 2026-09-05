@@ -195,7 +195,7 @@ fn build_server<'a>(
     // switches to boot mode subscribes here instead of to the report above. We
     // promised boot mode without providing it, so those subscriptions had
     // nowhere to land and no key ever arrived.
-    let mut boot = hid.add_characteristic(
+    let boot = hid.add_characteristic(
         Uuid::Uuid16(0x2A22u16.to_le_bytes()),
         [CharacteristicProp::Read, CharacteristicProp::Notify],
         [0u8; 8],
