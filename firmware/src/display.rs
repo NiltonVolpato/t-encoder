@@ -228,12 +228,10 @@ pub struct Display {
 /// the 32736-byte per-transfer limit and takes a full frame in ~19 transfers.
 const TX_BUF_BYTES: usize = 16 * 1024;
 
-/// QSPI clock. The vendor firmware demonstrates 40 MHz; backed off here to
-/// trade frame time for margin against the "bottom half shifted left"
-/// corruption (see the display-corruption section of the architecture plan).
-/// Worth retrying at 40 now that a frame is one CS-framed transaction rather
-/// than ~75 separate write-continue ones.
-const QSPI_CLOCK_MHZ: u32 = 30;
+/// Using 40 MHz QSPI clock following the vendor firmware's 40 MHz setting.
+/// Earlier we used 30 MHz to eliminate some tearing and it seemed to have
+/// improved, but there may be no causal relationship between the two.
+const QSPI_CLOCK_MHZ: u32 = 40;
 
 /// Why display bring-up failed.
 #[derive(Debug)]
