@@ -7,13 +7,8 @@
 
 use enc_ui::{Dirty, InputEvent};
 
-use crate::anim::Tween;
 use crate::app::{Action, App, Canvas, Ctx};
 use crate::carousel::Carousel;
-use crate::render::launcher_band;
-
-/// Duration of a carousel slide.
-const SLIDE_MS: u32 = 250;
 
 /// Raw, denormalized input from the hardware loop.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -43,7 +38,6 @@ pub struct Router<'a> {
     carousel: Carousel,
     view: View,
     selected: usize,
-    scroll: Tween,
 }
 
 impl<'a> Router<'a> {
@@ -58,7 +52,6 @@ impl<'a> Router<'a> {
             carousel,
             view: View::Launcher,
             selected: 0,
-            scroll: Tween::settled(carousel.scroll_for(0)),
         }
     }
 
@@ -80,12 +73,6 @@ impl<'a> Router<'a> {
         &self.carousel
     }
 
-    /// Current horizontal scroll offset in pixels.
-    #[must_use]
-    pub fn scroll_at(&self, now_ms: u64) -> i32 {
-        self.scroll.value_at(now_ms)
-    }
-
     /// The app registry, for the renderer to read manifests from.
     #[must_use]
     pub fn apps(&self) -> &[&'a mut dyn App] {
@@ -103,13 +90,9 @@ impl<'a> Router<'a> {
     /// Advances animations and the active app's own clock.
     pub fn tick(&mut self, ctx: &Ctx<'_>) -> Dirty {
         match self.view {
-            View::Launcher => {
-                if self.scroll.is_settled(ctx.now_ms) {
-                    Dirty::None
-                } else {
-                    launcher_band(&self.carousel)
-                }
-            }
+            // Slint drives its own animation clock and reports what changed,
+            // so the launcher has no tick-driven dirty region of its own.
+            View::Launcher => Dirty::None,
             View::App(index) => self
                 .apps
                 .get_mut(index)
@@ -135,16 +118,17 @@ impl<'a> Router<'a> {
                     return Dirty::None;
                 }
                 self.selected = next;
-                self.scroll =
-                    self.scroll
-                        .retarget(self.carousel.scroll_for(next), ctx.now_ms, SLIDE_MS);
-                launcher_band(&self.carousel)
+                // Slint owns the slide: setting `selected` on the shell drives
+                // an `animate x`, so there is no scroll state to keep here.
+                Dirty::Full
             }
             Input::ShortPress => self.launch(self.selected, ctx),
             // Already home; nothing to go back to.
             Input::LongPress => Dirty::None,
             Input::Touch { x, y } => {
-                let scroll = self.scroll.value_at(ctx.now_ms);
+                // Hit-test at the settled position: Slint owns the in-flight
+                // offset. Superseded once touch becomes global gestures.
+                let scroll = self.carousel.scroll_for(self.selected);
                 match self.carousel.hit_test(x, y, scroll) {
                     Some(index) => {
                         self.selected = index;

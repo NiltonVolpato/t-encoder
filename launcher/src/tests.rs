@@ -4,8 +4,8 @@ use embedded_graphics::pixelcolor::Rgb565;
 use enc_state::AppState;
 
 use crate::{
-    Action, App, Canvas, Ctx, Dirty, IconId, Input, InputEvent, Manifest, Outcome, Router, Tween,
-    View, default_carousel, geometry,
+    Action, App, Canvas, Ctx, Dirty, IconId, Input, InputEvent, Manifest, Outcome, Router, View,
+    default_carousel, geometry,
 };
 
 /// Records what the router did to it, so lifecycle can be asserted.
@@ -91,25 +91,6 @@ fn router_takes_card_count_from_the_registry() {
     // default_carousel(0) is deliberately wrong; the router must correct it.
     with_router(|router, _ctx| {
         assert_eq!(router.carousel().count, 2);
-    });
-}
-
-#[test]
-fn rotate_moves_selection_and_stays_a_partial_repaint() {
-    with_router(|router, ctx| {
-        let dirty = router.handle(Input::Rotate(1), ctx);
-        assert_eq!(router.selected(), 1);
-        assert_ne!(
-            dirty,
-            Dirty::Full,
-            "a slide must not repaint the whole panel"
-        );
-        // The band is bounded well under a full frame — that is the whole
-        // point of banding, since a full flush costs ~15ms.
-        let Dirty::Band { h, .. } = dirty else {
-            panic!("expected a band");
-        };
-        assert!(h < geometry::HEIGHT, "band must be smaller than the panel");
     });
 }
 
@@ -246,135 +227,31 @@ fn carousel_handles_an_empty_registry() {
 }
 
 #[test]
-fn tween_runs_from_start_to_target() {
-    let tween = Tween::settled(0).retarget(100, 1_000, 250);
-    assert_eq!(tween.value_at(1_000), 0, "starts at the origin");
-    assert_eq!(tween.value_at(1_250), 100, "lands exactly on target");
-    assert_eq!(tween.value_at(9_999), 100, "stays there afterwards");
-    assert_eq!(tween.target(), 100);
-}
-
-#[test]
-fn tween_eases_out() {
-    let tween = Tween::settled(0).retarget(1_000, 0, 1_000);
-    let mid = tween.value_at(500);
-    assert!(
-        mid > 500,
-        "ease-out is past halfway at the midpoint, got {mid}"
-    );
-    assert!(mid < 1_000);
-}
-
-#[test]
-fn tween_is_monotonic() {
-    let tween = Tween::settled(0).retarget(500, 0, 300);
-    let mut previous = i32::MIN;
-    for now in 0..400 {
-        let value = tween.value_at(now);
-        assert!(value >= previous, "went backwards at {now}ms");
-        previous = value;
-    }
-}
-
-#[test]
-fn settled_tween_is_immediately_done() {
-    let tween = Tween::settled(42);
-    assert!(tween.is_settled(0));
-    assert_eq!(tween.value_at(0), 42);
-}
-
-#[test]
-fn retargeting_mid_flight_starts_from_the_current_value() {
-    let first = Tween::settled(0).retarget(1_000, 0, 1_000);
-    let at_mid = first.value_at(500);
-    let second = first.retarget(0, 500, 1_000);
-    assert_eq!(
-        second.value_at(500),
-        at_mid,
-        "a redirected slide must not jump"
-    );
-}
-
-#[test]
-fn zero_duration_tween_does_not_divide_by_zero() {
-    let tween = Tween::settled(0).retarget(100, 0, 0);
-    assert_eq!(tween.value_at(0), 100);
-    assert!(tween.is_settled(0));
-}
-
-#[test]
-fn launcher_is_dirty_only_while_sliding() {
-    let state = AppState::new(4);
-    let mut first = StubApp::new("First");
-    let mut second = StubApp::new("Second");
-    let mut registry: [&mut dyn App; 2] = [&mut first, &mut second];
-    let mut router = Router::new(&mut registry, default_carousel(0));
-
-    let start = Ctx {
-        now_ms: 0,
-        state: &state,
-    };
-    router.handle(Input::Rotate(1), &start);
-    assert_ne!(router.tick(&start), Dirty::None, "slide in progress");
-
-    let settled = Ctx {
-        now_ms: 10_000,
-        state: &state,
-    };
-    assert_eq!(router.tick(&settled), Dirty::None, "slide finished");
-}
-
-#[test]
-fn scroll_settles_on_the_selected_card() {
-    with_router(|router, ctx| {
-        router.handle(Input::Rotate(1), ctx);
-        let carousel = *router.carousel();
-        assert_eq!(router.scroll_at(10_000), carousel.scroll_for(1));
-    });
-}
-
-/// Regression: the launcher's dirty band must cover the page dots, not just
-/// the cards. Moving the selection moves the filled dot, and a band that stops
-/// at the card strip leaves a stale dot on the panel — visible as a wrong dot
-/// that never corrects until some unrelated full flush.
-#[test]
-fn launcher_dirty_band_covers_the_page_dots() {
-    let carousel = default_carousel(3);
-    let Dirty::Band { y, h } = crate::launcher_band(&carousel) else {
-        panic!("launcher band must be a band, not Full/None");
-    };
-    let top = i32::from(y);
-    let bottom = top + i32::from(h);
-
-    // The dots live at y = 344 with an 8px diameter, so [340, 348).
-    assert!(top <= 340, "band starts at {top}, above the dots");
-    assert!(bottom >= 348, "band ends at {bottom}, cutting the dots off");
-
-    // And it must still cover the cards.
-    let Dirty::Band { y: cy, h: ch } = carousel.band() else {
-        panic!("carousel band must be a band");
-    };
-    assert!(top <= i32::from(cy));
-    assert!(bottom >= i32::from(cy) + i32::from(ch));
-}
-
-#[test]
-fn rotating_dirties_the_dots_too() {
-    with_router(|router, ctx| {
-        let dirty = router.handle(Input::Rotate(1), ctx);
-        assert_eq!(
-            dirty,
-            crate::launcher_band(router.carousel()),
-            "a selection change must dirty the dots, not only the cards"
-        );
-    });
-}
-
-#[test]
 fn dirty_bands_merge_into_a_covering_band() {
     let a = Dirty::Band { y: 10, h: 20 };
     let b = Dirty::Band { y: 40, h: 10 };
     assert_eq!(a.merge(b), Dirty::Band { y: 10, h: 40 });
     assert_eq!(a.merge(Dirty::Full), Dirty::Full);
     assert_eq!(a.merge(Dirty::None), a);
+}
+
+/// Slint owns the slide now, so a selection change reports `Full` and lets
+/// Slint's own dirty tracking decide what actually gets flushed.
+#[test]
+fn rotate_moves_selection_and_delegates_painting_to_slint() {
+    with_router(|router, ctx| {
+        let dirty = router.handle(Input::Rotate(1), ctx);
+        assert_eq!(router.selected(), 1);
+        assert_eq!(dirty, Dirty::Full);
+    });
+}
+
+/// The launcher has no tick-driven animation of its own any more — Slint runs
+/// its animation clock independently.
+#[test]
+fn launcher_tick_is_never_dirty() {
+    with_router(|router, ctx| {
+        router.handle(Input::Rotate(1), ctx);
+        assert_eq!(router.tick(ctx), Dirty::None);
+    });
 }

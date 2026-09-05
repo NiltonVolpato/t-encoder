@@ -1,8 +1,9 @@
 //! Pure app-launcher core.
 //!
 //! Hardware-independent so it unit-tests on the host: the [`App`] trait, the
-//! [`Router`] that owns which app is active, carousel layout, and tweening.
-//! The device binary supplies the framebuffer, the clock, and the event source.
+//! [`Router`] that owns which app is active, and carousel geometry for
+//! hit-testing. **Rendering and animation belong to Slint** (the `ui` crate) —
+//! this crate holds navigation state, not pixels.
 //!
 //! Input and dirty-region types are reused from `enc_ui` rather than
 //! redefined — the launcher sits alongside upstream's UI code, not on top of a
@@ -10,16 +11,12 @@
 
 #![no_std]
 
-mod anim;
 mod app;
 mod carousel;
-mod render;
 mod router;
 
-pub use anim::Tween;
 pub use app::{Action, App, Canvas, Ctx, IconId, Manifest, Outcome};
 pub use carousel::Carousel;
-pub use render::{launcher_band, render_launcher};
 pub use router::{Input, Router, View};
 
 // Re-exported so apps need only depend on `launcher`.

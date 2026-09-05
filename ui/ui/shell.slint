@@ -1,0 +1,53 @@
+// Root component: the single Slint window for the whole device.
+//
+// One tree, one runtime, one font set — every app contributes a component here
+// rather than linking its own renderer. `view` selects what is on screen; apps
+// drive their own properties and Slint repaints what changed.
+
+import { Launcher, CardData } from "launcher.slint";
+
+export { CardData }
+
+// Which screen is live. Mirrors `launcher::View` on the Rust side.
+export enum ShellView {
+    launcher,
+    app,
+}
+
+export component Shell inherits Window {
+    // Panel geometry. The board is a 390x390 round AMOLED.
+    width: 390px;
+    height: 390px;
+    // True black is free on AMOLED and makes the accents pop.
+    background: #000000;
+
+    in property <ShellView> view: ShellView.launcher;
+    in property <[CardData]> cards;
+    in property <int> selected: 0;
+    // Set by the active app so the shell can title it; apps own their own
+    // component for real content.
+    in property <string> app-title;
+
+    if view == ShellView.launcher: Launcher {
+        width: parent.width;
+        height: parent.height;
+        cards: root.cards;
+        selected: root.selected;
+    }
+
+    if view == ShellView.app: Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: #000000;
+
+        Text {
+            text: root.app-title;
+            color: white;
+            font-size: 28px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            width: parent.width;
+            height: parent.height;
+        }
+    }
+}

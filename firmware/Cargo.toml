@@ -11,8 +11,9 @@ description = "T-Encoder-Pro app launcher — device firmware (xtensa-esp32s3 on
 # Ours.
 launcher = { path = "../launcher" }
 apps = { path = "../apps" }
-# P2 spike only, off by default. Disposable along with the crate.
-spike-slint = { path = "../spike-slint", optional = true }
+ui = { path = "../ui" }
+# For the card model + colours only; the renderer lives in `ui`.
+slint = { version = "1.17.1", default-features = false, features = ["compat-1-2", "unsafe-single-threaded", "libm", "renderer-software"] }
 
 # Upstream drivers (vendor/rust-enc submodule).
 enc-config = { workspace = true }
@@ -41,9 +42,6 @@ embassy-time = { workspace = true }
 log = { workspace = true }
 
 [features]
-# P2 Slint evaluation: renders one Slint frame at boot instead of the launcher,
-# so flash cost and frame time can be measured against the baseline.
-slint-spike = ["dep:spike-slint"]
 # Lab-only: expose HTTP write endpoints (GET /toggle?i=N). Off by default.
 http-write = ["enc-net/http-write"]
 

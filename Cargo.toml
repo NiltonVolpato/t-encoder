@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["apps", "firmware", "launcher", "spike-slint"]
+members = ["apps", "firmware", "launcher", "ui"]
 # vendor/rust-enc is a submodule with its own [workspace] root. Its crates must
 # stay members of THAT workspace so their `edition.workspace = true` /
 # `[lints] workspace = true` inheritance resolves. We reach them by path

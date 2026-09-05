@@ -38,7 +38,7 @@ use esp_hal::psram;
 use esp_hal::rng::Rng;
 use esp_hal::timer::timg::TimerGroup;
 // `Input` is aliased to `UiInput`: esp-hal's GPIO `Input` already owns that name.
-use launcher::{App, Ctx, Dirty, Input as UiInput, Router, View, render_launcher};
+use launcher::{App, Ctx, Dirty, Input as UiInput, Router, View};
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
@@ -92,6 +92,39 @@ fn uptime_secs() -> u32 {
 /// Device uptime in milliseconds, for the launcher's animation clock.
 fn now_ms() -> u64 {
     Instant::now().as_millis()
+}
+
+/// Builds the Slint card model from the app registry, so the carousel is
+/// driven by the same manifests the router uses — one source of truth.
+fn app_cards(apps: &[&mut dyn App]) -> slint::ModelRc<ui::CardData> {
+    let cards: alloc::vec::Vec<ui::CardData> = apps
+        .iter()
+        .map(|app| {
+            let manifest = app.manifest();
+            ui::CardData {
+                name: manifest.name.into(),
+                accent: rgb565_to_slint(manifest.accent),
+            }
+        })
+        .collect();
+    slint::ModelRc::new(slint::VecModel::from(cards))
+}
+
+/// Widens an RGB565 colour to Slint's 8-bit-per-channel `Color`.
+///
+/// Each channel is scaled by its max rather than shifted, so full-scale stays
+/// full-scale (a plain `<< 3` would cap red at 248 and never reach white).
+fn rgb565_to_slint(color: embedded_graphics::pixelcolor::Rgb565) -> slint::Color {
+    use embedded_graphics::prelude::RgbColor;
+    let scale = |value: u8, max: u8| -> u8 {
+        let widened = u16::from(value).saturating_mul(255) / u16::from(max).max(1);
+        u8::try_from(widened).unwrap_or(0)
+    };
+    slint::Color::from_rgb_u8(
+        scale(color.r(), 31),
+        scale(color.g(), 63),
+        scale(color.b(), 31),
+    )
 }
 
 #[panic_handler]
@@ -269,52 +302,37 @@ async fn main(spawner: Spawner) -> ! {
     // actually mapped and large enough (else `from_raw_parts_mut` is UB).
     let framebuffer = psram_framebuffer(psram_start, psram_size, psram_ok);
     if let (Some(panel), Some(fb_buf)) = (panel.as_mut(), framebuffer) {
-        // P2 Slint spike: paint one Slint frame straight into the PSRAM buffer
-        // before it is wrapped as a `FrameBuffer`, timing the render so the
-        // frame-time criterion has a real number. The frame stays on screen
-        // until the first repaint, which is convenient for eyeballing quality.
-        #[cfg(feature = "slint-spike")]
-        match spike_slint::init() {
-            Ok((window, _ui)) => {
-                spike_slint::set_now_ms(now_ms());
-                let started = Instant::now();
-                let drawn = spike_slint::render_frame(&window, fb_buf);
-                let render_us = started.elapsed().as_micros();
-
-                let started = Instant::now();
-                let flush_ok = panel.driver.flush(fb_buf, display::DMA_CHUNK).is_ok();
-                let flush_us = started.elapsed().as_micros();
-
-                log::info!(
-                    "slint: drawn={drawn} render={render_us}us flush={flush_us}us ok={flush_ok}"
-                );
-                log::info!(
-                    "slint: heap internal free={} used={}",
-                    esp_alloc::HEAP.free(),
-                    esp_alloc::HEAP.used(),
-                );
+        // Slint owns the launcher; the framebuffer stays a plain byte slice so
+        // both it and the (still embedded-graphics) apps can borrow it in turn.
+        let slint_ui = match ui::Ui::new() {
+            Ok(slint_ui) => Some(slint_ui),
+            Err(e) => {
+                log::error!("ui: Slint init failed: {e}");
+                None
             }
-            Err(e) => log::error!("slint: init failed: {e}"),
+        };
+        if let Some(slint_ui) = slint_ui.as_ref() {
+            let cards = app_cards(router.apps());
+            slint_ui.shell().set_cards(cards);
+            slint_ui.shell().set_selected(0);
         }
-
-        let mut fb = FrameBuffer::new(fb_buf, DISPLAY_W, DISPLAY_H);
 
         // Initial paint: the launcher, since that is where the router starts.
         let ctx = Ctx {
             now_ms: now_ms(),
             state: &APP_STATE,
         };
-        // Timed once at boot so the embedded-graphics baseline has the same
-        // numbers the Slint spike reports, rather than an estimate.
-        let started = Instant::now();
-        render_launcher(&router, &ctx, &mut fb);
-        let render_us = started.elapsed().as_micros();
-        let started = Instant::now();
-        let flush_ok = panel.driver.flush(fb.bytes(), display::DMA_CHUNK).is_ok();
-        let flush_us = started.elapsed().as_micros();
-        log::info!("baseline: render={render_us}us flush={flush_us}us ok={flush_ok}");
-        if !flush_ok {
-            log::error!("display: initial flush failed");
+        if let Some(slint_ui) = slint_ui.as_ref() {
+            ui::set_now_ms(ctx.now_ms);
+            let started = Instant::now();
+            let rect = slint_ui.render(fb_buf);
+            let render_us = started.elapsed().as_micros();
+            let started = Instant::now();
+            let flushed = rect.is_some_and(|r| flush_band(panel, fb_buf, r.y, r.h));
+            let flush_us = started.elapsed().as_micros();
+            log::info!(
+                "slint: first frame {rect:?} render={render_us}us flush={flush_us}us ok={flushed}"
+            );
         }
 
         let mut press_start: Option<Instant> = None;
@@ -440,11 +458,27 @@ async fn main(spawner: Spawner) -> ! {
                 state: &APP_STATE,
             };
             dirty = dirty.merge(router.tick(&ctx));
-            if dirty != Dirty::None {
-                match router.view() {
-                    View::Launcher => render_launcher(&router, &ctx, &mut fb),
-                    View::App(_) => router.render_app(&ctx, &mut fb),
+
+            // Launcher: Slint decides what changed. Its own animation clock
+            // keeps the frame coming while a slide is in flight, so our
+            // `dirty` only needs to say "something happened".
+            if let (View::Launcher, Some(slint_ui)) = (router.view(), slint_ui.as_ref()) {
+                slint_ui
+                    .shell()
+                    .set_selected(i32::try_from(router.selected()).unwrap_or(0));
+                slint_ui.shell().set_view(ui::ShellView::Launcher);
+                ui::set_now_ms(ctx.now_ms);
+                if let Some(rect) = slint_ui.render(fb_buf)
+                    && !flush_band(panel, fb_buf, rect.y, rect.h)
+                {
+                    log::error!("display: slint band flush failed {rect:?}");
                 }
+                continue;
+            }
+
+            if dirty != Dirty::None {
+                let mut fb = FrameBuffer::new(&mut fb_buf[..], DISPLAY_W, DISPLAY_H);
+                router.render_app(&ctx, &mut fb);
                 let flushed = match dirty {
                     Dirty::Full => match panel.driver.flush(fb.bytes(), display::DMA_CHUNK) {
                         Ok(()) => true,

@@ -1,23 +1,21 @@
 [package]
-name = "spike-slint"
+name = "ui"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 publish.workspace = true
-description = "P2 spike: does Slint's no_std software renderer work on this board? Disposable."
+description = "The single Slint UI tree and its no_std platform glue. One runtime, shared by every app."
 
 [dependencies]
-# no_std MCU configuration: no OS backend, single-threaded, libm for the maths,
-# and the software renderer that paints into a buffer we own.
+# no_std MCU configuration. This is the ONLY place Slint is depended on, so the
+# runtime, fonts and ICU data are linked exactly once for the whole firmware.
 slint = { version = "1.17.1", default-features = false, features = [
     "compat-1-2",
     "unsafe-single-threaded",
     "libm",
     "renderer-software",
 ] }
-embedded-graphics = { workspace = true }
-enc-co5300 = { workspace = true }
 
 [build-dependencies]
 slint-build = "1.17.1"

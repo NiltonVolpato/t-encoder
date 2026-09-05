@@ -1,0 +1,95 @@
+// The launcher carousel.
+//
+// Contrast with the embedded-graphics version this replaces: the slide is one
+// `animate` block rather than a hand-rolled fixed-point Tween plumbed through
+// the router, and card placement is a `for` over a model rather than
+// hand-computed centre-x arithmetic.
+
+export struct CardData {
+    name: string,
+    accent: color,
+}
+
+// Distance between adjacent card centres. One source of truth for the strip.
+export global Layout {
+    out property <length> pitch: 210px;
+    out property <length> card-w: 180px;
+    out property <length> card-h: 200px;
+}
+
+component Card inherits Rectangle {
+    in property <CardData> data;
+    in property <bool> focused;
+
+    width: Layout.card-w;
+    height: Layout.card-h;
+    border-radius: 24px;
+    background: data.accent.darker(0.88);
+    border-width: focused ? 3px : 1px;
+    border-color: focused ? data.accent : data.accent.darker(0.55);
+
+    // Unfocused cards recede rather than vanish, so the strip reads as a row
+    // of things rather than one card floating alone.
+    opacity: focused ? 1.0 : 0.45;
+    animate opacity, border-color { duration: 250ms; easing: ease-out; }
+
+    VerticalLayout {
+        padding: 26px;
+        spacing: 14px;
+        alignment: center;
+
+        Rectangle {
+            height: 88px;
+            width: 88px;
+            border-radius: 44px;
+            background: data.accent;
+            // Placeholder for the real icon; swapped for an image once the
+            // asset pipeline lands.
+        }
+
+        Text {
+            text: data.name;
+            color: white;
+            font-size: 22px;
+            horizontal-alignment: center;
+        }
+    }
+}
+
+export component Launcher inherits Rectangle {
+    in property <[CardData]> cards;
+    in property <int> selected: 0;
+
+    background: transparent;
+
+    // The whole strip translates; the eased `animate` here is the entire
+    // carousel transition.
+    Rectangle {
+        y: (parent.height - Layout.card-h) / 2;
+        height: Layout.card-h;
+        x: (parent.width - Layout.card-w) / 2 - selected * Layout.pitch;
+        animate x { duration: 250ms; easing: ease-out-quart; }
+
+        for card[i] in cards: Card {
+            x: i * Layout.pitch;
+            data: card;
+            focused: i == selected;
+        }
+    }
+
+    // Page dots.
+    HorizontalLayout {
+        y: parent.height - 46px;
+        height: 8px;
+        spacing: 10px;
+        alignment: center;
+
+        for card[i] in cards: Rectangle {
+            width: 8px;
+            height: 8px;
+            border-radius: 4px;
+            background: i == selected ? white : #202a20;
+            animate background { duration: 200ms; }
+        }
+    }
+}
