@@ -1,5 +1,3 @@
-cargo-features = ["panic-immediate-abort"]
-
 [workspace]
 resolver = "3"
 members = ["apps", "firmware", "launcher", "ui"]
@@ -87,7 +85,7 @@ unwrap_used = "warn"
 opt-level = "z"
 lto = true
 codegen-units = 1
-panic = "immediate-abort"
+panic = "abort"
 debug = "full"
 # NOTE: a no-op for the firmware. `split-debuginfo` is a *target* capability,
 # and `rustc --target xtensa-esp32s3-none-elf --print split-debuginfo` offers
@@ -102,16 +100,19 @@ split-debuginfo = "packed"
 # `CARGO_PROFILE_RELEASE_STRIP=none` when it needs symbols.
 strip = "symbols"
 
-# `panic = "immediate-abort"` (with the `cargo-features` line at the top of this
-# file) needs `-Zbuild-std`, which only the device recipes pass — host builds use
-# the dev/test profiles and are unaffected.
+# --- A ~240 KiB lever, deliberately not pulled ----------------------------
 #
-# It took the binary from 1.73 to 1.49 MiB, and the saving is exactly the panic
-# machinery: every panic string is gone, **including our own**. Verified by
-# `strings` on the binary — "attempt to subtract with overflow", "index out of
-# bounds" and the `PANIC: ` literal from `main.rs`'s `#[panic_handler]` are all
-# absent. `panic!` compiles straight to an abort, so the handler is never
-# called and a panic now dies silently rather than printing.
+# `panic = "immediate-abort"` plus `cargo-features = ["panic-immediate-abort"]`
+# as the first line of this file takes the binary from 1.73 to 1.49 MiB. It
+# needs `-Zbuild-std`, which only the device recipes pass, so host builds are
+# unaffected.
 #
-# That is the trade: 240 KiB against ever seeing why a panic happened. Undo by
-# dropping the `cargo-features` line and setting `panic = "abort"`.
+# The saving *is* the panic machinery, and that includes our own message:
+# `panic!` compiles straight to an abort, `#[panic_handler]` is never called,
+# and a panic dies silently. Verified with `strings` — "attempt to subtract with
+# overflow", "index out of bounds" and even the `PANIC: ` literal from
+# `firmware/src/main.rs` were all absent from the binary.
+#
+# Held in reserve rather than taken: ~240 KiB is worth roughly eight 88x88
+# icons, which is a real amount of room, but not at the price of never learning
+# why a panic happened. Reach for it if flash actually gets tight.
