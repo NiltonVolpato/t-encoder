@@ -2131,7 +2131,6 @@ dependencies = [
  "enc-input",
  "enc-net",
  "enc-state",
- "enc-ui",
  "esp-alloc",
  "esp-bootloader-esp-idf",
  "esp-hal",
@@ -2139,7 +2138,6 @@ dependencies = [
  "esp-radio",
  "esp-rtos",
  "esp-storage",
- "heapless 0.9.3",
  "launcher",
  "log",
  "slint",
@@ -3435,10 +3433,8 @@ name = "launcher"
 version = "0.1.0"
 dependencies = [
  "embedded-graphics",
- "enc-co5300",
  "enc-state",
  "enc-ui",
- "heapless 0.9.3",
 ]
 
 [[package]]

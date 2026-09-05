@@ -9,10 +9,8 @@ description = "Pure app-launcher core: App trait, router, layout. No hardware."
 
 [dependencies]
 embedded-graphics = { workspace = true }
-heapless = { workspace = true }
-# Pure, host-testable upstream crates: FrameBuffer (the render target), the
-# Dirty/InputEvent vocabulary, and the shared atomic state.
-enc-co5300 = { workspace = true }
+# Pure, host-testable upstream crates: the Dirty/InputEvent vocabulary and the
+# shared atomic state.
 enc-ui = { workspace = true }
 enc-state = { workspace = true }
 
