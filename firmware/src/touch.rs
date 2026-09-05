@@ -10,14 +10,20 @@
 //! recogniser in `launcher` wants edges, not levels, and it is the only thing
 //! that reads them — this file recognises nothing.
 //!
-//! **INT (GPIO9) is wired and unused.** It is constructed and handed to the
-//! driver, which offers `wait_for_touch()` on it, and nothing calls that: the
-//! claim that its pulses are unreliable was inherited from earlier bring-up
-//! (`enc-app`) and has never been re-tested here. Waking on the edge instead of
-//! polling would take the bus from ~20% duty to idle and cut touch latency to
-//! near zero; worth revisiting, and worth verifying the claim first.
+//! **This loop is pure polling — the INT line is not listened to at all.** The
+//! timer *is* the poll interval; there is no interrupt in the picture. GPIO9 is
+//! wired, constructed, and handed to `Chsc5816`, which stores it and offers
+//! `wait_for_touch()` — and nothing calls that. `read_point()` is I2C only.
 //!
-//! This is the board's only I2C device — I2C1 is entirely free.
+//! Switching to the edge is a live option and better supported than the code
+//! suggests. Per `CHSC5816-ApplicationDoc_US_V04` §Report data, INT is a real
+//! falling-edge data-ready line, and the report's per-point `touch event` byte
+//! distinguishes press (0), touching (8) and *release* (4) — so a lift is a
+//! reported event, not something the host has to infer from a poll coming back
+//! empty. This driver reads that byte and discards it (`_id_event`), and
+//! derives the phases instead. See the plan before changing either.
+//!
+//! Touch is the board's only I2C device — I2C1 is entirely free.
 
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
@@ -59,8 +65,8 @@ pub struct TouchPins {
     pub sda: GPIO5<'static>,
     /// I2C clock line.
     pub scl: GPIO6<'static>,
-    /// Interrupt line. Wired, handed to the driver, never waited on — see the
-    /// module docs.
+    /// Interrupt line. Wired and handed to the driver, never waited on — this
+    /// loop polls. See the module docs.
     pub int: GPIO9<'static>,
     /// Active-low reset.
     pub rst: GPIO8<'static>,
@@ -105,6 +111,9 @@ pub async fn task(mut touch: Touch) {
         Timer::after(POLL).await;
         // The clock is read per *sample*, not per poll: an empty report is the
         // overwhelmingly common case and there is nothing there to timestamp.
+        // `Instant::now().as_millis()` measured 1.21us on device (10k calls in
+        // 12.08ms) — ~290 cycles at 240MHz, which is not the free counter read
+        // it looks like.
         match touch.read_point().await {
             Ok(Some(point)) => {
                 let at_ms = Instant::now().as_millis();
