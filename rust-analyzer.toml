@@ -7,10 +7,15 @@
 
 [cargo]
 target = "xtensa-esp32s3-none-elf"
-extraArgs = ["-Zbuild-std=alloc,core", "-Zbuild-std-features=compiler-builtins-mem"]
+extraArgs = ["-Zbuild-std=alloc,core", "-Zbuild-std-features=compiler-builtins-mem", "--release"]
 
 [cargo.extraEnv]
 RUSTUP_TOOLCHAIN = "esp"
 
 [check]
-extraArgs = ["-Zbuild-std=alloc,core", "-Zbuild-std-features=compiler-builtins-mem"]
+command = "check"
+extraArgs = ["-Zbuild-std=alloc,core", "-Zbuild-std-features=compiler-builtins-mem", "--release"]
+
+[procMacro]
+enable = true
+server = "/opt/homebrew/bin/rust-analyzer"

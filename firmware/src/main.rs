@@ -4,10 +4,11 @@
 
 //! Device firmware entry point for the `LilyGo` T-Encoder-Pro (ESP32-S3).
 //!
-//! Drives a set of `enc_ui` display states (a toggle menu and an analog+digital
-//! clock) over the CO5300 QSPI display (PSRAM framebuffer), PCNT encoder, and
-//! CHSC5816 touch. Encoder/touch/short-press feed the active screen; a button
-//! long-press cycles screens. Wi-Fi/SNTP/HTTP run alongside (Phase 6).
+//! Brings up the hardware — CO5300 QSPI display over a PSRAM framebuffer, PCNT
+//! encoder, CHSC5816 touch, buzzer, Wi-Fi — then hands the UI to
+//! [`launcher::Router`]. This file owns no screens: encoder, button and touch
+//! are normalized into `launcher::Input` and the router decides whether they
+//! move the carousel or reach the active app.
 
 #![no_std]
 #![no_main]
@@ -26,20 +27,18 @@ use embassy_executor::Spawner;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
 use embassy_time::{Duration, Instant, Timer};
-use embedded_graphics::prelude::Point;
 use enc_co5300::FrameBuffer;
 use enc_input::Encoder;
 use enc_state::{AppState, ConnState};
 use enc_touch::TouchPoint;
-use enc_ui::{
-    ClockScreen, Dirty, InputEvent, Layout, Menu, MenuScreen, RenderCtx, Screen, ScreenId,
-};
 use esp_hal::clock::CpuClock;
 use esp_hal::gpio::{Input, InputConfig, Pull};
 use esp_hal::interrupt::software::SoftwareInterruptControl;
 use esp_hal::psram;
 use esp_hal::rng::Rng;
 use esp_hal::timer::timg::TimerGroup;
+// `Input` is aliased to `UiInput`: esp-hal's GPIO `Input` already owns that name.
+use launcher::{App, Ctx, Dirty, Input as UiInput, Router, View, render_launcher};
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
@@ -52,13 +51,11 @@ const DISPLAY_H: u16 = 390;
 const DISPLAY_BYTES: usize = enc_config::display::FRAMEBUFFER_BYTES;
 /// Quadrature counts per mechanical detent (this encoder emits 2 per click).
 const COUNTS_PER_DETENT: u8 = 2;
-/// Demo menu item labels.
-const MENU_ITEMS: [&str; 4] = ["Beep", "Invert", "Option C", "Option D"];
 /// PSRAM smoke-test probe length (top of PSRAM); also reserved from the heap.
 const PSRAM_PROBE_LEN: usize = 4096;
 
 /// Shared, lock-free app state mirrored between the UI loop and the Wi-Fi tasks.
-static APP_STATE: AppState = AppState::new(MENU_ITEMS.len());
+static APP_STATE: AppState = AppState::new(apps::MENU_ITEMS.len());
 
 /// Flushes a full-width horizontal band `[y, y+h)` of the framebuffer to the
 /// panel. Returns whether the band was flushed (false if out of range or DMA
@@ -81,26 +78,9 @@ fn uptime_secs() -> u32 {
     u32::try_from(Instant::now().as_secs()).unwrap_or(0)
 }
 
-/// Current UTC time as `(h, m, s)`, or `None` before the first SNTP sync.
-fn hms_now() -> Option<(u8, u8, u8)> {
-    APP_STATE.current_epoch(uptime_secs()).map(enc_state::hms)
-}
-
-/// Dispatches a method to the active screen by [`ScreenId`] — static dispatch,
-/// no `Box`/`dyn`. A new screen adds one match arm here.
-macro_rules! with_active {
-    ($current:expr, $menu:expr, $clock:expr, |$screen:ident| $body:expr) => {
-        match $current {
-            ScreenId::Menu => {
-                let $screen = &mut $menu;
-                $body
-            }
-            ScreenId::Clock => {
-                let $screen = &mut $clock;
-                $body
-            }
-        }
-    };
+/// Device uptime in milliseconds, for the launcher's animation clock.
+fn now_ms() -> u64 {
+    Instant::now().as_millis()
 }
 
 #[panic_handler]
@@ -266,16 +246,13 @@ async fn main(spawner: Spawner) -> ! {
         }
     }
 
-    let layout = Layout {
-        top: 95,
-        row_height: 56,
-        left: 70,
-        width: 250,
-        count: MENU_ITEMS.len(),
-    };
-    let mut menu_screen = MenuScreen::new(Menu::new(MENU_ITEMS.len()), layout, &MENU_ITEMS);
-    let mut clock_screen = ClockScreen::new(Point::new(195, 195), 180);
-    let mut current = ScreenId::Menu;
+    // The app registry. Adding an app is its constructor plus one line here —
+    // no enum variant, no match arm. `main` never returns, so these locals
+    // live for the whole program and need no `StaticCell`.
+    let mut menu = apps::menu_app();
+    let mut clock = apps::clock_app();
+    let mut registry: [&mut dyn App; 2] = [&mut menu, &mut clock];
+    let mut router = Router::new(&mut registry, launcher::default_carousel(0));
 
     // The framebuffer lives at the base of PSRAM; only build it if PSRAM is
     // actually mapped and large enough (else `from_raw_parts_mut` is UB).
@@ -283,13 +260,12 @@ async fn main(spawner: Spawner) -> ! {
     if let (Some(panel), Some(fb_buf)) = (panel.as_mut(), framebuffer) {
         let mut fb = FrameBuffer::new(fb_buf, DISPLAY_W, DISPLAY_H);
 
-        // Initial paint of the active screen.
-        let ctx = RenderCtx {
+        // Initial paint: the launcher, since that is where the router starts.
+        let ctx = Ctx {
+            now_ms: now_ms(),
             state: &APP_STATE,
-            hms: hms_now(),
         };
-        let _ = with_active!(current, menu_screen, clock_screen, |s| s
-            .render(&ctx, &mut fb));
+        render_launcher(&router, &ctx, &mut fb);
         if panel.driver.flush(fb.bytes(), display::DMA_CHUNK).is_err() {
             log::error!("display: initial flush failed");
         }
@@ -311,39 +287,41 @@ async fn main(spawner: Spawner) -> ! {
             // asynchronously from the touch task via TOUCH_TAPS.
             Timer::after(Duration::from_millis(5)).await;
             let mut dirty = Dirty::None;
+            let ctx = Ctx {
+                now_ms: now_ms(),
+                state: &APP_STATE,
+            };
 
-            // Encoder → active screen.
+            // Encoder → router (carousel, or the active app).
             let detents = encoder.update(encoder_hw.raw());
             if detents != 0 {
-                dirty = dirty.merge(with_active!(current, menu_screen, clock_screen, |s| s
-                    .handle(InputEvent::Rotate(detents), &APP_STATE)));
+                dirty = dirty.merge(router.handle(UiInput::Rotate(detents), &ctx));
                 buzzer::signal(Feedback::Beep);
             }
 
-            // Button: long-press cycles screens; short-press is the screen's
-            // Select. The action fires on release so its duration is known.
+            // Button: the router decides what a press means — long-press is
+            // "back to launcher", short-press launches or is the app's Select.
+            // The action fires on release so its duration is known.
             let down = button.is_low(); // active-low (pull-up + button to GND)
             if down && press_start.is_none() {
                 press_start = Some(Instant::now());
             } else if !down && let Some(start) = press_start.take() {
-                if Instant::now().duration_since(start) >= Duration::from_millis(600) {
-                    current = current.next();
-                    dirty = Dirty::Full;
+                let input = if Instant::now().duration_since(start) >= Duration::from_millis(600) {
+                    UiInput::LongPress
                 } else {
-                    dirty = dirty.merge(with_active!(current, menu_screen, clock_screen, |s| s
-                        .handle(InputEvent::Select, &APP_STATE)));
-                }
+                    UiInput::ShortPress
+                };
+                dirty = dirty.merge(router.handle(input, &ctx));
                 buzzer::signal(Feedback::Beep);
             }
 
-            // Touch taps → active screen (none lost during a redraw).
+            // Touch taps → router (none lost during a redraw).
             while let Ok(point) = TOUCH_TAPS.try_receive() {
-                let event = InputEvent::Touch {
+                let input = UiInput::Touch {
                     x: i32::from(point.x),
                     y: i32::from(point.y),
                 };
-                dirty = dirty.merge(with_active!(current, menu_screen, clock_screen, |s| s
-                    .handle(event, &APP_STATE)));
+                dirty = dirty.merge(router.handle(input, &ctx));
                 buzzer::signal(Feedback::Beep);
             }
 
@@ -407,15 +385,19 @@ async fn main(spawner: Spawner) -> ! {
                 dirty_since = None;
             }
 
-            // Animate / adopt external state, then render + flush the dirty area.
-            let ctx = RenderCtx {
+            // Animate / adopt external state, then render + flush the dirty
+            // area. `ctx` is re-read here so a carousel slide is sampled at the
+            // moment it is drawn rather than at the top of the tick.
+            let ctx = Ctx {
+                now_ms: now_ms(),
                 state: &APP_STATE,
-                hms: hms_now(),
             };
-            dirty = dirty.merge(with_active!(current, menu_screen, clock_screen, |s| s.tick(&ctx)));
+            dirty = dirty.merge(router.tick(&ctx));
             if dirty != Dirty::None {
-                let _ = with_active!(current, menu_screen, clock_screen, |s| s
-                    .render(&ctx, &mut fb));
+                match router.view() {
+                    View::Launcher => render_launcher(&router, &ctx, &mut fb),
+                    View::App(_) => router.render_app(&ctx, &mut fb),
+                }
                 let flushed = match dirty {
                     Dirty::Full => panel.driver.flush(fb.bytes(), display::DMA_CHUNK).is_ok(),
                     Dirty::Band { y, h } => flush_band(panel, fb.bytes(), y, h),

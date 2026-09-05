@@ -18,6 +18,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c583acf993cf4245c4acb0a2cc2ab1f9cc097de73411bb6d3647ff6af2b1013d"
 
 [[package]]
+name = "apps"
+version = "0.1.0"
+dependencies = [
+ "embedded-graphics",
+ "enc-state",
+ "enc-ui",
+ "launcher",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1109,6 +1119,7 @@ checksum = "3e0f1c7c3a72c66fd80abe965175f7523475c0489a87d3ff9d6e8c87d87a9d2d"
 name = "firmware"
 version = "0.1.0"
 dependencies = [
+ "apps",
  "embassy-executor",
  "embassy-net",
  "embassy-sync 0.8.0",
@@ -1131,6 +1142,7 @@ dependencies = [
  "esp-rtos",
  "esp-storage",
  "heapless 0.9.3",
+ "launcher",
  "log",
 ]
 

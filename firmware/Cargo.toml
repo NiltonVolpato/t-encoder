@@ -8,6 +8,10 @@ publish.workspace = true
 description = "T-Encoder-Pro app launcher — device firmware (xtensa-esp32s3 only)."
 
 [dependencies]
+# Ours.
+launcher = { path = "../launcher" }
+apps = { path = "../apps" }
+
 # Upstream drivers (vendor/rust-enc submodule).
 enc-config = { workspace = true }
 enc-co5300 = { workspace = true }
