@@ -253,6 +253,16 @@ pub enum FlushError {
     Spi(BusError),
 }
 
+/// Lets `ui` deliver a frame without naming this type: the renderer owns the
+/// framebuffer and pushes changed rectangles here.
+impl ui::Panel for Display {
+    type Error = FlushError;
+
+    fn flush(&mut self, rect: ui::DirtyRect, framebuffer: &[u8]) -> Result<(), FlushError> {
+        self.flush_rect(rect.x, rect.y, rect.w, rect.h, framebuffer)
+    }
+}
+
 impl Display {
     /// The CO5300 driver over a borrowed bus. `Co5300` is a plain wrapper over
     /// the bus and the panel geometry with no state of its own, so building one

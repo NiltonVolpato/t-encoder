@@ -3,11 +3,13 @@
 //! Slint is depended on **only here**. Apps drive properties on the generated
 //! components; nothing else in the workspace links a renderer.
 //!
-//! Rendering uses `RepaintBufferType::ReusedBuffer`, so `render` returns a
-//! `PhysicalRegion` describing what actually changed. We flush only that
-//! region, which matters because PSRAM bandwidth (~14-15 MB/s measured) is the
-//! frame-rate ceiling on this board — touching fewer bytes beats drawing them
-//! faster.
+//! Rendering uses `RepaintBufferType::ReusedBuffer`, so Slint reports what
+//! actually changed and we flush only that, which matters because PSRAM
+//! bandwidth (~14-15 MB/s measured) is the frame-rate ceiling on this board —
+//! touching fewer bytes beats drawing them faster.
+//!
+//! The framebuffer lives here and goes nowhere: [`Ui::render`] draws into it
+//! and hands the changed region straight to a [`Panel`].
 //!
 //! Slint renders **straight into the panel's byte order** via a custom
 //! [`TargetPixel`], so there is one framebuffer and no conversion pass.
@@ -100,6 +102,25 @@ pub struct DirtyRect {
     pub h: u16,
 }
 
+/// Where a rendered frame goes — the panel, as much of it as rendering needs.
+///
+/// A trait because `ui` cannot name the firmware's display type and should not
+/// want to. It is also the whole reason the framebuffer can stay private: with
+/// somewhere to send the pixels, [`Ui`] has no need to hand them out.
+pub trait Panel {
+    /// What can go wrong writing to the panel.
+    type Error: core::fmt::Debug;
+
+    /// Writes the pixels of `rect` out to the display.
+    ///
+    /// `framebuffer` is the whole frame in panel byte order, at full-frame
+    /// stride; `rect` says which part of it changed.
+    ///
+    /// # Errors
+    /// Returns the panel's own error if the transfer fails.
+    fn flush(&mut self, rect: DirtyRect, framebuffer: &[u8]) -> Result<(), Self::Error>;
+}
+
 /// Minimal `no_std` platform: a window and a clock, nothing more.
 ///
 /// Slint does **not** take the event loop — `MinimalSoftwareWindow` is driven
@@ -118,19 +139,30 @@ impl Platform for DevicePlatform {
     }
 }
 
-/// The live UI: the Slint window plus the root component.
+/// The live UI: the Slint window, the root component, and the framebuffer they
+/// render into.
+///
+/// The framebuffer is **private on purpose**. Nothing outside this crate writes
+/// pixels — apps publish properties and Slint draws — so handing the buffer out
+/// only created a seam where the caller had to remember to render and flush the
+/// same bytes in the right order.
 pub struct Ui {
     window: Rc<MinimalSoftwareWindow>,
     shell: Shell,
+    framebuffer: &'static mut [u8],
 }
 
 impl Ui {
-    /// Installs the platform and builds the shell.
+    /// Installs the platform, builds the shell, and takes the framebuffer.
+    ///
+    /// `framebuffer` must be `WIDTH * HEIGHT * 2` bytes; the caller owns the
+    /// memory it comes from (PSRAM, here) and this crate owns its contents from
+    /// now on.
     ///
     /// # Errors
     /// Returns an error if a platform was already installed or the component
     /// could not be created.
-    pub fn new() -> Result<Ui, PlatformError> {
+    pub fn new(framebuffer: &'static mut [u8]) -> Result<Ui, PlatformError> {
         let window = MinimalSoftwareWindow::new(RepaintBufferType::ReusedBuffer);
         window.set_size(slint::PhysicalSize::new(WIDTH, HEIGHT));
         slint::platform::set_platform(Box::new(DevicePlatform {
@@ -138,7 +170,11 @@ impl Ui {
         }))
         .map_err(|_| PlatformError::from("a Slint platform was already installed"))?;
         let shell = Shell::new()?;
-        Ok(Ui { window, shell })
+        Ok(Ui {
+            window,
+            shell,
+            framebuffer,
+        })
     }
 
     /// The root component, for setting properties.
@@ -147,19 +183,35 @@ impl Ui {
         &self.shell
     }
 
-    /// Renders one frame into `fb_bytes` and returns the region that changed,
-    /// or `None` if nothing needed redrawing.
+    /// Renders one frame and sends what changed to `panel`.
     ///
-    /// The bytes are already in the panel's order, so the caller streams the
-    /// dirty rows straight to the display with no conversion.
-    pub fn render(&self, fb_bytes: &mut [u8]) -> Option<DirtyRect> {
+    /// A frame in which nothing changed is `Ok(())` — Slint decides whether
+    /// there was anything to draw, and the caller has nothing to decide.
+    ///
+    /// # Errors
+    /// Returns the panel's own error if the transfer fails. The frame is still
+    /// rendered; only its delivery failed.
+    pub fn render<P: Panel>(&mut self, panel: &mut P) -> Result<(), P::Error> {
         slint::platform::update_timers_and_animations();
 
         let stride = usize::try_from(WIDTH).unwrap_or(0);
+        // Split the borrow: `draw_if_needed` takes the window by shared
+        // reference while the closure needs the framebuffer mutably.
+        let Ui {
+            window,
+            framebuffer,
+            ..
+        } = self;
+
         let mut dirty = None;
-        let drawn = self.window.draw_if_needed(|renderer| {
-            let pixels = as_pixels(fb_bytes);
+        let drawn = window.draw_if_needed(|renderer| {
+            let pixels = as_pixels(framebuffer);
             let region = renderer.render(pixels, stride);
+            // Only the bounding box: `PhysicalRegion` can hold up to three
+            // disjoint rectangles, and unioning them over-sends whenever the
+            // changes are scattered. Flushing them separately is a real
+            // improvement and a deliberate separate change — it alters the
+            // burst pattern on the wire, which is the variable A2 is measuring.
             let (origin, size) = (region.bounding_box_origin(), region.bounding_box_size());
             dirty = Some(DirtyRect {
                 x: u16::try_from(origin.x).unwrap_or(0),
@@ -169,7 +221,10 @@ impl Ui {
             });
         });
 
-        if drawn { dirty } else { None }
+        match dirty.filter(|_| drawn) {
+            Some(rect) => panel.flush(rect, framebuffer),
+            None => Ok(()),
+        }
     }
 
     /// Whether an animation is still running, so the caller keeps ticking.

@@ -52,26 +52,6 @@ const COUNTS_PER_DETENT: u8 = 2;
 /// Shared, lock-free app state mirrored between the UI loop and the Wi-Fi tasks.
 static APP_STATE: AppState = AppState::new(1);
 
-/// Flushes one dirty rectangle to the panel. Returns whether it went out; a
-/// `false` is already logged with its reason, so the caller can just fall back
-/// to a full-frame flush.
-fn flush_rect(display: &mut display::Display, fb_bytes: &[u8], rect: ui::DirtyRect) -> bool {
-    // Both failure modes are logged separately: a silent `false` here used to
-    // be indistinguishable from a DMA error, which made display corruption
-    // impossible to diagnose from a serial log.
-    match display.flush_rect(rect.x, rect.y, rect.w, rect.h, fb_bytes) {
-        Ok(()) => true,
-        Err(display::FlushError::OutOfRange) => {
-            log::error!("display: flush {rect:?} outside the framebuffer");
-            false
-        }
-        Err(display::FlushError::Spi(e)) => {
-            log::error!("display: flush {rect:?} failed: {e:?}");
-            false
-        }
-    }
-}
-
 /// Device uptime in whole seconds (monotonic), clamped to `u32`. Feeds the
 /// shared clock: current time = synced epoch + (uptime now − uptime at sync).
 fn uptime_secs() -> u32 {
@@ -275,9 +255,9 @@ async fn main(spawner: Spawner) -> ! {
     // actually mapped and large enough (else `from_raw_parts_mut` is UB).
     let framebuffer = heap::framebuffer(psram_start, psram_size, psram_ok, DISPLAY_BYTES);
     if let (Some(panel), Some(fb_buf)) = (panel.as_mut(), framebuffer) {
-        // Slint owns every pixel now, so the framebuffer stays a plain byte
-        // slice that only `ui` writes to.
-        let slint_ui = match ui::Ui::new() {
+        // The framebuffer goes into `Ui` and is never seen again: nothing out
+        // here writes pixels, so nothing out here needs the bytes.
+        let mut slint_ui = match ui::Ui::new(fb_buf) {
             Ok(slint_ui) => slint_ui,
             Err(e) => {
                 log::error!("ui: Slint init failed: {e}");
@@ -304,15 +284,17 @@ async fn main(spawner: Spawner) -> ! {
             state: &APP_STATE,
         };
         ui::set_now_ms(ctx.now_ms);
+        // Render and flush are one call now, so this is the pair's total. The
+        // split (~35 ms render, ~21 ms flush for a full frame) needs an
+        // instrumented build to recover, which is what it took to measure
+        // anyway.
         let started = Instant::now();
-        let rect = slint_ui.render(fb_buf);
-        let render_us = started.elapsed().as_micros();
-        let started = Instant::now();
-        let flushed = rect.is_some_and(|r| flush_rect(panel, fb_buf, r));
-        let flush_us = started.elapsed().as_micros();
-        log::info!(
-            "slint: first frame {rect:?} render={render_us}us flush={flush_us}us ok={flushed}"
-        );
+        let first = slint_ui.render(panel);
+        let frame_us = started.elapsed().as_micros();
+        match first {
+            Ok(()) => log::info!("slint: first frame {frame_us}us"),
+            Err(e) => log::error!("slint: first frame failed: {e:?}"),
+        }
 
         let mut press_start: Option<Instant> = None;
         // Whether the current hold already fired its long press.
@@ -474,10 +456,8 @@ async fn main(spawner: Spawner) -> ! {
                 });
             }
 
-            if let Some(rect) = slint_ui.render(fb_buf)
-                && !flush_rect(panel, fb_buf, rect)
-            {
-                log::error!("display: slint flush failed {rect:?}");
+            if let Err(e) = slint_ui.render(panel) {
+                log::error!("display: flush failed: {e:?}");
             }
         }
     }
