@@ -9,7 +9,7 @@ use enc_ui::{Dirty, InputEvent};
 
 use alloc::boxed::Box;
 
-use crate::app::{Action, App, AppFactory, Ctx, Feedback};
+use crate::app::{Action, App, AppFactory, Ctx, Feedback, ViewId};
 use crate::carousel::Carousel;
 
 /// Raw, denormalized input from the hardware loop.
@@ -85,6 +85,21 @@ impl<'a> Router<'a> {
     #[must_use]
     pub fn factories(&self) -> &[&'a dyn AppFactory] {
         self.factories
+    }
+
+    /// Which shell component should be on screen right now.
+    ///
+    /// This is what keeps the host free of per-app knowledge: it publishes the
+    /// id and never learns which app it belongs to.
+    #[must_use]
+    pub fn view_id(&self) -> ViewId {
+        match self.view {
+            View::Launcher => ViewId::LAUNCHER,
+            View::App(index) => self
+                .factories
+                .get(index)
+                .map_or(ViewId::LAUNCHER, |factory| factory.manifest().view),
+        }
     }
 
     /// Handles one raw input, returning the region to repaint.

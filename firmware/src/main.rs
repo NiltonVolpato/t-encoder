@@ -429,22 +429,17 @@ async fn main(spawner: Spawner) -> ! {
             // actually changed. `draw_if_needed` is cheap when nothing did, so
             // this runs unconditionally rather than being gated on `dirty`.
             ui::set_now_ms(ctx.now_ms);
+            // The host publishes the active view id and never learns which app
+            // it belongs to — that is the whole point of `Manifest::view`.
+            slint_ui.shell().set_view(i32::from(router.view_id().0));
             match router.view() {
-                View::Launcher => {
-                    slint_ui.shell().set_view(ui::ShellView::Launcher);
-                    slint_ui
-                        .shell()
-                        .set_selected(i32::try_from(router.selected()).unwrap_or(0));
-                }
-                // One app, so one arm. When a second Slint app lands this
-                // wants a view id on `Manifest` rather than a match here —
-                // otherwise it becomes the per-app match the App trait exists
-                // to avoid.
+                View::Launcher => slint_ui
+                    .shell()
+                    .set_selected(i32::try_from(router.selected()).unwrap_or(0)),
+                // Only republish when the app says something changed: setting a
+                // struct property unconditionally would dirty Slint every tick
+                // and repaint at full loop speed.
                 View::App(_) => {
-                    slint_ui.shell().set_view(ui::ShellView::Pomodoro);
-                    // Only republish when the app says something changed:
-                    // setting a struct property unconditionally would dirty
-                    // Slint every tick and repaint at full loop speed.
                     if dirty != Dirty::None {
                         router.sync_app();
                     }

@@ -11,7 +11,7 @@
 //! tick, so a slow frame cannot make it drift.
 
 use launcher::{
-    Action, App, AppFactory, Ctx, Dirty, Feedback, IconId, InputEvent, Manifest, Outcome,
+    Action, App, AppFactory, Ctx, Dirty, Feedback, IconId, InputEvent, Manifest, Outcome, ViewId,
 };
 use ui::{PomodoroState, Shell};
 
@@ -60,6 +60,7 @@ impl PomodoroFactory {
             manifest: Manifest {
                 name: "Pomodoro",
                 icon: IconId(0),
+                view: ViewId(1),
                 // Warm red — this is the "do not disturb" app.
                 accent: embedded_graphics::pixelcolor::Rgb565::new(28, 18, 8),
             },

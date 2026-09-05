@@ -9,10 +9,14 @@ import { Pomodoro, PomodoroState } from "apps/pomodoro.slint";
 
 export { CardData, PomodoroState }
 
-// Which screen is live. Mirrors `launcher::View` on the Rust side.
-export enum ShellView {
-    launcher,
-    pomodoro,
+// Which screen is live: `launcher::ViewId`, published verbatim by the host.
+// 0 is the launcher; every app claims its own id in its `Manifest`. An int
+// rather than an enum so the host never learns one app from another — adding
+// an app is an arm here, not a match arm in `main.rs`. Same shape as `IconId`
+// indexing `Icons.all`.
+export global Views {
+    out property <int> launcher: 0;
+    out property <int> pomodoro: 1;
 }
 
 export component Shell inherits Window {
@@ -22,7 +26,7 @@ export component Shell inherits Window {
     // True black is free on AMOLED and makes the accents pop.
     background: #000000;
 
-    in property <ShellView> view: ShellView.launcher;
+    in property <int> view: Views.launcher;
 
     // Launcher state.
     in property <[CardData]> cards;
@@ -32,14 +36,14 @@ export component Shell inherits Window {
     // an app is one property, one import and one `if` arm.
     in property <PomodoroState> pomodoro;
 
-    if view == ShellView.launcher: Launcher {
+    if view == Views.launcher: Launcher {
         width: parent.width;
         height: parent.height;
         cards: root.cards;
         selected: root.selected;
     }
 
-    if view == ShellView.pomodoro: Pomodoro {
+    if view == Views.pomodoro: Pomodoro {
         width: parent.width;
         height: parent.height;
         state: root.pomodoro;

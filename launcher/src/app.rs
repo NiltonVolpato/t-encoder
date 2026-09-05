@@ -15,6 +15,19 @@ use enc_ui::Dirty;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct IconId(pub u16);
 
+/// Selects which component of the shell's view tree an app is drawn by.
+///
+/// The host publishes this verbatim when the app is on screen, so it never has
+/// to know one app from another. `0` is the launcher itself; each app claims
+/// its own id, matching an arm in the shell.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ViewId(pub u16);
+
+impl ViewId {
+    /// The launcher's own view — the one id no app may claim.
+    pub const LAUNCHER: ViewId = ViewId(0);
+}
+
 /// Static description of an app, used to draw its launcher card.
 #[derive(Clone, Copy, Debug)]
 pub struct Manifest {
@@ -22,6 +35,8 @@ pub struct Manifest {
     pub name: &'static str,
     /// Icon to draw on the card.
     pub icon: IconId,
+    /// Which shell component draws this app.
+    pub view: ViewId,
     /// Accent colour for the card and any in-app highlights.
     pub accent: Rgb565,
 }

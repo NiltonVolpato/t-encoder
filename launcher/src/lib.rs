@@ -17,7 +17,7 @@ mod app;
 mod carousel;
 mod router;
 
-pub use app::{Action, App, AppFactory, Ctx, Feedback, IconId, Manifest, Outcome};
+pub use app::{Action, App, AppFactory, Ctx, Feedback, IconId, Manifest, Outcome, ViewId};
 pub use carousel::Carousel;
 pub use router::{Input, Router, View};
 

@@ -8,7 +8,7 @@ use core::cell::Cell;
 
 use crate::{
     Action, App, AppFactory, Ctx, Dirty, Feedback, IconId, Input, InputEvent, Manifest, Outcome,
-    Router, View, default_carousel, geometry,
+    Router, View, ViewId, default_carousel, geometry,
 };
 
 /// Shared counters, so a test can observe an app that the router created and
@@ -70,12 +70,20 @@ impl<'a> StubFactory<'a> {
             manifest: Manifest {
                 name,
                 icon: IconId(0),
+                view: ViewId(1),
                 accent: Rgb565::new(31, 0, 0),
             },
             log,
             action: Action::None,
             feedback: None,
         }
+    }
+
+    /// Gives this stub its own shell view, so a test can tell which app the
+    /// router is asking the host to draw.
+    fn with_view(mut self, view: ViewId) -> StubFactory<'a> {
+        self.manifest.view = view;
+        self
     }
 }
 
@@ -104,8 +112,8 @@ fn with_router(body: impl FnOnce(&mut Router<'_>, &Ctx<'_>)) {
         state: &state,
     };
     let log = Log::default();
-    let first = StubFactory::new("First", &log);
-    let second = StubFactory::new("Second", &log);
+    let first = StubFactory::new("First", &log).with_view(ViewId(1));
+    let second = StubFactory::new("Second", &log).with_view(ViewId(2));
     let registry: [&dyn AppFactory; 2] = [&first, &second];
     let mut router = Router::new(&registry, default_carousel(0));
     body(&mut router, &ctx);
@@ -157,6 +165,21 @@ fn short_press_launches_and_long_press_returns_home() {
 
         assert_eq!(router.handle(Input::LongPress, ctx), Dirty::Full);
         assert_eq!(router.view(), View::Launcher);
+    });
+}
+
+#[test]
+fn the_view_id_follows_the_active_app() {
+    with_router(|router, ctx| {
+        assert_eq!(router.view_id(), ViewId::LAUNCHER);
+        // Card 1 sits one pitch right of centre while card 0 is focal.
+        let x = router.carousel().card_centre_x(1, 0);
+        router.handle(Input::Touch { x, y: 195 }, ctx);
+        // The second app's own id, not its registry index — the host publishes
+        // this blind, so the two must not be conflated.
+        assert_eq!(router.view_id(), ViewId(2));
+        router.handle(Input::LongPress, ctx);
+        assert_eq!(router.view_id(), ViewId::LAUNCHER);
     });
 }
 
