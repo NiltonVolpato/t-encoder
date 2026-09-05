@@ -300,7 +300,7 @@ async fn main(spawner: Spawner) -> ! {
         let frame_us = started.elapsed().as_micros();
         match first {
             Ok(_) => log::info!("slint: first frame {frame_us}us"),
-            Err(e) => log::error!("slint: first frame failed: {e:?}"),
+            Err(e) => log::error!("slint: first frame failed: {e}"),
         }
         // Repaints since boot — only frames Slint actually drew, not loop
         // iterations, which is the number worth knowing.
@@ -478,7 +478,7 @@ async fn main(spawner: Spawner) -> ! {
                         log::info!("slint: frame {frames} {w}x{h}+{x},{y} {us}us");
                     }
                 }
-                Err(e) => log::error!("display: flush failed: {e:?}"),
+                Err(e) => log::error!("display: {e}"),
             }
         }
     }

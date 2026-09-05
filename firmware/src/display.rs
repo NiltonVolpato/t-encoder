@@ -253,6 +253,19 @@ pub enum FlushError {
     Spi(BusError),
 }
 
+/// Spelled out rather than derived: the two failures used to be logged
+/// separately, because a silent flush failure was indistinguishable from a DMA
+/// error and made display corruption impossible to diagnose from a serial log.
+/// Keeping them distinguishable is the point.
+impl core::fmt::Display for FlushError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            FlushError::OutOfRange => write!(f, "rectangle outside the framebuffer"),
+            FlushError::Spi(error) => write!(f, "DMA transfer failed: {error:?}"),
+        }
+    }
+}
+
 /// Lets `ui` deliver a frame without naming this type: the renderer owns the
 /// framebuffer and pushes changed rectangles here.
 impl ui::Panel for Display {

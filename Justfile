@@ -106,6 +106,41 @@ flash-log MARKER='boot: ready' TIMEOUT='180' TAIL='3':
         }
     }
 
+# What the firmware is made of. `bloaty` reads the section table fine but
+# refuses anything symbol-level on this target ("Unknown ELF machine value: 94"
+# — 94 is xtensa), so `-d compileunits` and `-d symbols` are out. The esp
+# toolchain's own `nm` has no such problem.
+#
+# The release profile sets `strip = "symbols"`, so the shipped binary has no
+# symbol table at all; this overrides that for one build via the environment
+# rather than editing the profile. It therefore relinks — expect a minute.
+size COUNT='25':
+    #!/usr/bin/env bash
+    set -euo pipefail
+    CARGO_PROFILE_RELEASE_STRIP=none cargo build -p firmware --release {{nostd}} 2>&1 \
+        | grep -Ev '^(warning|  |$|note:)' || true
+    bin=$(cargo metadata --format-version 1 --no-deps \
+        | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')/xtensa-esp32s3-none-elf/release/firmware
+    # Skip .debug_*: this build is unstripped, so debug info dwarfs everything
+    # and none of it is flashed.
+    echo "== sections (flashed + RAM; debug info omitted) =="
+    xtensa-esp32s3-elf-size -A "$bin" \
+        | awk '$2 ~ /^[0-9]+$/ && $2 > 0 && $1 !~ /^\.debug/ && $1 != "Total" {
+                 total += $2; printf "%9d  %s\n", $2, $1 }
+               END { printf "%9d  TOTAL\n", total }' \
+        | sort -rn
+    echo
+    echo "== {{COUNT}} largest symbols =="
+    # Column 3 is the symbol type; keep code and data. The positive-size test
+    # drops the linker's own absolutes (`_rwtext_len` reports -12832).
+    # `--size-sort` is ascending, so `tail` takes the largest without closing
+    # the pipe early — `head` here would SIGPIPE `nm` and trip `pipefail`.
+    xtensa-esp32s3-elf-nm --print-size --size-sort --radix=d -C "$bin" \
+        | awk 'toupper($3) ~ /^[TRDB]$/ && $2 + 0 > 0 {
+                 size = $2 + 0; $1=$2=$3=""; sub(/^ +/, "");
+                 printf "%9d  %s\n", size, $0 }' \
+        | tail -{{COUNT}} | sort -rn
+
 # Serial monitor only (no flash).
 monitor:
     espflash monitor
