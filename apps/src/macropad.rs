@@ -158,9 +158,6 @@ impl App for Macropad {
                 Some(entry) => Outcome::send_keys(entry.keys, Feedback::Beep),
                 None => Outcome::NONE,
             },
-            // Unreachable: the router turns touch into navigation and never
-            // forwards it, since this manifest does not ask for the raw panel.
-            InputEvent::Touch { .. } => Outcome::NONE,
         }
     }
 

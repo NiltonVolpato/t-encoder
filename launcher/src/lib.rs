@@ -6,8 +6,8 @@
 //! **Rendering and animation belong to Slint** (the `ui` crate) — this crate
 //! holds navigation state, not pixels.
 //!
-//! [`InputEvent`] is still reused from `enc_ui` rather than redefined. It is
-//! the last thing that crate is used for here — see the backlog.
+//! Nothing here depends on the `enc_ui` crate any more: what the launcher
+//! actually used of it was two small types, and both now live locally.
 
 #![no_std]
 
@@ -19,15 +19,12 @@ mod gesture;
 mod router;
 
 pub use app::{
-    Action, App, AppFactory, Ctx, Feedback, IconId, KeyChord, Manifest, Outcome, TouchAccess,
-    ViewId,
+    Action, App, AppFactory, Ctx, Feedback, IconId, InputEvent, KeyChord, Manifest, Outcome,
+    TouchAccess, ViewId,
 };
 pub use carousel::Carousel;
 pub use gesture::{Gesture, Recognizer, TouchPhase, TouchSample};
 pub use router::{Input, Router, View};
-
-// Re-exported so apps need only depend on `launcher`.
-pub use enc_ui::InputEvent;
 
 /// Panel geometry the launcher lays out against. Mirrors `enc_config::display`,
 /// duplicated here so this crate stays free of device dependencies.

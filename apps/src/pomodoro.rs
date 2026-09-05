@@ -188,9 +188,6 @@ impl App for Pomodoro {
                 }
                 Outcome::buzz(Feedback::Beep)
             }
-            // Unreachable: the router turns touch into navigation and never
-            // forwards it, since this manifest does not ask for the raw panel.
-            InputEvent::Touch { .. } => Outcome::NONE,
         }
     }
 

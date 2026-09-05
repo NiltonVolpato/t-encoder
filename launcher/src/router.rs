@@ -9,11 +9,11 @@
 //! the resulting [`Gesture`] means anything. An app receives raw samples only
 //! if its manifest asks for them.
 
-use enc_ui::InputEvent;
-
 use alloc::boxed::Box;
 
-use crate::app::{Action, App, AppFactory, Ctx, Feedback, KeyChord, Outcome, TouchAccess, ViewId};
+use crate::app::{
+    Action, App, AppFactory, Ctx, Feedback, InputEvent, KeyChord, Outcome, TouchAccess, ViewId,
+};
 use crate::carousel::Carousel;
 use crate::gesture::{Gesture, Recognizer, TouchSample};
 

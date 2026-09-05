@@ -9,9 +9,7 @@ description = "Pure app-launcher core: App trait, router, layout. No hardware."
 
 [dependencies]
 embedded-graphics = { workspace = true }
-# Pure, host-testable upstream crates: the Dirty/InputEvent vocabulary and the
-# shared atomic state.
-enc-ui = { workspace = true }
+# Shared atomic state, bridging apps, UI and networking.
 enc-state = { workspace = true }
 
 [lints]

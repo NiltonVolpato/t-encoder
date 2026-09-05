@@ -12,6 +12,21 @@ use enc_state::AppState;
 
 use crate::gesture::TouchSample;
 
+/// Normalized input, after the router has taken navigation out of the stream.
+///
+/// Owned here rather than reused from `enc_ui`, whose version also carries a
+/// `Touch` variant that cannot occur in this design: the router turns touch
+/// into gestures, and an app that wants the panel gets samples through
+/// [`App::touch`] instead. Keeping the impossible variant meant every app
+/// writing a match arm for it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InputEvent {
+    /// Encoder detents, signed; positive is clockwise.
+    Rotate(i32),
+    /// The encoder button was pressed and released.
+    Select,
+}
+
 /// Identifies an app's icon. Bound to a real sprite by the asset pipeline in
 /// P2; until then it is carried through the launcher untouched.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -207,7 +222,7 @@ pub trait App {
     fn on_exit(&mut self) {}
 
     /// Handles one input event.
-    fn handle(&mut self, event: enc_ui::InputEvent, ctx: &Ctx<'_>) -> Outcome;
+    fn handle(&mut self, event: InputEvent, ctx: &Ctx<'_>) -> Outcome;
 
     /// Handles one raw touch sample.
     ///

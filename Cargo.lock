@@ -1664,15 +1664,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "enc-ui"
-version = "0.1.0"
-dependencies = [
- "embedded-graphics",
- "enc-state",
- "heapless 0.9.3",
-]
-
-[[package]]
 name = "endi"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3602,7 +3593,6 @@ version = "0.1.0"
 dependencies = [
  "embedded-graphics",
  "enc-state",
- "enc-ui",
 ]
 
 [[package]]
