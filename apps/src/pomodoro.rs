@@ -11,7 +11,8 @@
 //! tick, so a slow frame cannot make it drift.
 
 use launcher::{
-    App, AppFactory, Ctx, Dirty, Feedback, IconId, InputEvent, Manifest, Outcome, ViewId,
+    App, AppFactory, Ctx, Dirty, Feedback, IconId, InputEvent, Manifest, Outcome, TouchAccess,
+    ViewId,
 };
 use ui::{PomodoroState, Shell};
 
@@ -63,6 +64,7 @@ impl PomodoroFactory {
                 view: ViewId(1),
                 // Warm red — this is the "do not disturb" app.
                 accent: embedded_graphics::pixelcolor::Rgb565::new(28, 18, 8),
+                touch: TouchAccess::Gestures,
             },
             shell,
         }
@@ -187,8 +189,8 @@ impl App for Pomodoro {
                 }
                 Outcome::buzz(Dirty::Full, Feedback::Beep)
             }
-            // Touch is reserved for global gestures and is disabled entirely
-            // today; see the plan. Apps never receive it.
+            // Unreachable: the router turns touch into navigation and never
+            // forwards it, since this manifest does not ask for the raw panel.
             InputEvent::Touch { .. } => Outcome::NONE,
         }
     }

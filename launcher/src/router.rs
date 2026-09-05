@@ -1,16 +1,21 @@
 //! The router: owns which app is active and how the user moves between them.
 //!
 //! Raw hardware input arrives as [`Input`]. The router consumes navigation
-//! itself (long-press to go home, short-press to launch) and forwards the rest
-//! to the active app as an [`InputEvent`], so an app never has to know about
-//! press durations or the launcher.
+//! itself (long-press to go home, short-press to launch, swipes to leave) and
+//! forwards the rest to the active app as an [`InputEvent`], so an app never
+//! has to know about press durations or the launcher.
+//!
+//! Touch is the router's throughout: samples feed a [`Recognizer`] and only
+//! the resulting [`Gesture`] means anything. An app receives raw samples only
+//! if its manifest asks for them.
 
 use enc_ui::{Dirty, InputEvent};
 
 use alloc::boxed::Box;
 
-use crate::app::{Action, App, AppFactory, Ctx, Feedback, KeyChord, ViewId};
+use crate::app::{Action, App, AppFactory, Ctx, Feedback, KeyChord, Outcome, TouchAccess, ViewId};
 use crate::carousel::Carousel;
+use crate::gesture::{Gesture, Recognizer, TouchSample};
 
 /// Raw, denormalized input from the hardware loop.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -21,8 +26,8 @@ pub enum Input {
     ShortPress,
     /// Button held past the long-press threshold.
     LongPress,
-    /// Touch down at panel coordinates.
-    Touch { x: i32, y: i32 },
+    /// One reading from the touch panel.
+    Touch(TouchSample),
 }
 
 /// What the user is currently looking at.
@@ -45,6 +50,7 @@ pub struct Router<'a> {
     active: Option<Box<dyn App + 'a>>,
     feedback: Option<Feedback>,
     keys: Option<KeyChord>,
+    gestures: Recognizer,
 }
 
 impl<'a> Router<'a> {
@@ -62,6 +68,7 @@ impl<'a> Router<'a> {
             active: None,
             feedback: None,
             keys: None,
+            gestures: Recognizer::new(),
         }
     }
 
@@ -106,10 +113,35 @@ impl<'a> Router<'a> {
 
     /// Handles one raw input, returning the region to repaint.
     pub fn handle(&mut self, input: Input, ctx: &Ctx<'_>) -> Dirty {
-        match self.view {
-            View::Launcher => self.handle_launcher(input, ctx),
-            View::App(_) => self.handle_app(input, ctx),
+        match input {
+            // Touch is the system's: it becomes navigation, unless the app on
+            // screen asked for the raw panel.
+            Input::Touch(sample) => self.handle_touch(sample, ctx),
+            // Long press is navigation everywhere, and never reaches an app.
+            // From the launcher there is nowhere to go back to.
+            Input::LongPress => match self.view {
+                View::Launcher => Dirty::None,
+                View::App(_) => self.go_home(),
+            },
+            Input::Rotate(delta) => match self.view {
+                View::Launcher => self.move_selection(delta),
+                View::App(_) => self.deliver(InputEvent::Rotate(delta), ctx),
+            },
+            Input::ShortPress => match self.view {
+                View::Launcher => self.launch(self.selected, ctx),
+                View::App(_) => self.deliver(InputEvent::Select, ctx),
+            },
         }
+    }
+
+    /// Tells the router whether the encoder button is physically down.
+    ///
+    /// Not an [`Input`] on purpose: [`Input::ShortPress`] fires on *release*,
+    /// up to the long-press threshold after the contact closed, whereas the
+    /// phantom touch a press generates has to be matched against the contact
+    /// itself. The firmware calls this every tick; unchanged states are free.
+    pub fn set_button(&mut self, down: bool, now_ms: u64) {
+        self.gestures.set_button(down, now_ms);
     }
 
     /// Ticks the running app, if any.
@@ -124,12 +156,7 @@ impl<'a> Router<'a> {
             return Dirty::None;
         };
         let outcome = app.tick(ctx);
-        self.feedback = self.feedback.or(outcome.feedback);
-        self.keys = self.keys.or(outcome.keys);
-        match outcome.action {
-            Action::None => outcome.dirty,
-            Action::Exit => self.go_home(),
-        }
+        self.apply(outcome)
     }
 
     /// Pushes the running app's state into the shared Slint tree.
@@ -152,51 +179,81 @@ impl<'a> Router<'a> {
         self.keys.take()
     }
 
-    fn handle_launcher(&mut self, input: Input, ctx: &Ctx<'_>) -> Dirty {
-        match input {
-            Input::Rotate(delta) => {
-                let next = self.carousel.step(self.selected, delta);
-                if next == self.selected {
-                    return Dirty::None;
-                }
-                self.selected = next;
-                // Slint owns the slide: setting `selected` on the shell drives
-                // an `animate x`, so there is no scroll state to keep here.
-                Dirty::Full
-            }
-            Input::ShortPress => self.launch(self.selected, ctx),
-            // Already home; nothing to go back to.
-            Input::LongPress => Dirty::None,
-            Input::Touch { x, y } => {
-                // Hit-test at the settled position: Slint owns the in-flight
-                // offset. Superseded once touch becomes global gestures.
-                let scroll = self.carousel.scroll_for(self.selected);
-                match self.carousel.hit_test(x, y, scroll) {
-                    Some(index) => {
-                        self.selected = index;
-                        self.launch(index, ctx)
-                    }
-                    None => Dirty::None,
-                }
-            }
+    /// Moves the launcher's highlight by `delta` cards.
+    fn move_selection(&mut self, delta: i32) -> Dirty {
+        let next = self.carousel.step(self.selected, delta);
+        if next == self.selected {
+            return Dirty::None;
         }
+        self.selected = next;
+        // Slint owns the slide: setting `selected` on the shell drives an
+        // `animate x`, so there is no scroll state to keep here.
+        Dirty::Full
     }
 
-    fn handle_app(&mut self, input: Input, ctx: &Ctx<'_>) -> Dirty {
-        // Long-press is navigation and never reaches the app.
-        if input == Input::LongPress {
-            return self.go_home();
-        }
-        let event = match input {
-            Input::Rotate(delta) => InputEvent::Rotate(delta),
-            Input::ShortPress => InputEvent::Select,
-            Input::Touch { x, y } => InputEvent::Touch { x, y },
-            Input::LongPress => return self.go_home(),
-        };
+    /// Forwards a normalized event to the running app.
+    fn deliver(&mut self, event: InputEvent, ctx: &Ctx<'_>) -> Dirty {
         let Some(app) = self.active.as_mut() else {
             return self.go_home();
         };
         let outcome = app.handle(event, ctx);
+        self.apply(outcome)
+    }
+
+    /// Routes one touch sample: to the app if it owns the panel, otherwise
+    /// through the recogniser and on to navigation.
+    fn handle_touch(&mut self, sample: TouchSample, ctx: &Ctx<'_>) -> Dirty {
+        if self.app_owns_touch() {
+            let Some(app) = self.active.as_mut() else {
+                return self.go_home();
+            };
+            let outcome = app.touch(sample, ctx);
+            return self.apply(outcome);
+        }
+        let Some(gesture) = self.gestures.push(sample) else {
+            return Dirty::None;
+        };
+        match self.view {
+            View::Launcher => self.handle_launcher_gesture(gesture, ctx),
+            // Swipe up is the primary way out of an app; swipe left is "back",
+            // which with one level of navigation is the same place. The rest is
+            // swallowed — apps do not see touch.
+            View::App(_) => match gesture {
+                Gesture::SwipeUp | Gesture::SwipeLeft => self.go_home(),
+                Gesture::SwipeDown | Gesture::SwipeRight | Gesture::Tap { .. } => Dirty::None,
+            },
+        }
+    }
+
+    /// The launcher's own view of touch: a tap picks a card.
+    fn handle_launcher_gesture(&mut self, gesture: Gesture, ctx: &Ctx<'_>) -> Dirty {
+        // Already home, so a swipe has nowhere to go.
+        let Gesture::Tap { x, y } = gesture else {
+            return Dirty::None;
+        };
+        // Hit-test at the settled position: Slint owns the in-flight offset.
+        let scroll = self.carousel.scroll_for(self.selected);
+        match self.carousel.hit_test(x, y, scroll) {
+            Some(index) => {
+                self.selected = index;
+                self.launch(index, ctx)
+            }
+            None => Dirty::None,
+        }
+    }
+
+    /// Whether the app on screen asked for the raw panel.
+    fn app_owns_touch(&self) -> bool {
+        let View::App(index) = self.view else {
+            return false;
+        };
+        self.factories
+            .get(index)
+            .is_some_and(|factory| factory.manifest().touch == TouchAccess::Raw)
+    }
+
+    /// Banks an app's feedback and keystroke requests and resolves its action.
+    fn apply(&mut self, outcome: Outcome) -> Dirty {
         self.feedback = self.feedback.or(outcome.feedback);
         self.keys = self.keys.or(outcome.keys);
         match outcome.action {

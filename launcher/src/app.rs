@@ -10,6 +10,8 @@ use embedded_graphics::pixelcolor::Rgb565;
 use enc_state::AppState;
 use enc_ui::Dirty;
 
+use crate::gesture::TouchSample;
+
 /// Identifies an app's icon. Bound to a real sprite by the asset pipeline in
 /// P2; until then it is carried through the launcher untouched.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -28,6 +30,20 @@ impl ViewId {
     pub const LAUNCHER: ViewId = ViewId(0);
 }
 
+/// Who owns the touch panel while an app is on screen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum TouchAccess {
+    /// The router owns it: touch becomes navigation and the app never sees a
+    /// sample. What every encoder-driven app wants, and the default.
+    #[default]
+    Gestures,
+    /// The app owns it: every sample goes to [`App::touch`] and no gesture is
+    /// recognised, so a canvas can draw a stroke right across the screen
+    /// without quitting itself. The encoder long-press is then the only way
+    /// out — which is exactly why it is kept.
+    Raw,
+}
+
 /// Static description of an app, used to draw its launcher card.
 #[derive(Clone, Copy, Debug)]
 pub struct Manifest {
@@ -39,6 +55,8 @@ pub struct Manifest {
     pub view: ViewId,
     /// Accent colour for the card and any in-app highlights.
     pub accent: Rgb565,
+    /// Whether this app wants the raw panel instead of the router's gestures.
+    pub touch: TouchAccess,
 }
 
 /// Per-frame context handed to every app.
@@ -187,6 +205,16 @@ pub trait App {
 
     /// Handles one input event.
     fn handle(&mut self, event: enc_ui::InputEvent, ctx: &Ctx<'_>) -> Outcome;
+
+    /// Handles one raw touch sample.
+    ///
+    /// Only ever called for an app whose [`Manifest::touch`] is
+    /// [`TouchAccess::Raw`]. By default the panel belongs to the router, which
+    /// turns strokes into navigation, so this stays a no-op.
+    fn touch(&mut self, sample: TouchSample, ctx: &Ctx<'_>) -> Outcome {
+        let _ = (sample, ctx);
+        Outcome::NONE
+    }
 
     /// Periodic update — countdowns, adopting external state changes.
     fn tick(&mut self, ctx: &Ctx<'_>) -> Outcome {

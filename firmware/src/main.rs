@@ -21,6 +21,7 @@ mod display;
 mod heap;
 mod input;
 mod settings;
+mod touch;
 
 use buzzer::Feedback;
 use embassy_executor::Spawner;
@@ -252,12 +253,25 @@ async fn main(spawner: Spawner) -> ! {
     );
     let mut encoder = Encoder::new(COUNTS_PER_DETENT);
 
-    // Touch is DISABLED until gestures land, and its driver has been removed
-    // rather than left dead: raw taps reaching apps made them unusable, because
-    // pressing the encoder also registers a touch, so every press delivered a
-    // spurious tap on top of it. Nothing polls the I2C bus now. Gesture
-    // recognition needs swipe tracking rather than the old tap-per-press
-    // model, so it lands as new code — see the touch section of the plan.
+    // CHSC5816 touch. The panel belongs to the router, which recognises swipes
+    // and taps and turns them into navigation; apps see no samples unless their
+    // manifest asks for the raw panel. Touch is optional — the encoder drives
+    // everything on its own — so a failure here is logged and life goes on.
+    match touch::init(touch::TouchPins {
+        i2c: peripherals.I2C0,
+        sda: peripherals.GPIO5,
+        scl: peripherals.GPIO6,
+        int: peripherals.GPIO9,
+        rst: peripherals.GPIO8,
+    })
+    .await
+    {
+        Some(device) => match touch::task(device) {
+            Ok(token) => spawner.spawn(token),
+            Err(_) => log::error!("boot: failed to spawn touch task"),
+        },
+        None => log::error!("boot: touch unavailable"),
+    }
 
     // The framebuffer lives at the base of PSRAM; only build it if PSRAM is
     // actually mapped and large enough (else `from_raw_parts_mut` is UB).
@@ -324,8 +338,8 @@ async fn main(spawner: Spawner) -> ! {
         log::info!("boot: ready");
 
         loop {
-            // Fixed 5ms tick keeps the encoder/button responsive; taps arrive
-            // asynchronously from the touch task via TOUCH_TAPS.
+            // Fixed 5ms tick keeps the encoder/button responsive; touch samples
+            // arrive asynchronously from the touch task via `touch::SAMPLES`.
             Timer::after(Duration::from_millis(5)).await;
             let mut dirty = Dirty::None;
             let ctx = Ctx {
@@ -349,6 +363,10 @@ async fn main(spawner: Spawner) -> ! {
             // The short press then fires on release, but only if the long press
             // did not already claim this hold.
             let down = button.is_low(); // active-low (pull-up + button to GND)
+            // The gesture recogniser needs the *contact*, not the press event:
+            // pressing the encoder also registers a touch, and that phantom has
+            // to be discarded before it navigates anywhere.
+            router.set_button(down, ctx.now_ms);
             if down {
                 match press_start {
                     None => press_start = Some(Instant::now()),
@@ -367,6 +385,12 @@ async fn main(spawner: Spawner) -> ! {
                     buzzer::signal(Feedback::Beep);
                 }
                 long_fired = false;
+            }
+
+            // Touch → router. Drained to empty so a stroke's `Up` is never left
+            // queued behind a slow frame, which would strand the gesture.
+            while let Ok(sample) = touch::SAMPLES.try_receive() {
+                dirty = dirty.merge(router.handle(UiInput::Touch(sample), &ctx));
             }
 
             // Observe the DHCP lease: publish `Connected` only with an IPv4

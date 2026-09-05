@@ -6,7 +6,8 @@
 //! the same split as the buzzer.
 
 use launcher::{
-    App, AppFactory, Ctx, Dirty, Feedback, IconId, InputEvent, KeyChord, Manifest, Outcome, ViewId,
+    App, AppFactory, Ctx, Dirty, Feedback, IconId, InputEvent, KeyChord, Manifest, Outcome,
+    TouchAccess, ViewId,
 };
 use ui::{MacroEntry, MacropadState, Shell};
 
@@ -100,6 +101,7 @@ impl MacropadFactory {
                 // Cool blue — the "connected to something" app, as far from the
                 // pomodoro's warm red as the palette goes.
                 accent: embedded_graphics::pixelcolor::Rgb565::new(8, 34, 31),
+                touch: TouchAccess::Gestures,
             },
             shell,
         }
@@ -156,7 +158,8 @@ impl App for Macropad {
                 Some(entry) => Outcome::send_keys(Dirty::Full, entry.keys, Feedback::Beep),
                 None => Outcome::NONE,
             },
-            // Touch is reserved for global gestures; see the plan.
+            // Unreachable: the router turns touch into navigation and never
+            // forwards it, since this manifest does not ask for the raw panel.
             InputEvent::Touch { .. } => Outcome::NONE,
         }
     }

@@ -1,4 +1,7 @@
-//! Host tests for the pure launcher core.
+//! Host tests for the pure launcher core: navigation, the app lifecycle and
+//! carousel geometry. Touch has its own file — see [`gesture`].
+
+mod gesture;
 
 use embedded_graphics::pixelcolor::Rgb565;
 use enc_state::AppState;
@@ -8,8 +11,48 @@ use core::cell::Cell;
 
 use crate::{
     Action, App, AppFactory, Ctx, Dirty, Feedback, IconId, Input, InputEvent, KeyChord, Manifest,
-    Outcome, Router, View, ViewId, default_carousel, geometry,
+    Outcome, Router, TouchAccess, TouchPhase, TouchSample, View, ViewId, default_carousel,
+    geometry,
 };
+
+/// A sample at `(x, y)`, `at_ms` after boot.
+fn sample(phase: TouchPhase, x: i32, y: i32, at_ms: u64) -> TouchSample {
+    TouchSample { phase, x, y, at_ms }
+}
+
+/// A tap landing at `at_ms`: down and up in the same place.
+fn tap_at(x: i32, y: i32, at_ms: u64) -> [TouchSample; 2] {
+    [
+        sample(TouchPhase::Down, x, y, at_ms),
+        sample(TouchPhase::Up, x, y, at_ms.saturating_add(40)),
+    ]
+}
+
+/// A tap at boot, for the tests that do not care when it happened.
+fn tap(x: i32, y: i32) -> [TouchSample; 2] {
+    tap_at(x, y, 0)
+}
+
+/// A stroke from `(x0, y0)` to `(x1, y1)`, with one midpoint move.
+fn swipe(x0: i32, y0: i32, x1: i32, y1: i32) -> [TouchSample; 3] {
+    [
+        sample(TouchPhase::Down, x0, y0, 0),
+        sample(
+            TouchPhase::Move,
+            i32::midpoint(x0, x1),
+            i32::midpoint(y0, y1),
+            40,
+        ),
+        sample(TouchPhase::Up, x1, y1, 80),
+    ]
+}
+
+/// Feeds a whole stroke to the router, returning the merged dirty region.
+fn feed(router: &mut Router<'_>, ctx: &Ctx<'_>, stroke: &[TouchSample]) -> Dirty {
+    stroke.iter().fold(Dirty::None, |dirty, &s| {
+        dirty.merge(router.handle(Input::Touch(s), ctx))
+    })
+}
 
 /// Shared counters, so a test can observe an app that the router created and
 /// dropped without ever holding a reference to it.
@@ -19,6 +62,7 @@ struct Log {
     exited: Cell<u32>,
     dropped: Cell<u32>,
     events: Cell<u32>,
+    touches: Cell<u32>,
 }
 
 /// A stub app whose whole life is recorded in a shared [`Log`].
@@ -45,6 +89,13 @@ impl App for StubApp<'_> {
             },
             Action::Exit => Outcome::exit(),
         }
+    }
+
+    fn touch(&mut self, _sample: TouchSample, _ctx: &Ctx<'_>) -> Outcome {
+        self.log
+            .touches
+            .set(self.log.touches.get().saturating_add(1));
+        Outcome::dirty(Dirty::Full)
     }
 
     fn sync(&self) {}
@@ -75,6 +126,7 @@ impl<'a> StubFactory<'a> {
                 icon: IconId(0),
                 view: ViewId(1),
                 accent: Rgb565::new(31, 0, 0),
+                touch: TouchAccess::Gestures,
             },
             log,
             action: Action::None,
@@ -87,6 +139,12 @@ impl<'a> StubFactory<'a> {
     /// router is asking the host to draw.
     fn with_view(mut self, view: ViewId) -> StubFactory<'a> {
         self.manifest.view = view;
+        self
+    }
+
+    /// Makes this stub one of the apps that owns the panel outright.
+    fn with_raw_touch(mut self) -> StubFactory<'a> {
+        self.manifest.touch = TouchAccess::Raw;
         self
     }
 }
@@ -179,7 +237,7 @@ fn the_view_id_follows_the_active_app() {
         assert_eq!(router.view_id(), ViewId::LAUNCHER);
         // Card 1 sits one pitch right of centre while card 0 is focal.
         let x = router.carousel().card_centre_x(1, 0);
-        router.handle(Input::Touch { x, y: 195 }, ctx);
+        feed(router, ctx, &tap(x, 195));
         // The second app's own id, not its registry index — the host publishes
         // this blind, so the two must not be conflated.
         assert_eq!(router.view_id(), ViewId(2));
@@ -192,31 +250,6 @@ fn the_view_id_follows_the_active_app() {
 fn long_press_on_the_launcher_does_nothing() {
     with_router(|router, ctx| {
         assert_eq!(router.handle(Input::LongPress, ctx), Dirty::None);
-        assert_eq!(router.view(), View::Launcher);
-    });
-}
-
-#[test]
-fn tapping_a_card_launches_that_card() {
-    with_router(|router, ctx| {
-        let carousel = *router.carousel();
-        // Card 1 sits one pitch right of centre while card 0 is focal.
-        let x = carousel.card_centre_x(1, 0);
-        let dirty = router.handle(Input::Touch { x, y: 195 }, ctx);
-        assert_eq!(dirty, Dirty::Full);
-        assert_eq!(router.view(), View::App(1));
-        assert_eq!(router.selected(), 1);
-    });
-}
-
-#[test]
-fn tapping_outside_the_cards_does_nothing() {
-    with_router(|router, ctx| {
-        // Well above the card band.
-        assert_eq!(
-            router.handle(Input::Touch { x: 195, y: 10 }, ctx),
-            Dirty::None
-        );
         assert_eq!(router.view(), View::Launcher);
     });
 }

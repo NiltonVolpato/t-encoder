@@ -1,9 +1,10 @@
 //! Pure app-launcher core.
 //!
 //! Hardware-independent so it unit-tests on the host: the [`App`] trait, the
-//! [`Router`] that owns which app is active, and carousel geometry for
-//! hit-testing. **Rendering and animation belong to Slint** (the `ui` crate) —
-//! this crate holds navigation state, not pixels.
+//! [`Router`] that owns which app is active, carousel geometry for hit-testing,
+//! and the touch-gesture [`Recognizer`] that turns strokes into navigation.
+//! **Rendering and animation belong to Slint** (the `ui` crate) — this crate
+//! holds navigation state, not pixels.
 //!
 //! Input and dirty-region types are reused from `enc_ui` rather than
 //! redefined — the launcher sits alongside upstream's UI code, not on top of a
@@ -15,12 +16,15 @@ extern crate alloc;
 
 mod app;
 mod carousel;
+mod gesture;
 mod router;
 
 pub use app::{
-    Action, App, AppFactory, Ctx, Feedback, IconId, KeyChord, Manifest, Outcome, ViewId,
+    Action, App, AppFactory, Ctx, Feedback, IconId, KeyChord, Manifest, Outcome, TouchAccess,
+    ViewId,
 };
 pub use carousel::Carousel;
+pub use gesture::{Gesture, Recognizer, TouchPhase, TouchSample};
 pub use router::{Input, Router, View};
 
 // Re-exported so apps need only depend on `launcher`.
