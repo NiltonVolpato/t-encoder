@@ -24,7 +24,13 @@ enc-net = { workspace = true }
 
 embedded-hal = { workspace = true }
 embedded-graphics = { workspace = true }
-embassy-sync = { workspace = true }
+# NOT the workspace's 0.8: trouble-host 0.6 is built on embassy-sync 0.7, and
+# its GATT macros generate code against the *calling* crate's `embassy_sync`
+# path with no way to override it. Nothing here crosses a crate boundary with an
+# embassy-sync type, so this crate can sit on 0.7 while the esp stack stays on
+# 0.8. Revisit when esp-radio and trouble-host agree again.
+embassy-sync = "0.7"
+embassy-futures = { workspace = true }
 embassy-net = { workspace = true }
 esp-hal = { workspace = true }
 esp-rtos = { workspace = true }
@@ -34,6 +40,10 @@ esp-storage = { workspace = true }
 embedded-storage = { workspace = true }
 esp-alloc = { workspace = true }
 esp-radio = { workspace = true }
+bt-hci = { workspace = true }
+trouble-host = { workspace = true }
+# trouble-host's `#[gatt_service]` macro expands to `static_cell::` paths.
+static_cell = { workspace = true }
 embassy-executor = { workspace = true }
 embassy-time = { workspace = true }
 log = { workspace = true }

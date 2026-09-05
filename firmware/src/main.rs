@@ -15,6 +15,7 @@
 
 extern crate alloc;
 
+mod ble;
 mod buzzer;
 mod display;
 mod heap;
@@ -202,6 +203,17 @@ async fn main(spawner: Spawner) -> ! {
     match buzzer::task(peripherals.LEDC, peripherals.GPIO17) {
         Ok(token) => spawner.spawn(token),
         Err(_) => log::error!("boot: failed to spawn buzzer task"),
+    }
+
+    // Entropy source for the BLE security manager. It is an RAII guard: the
+    // TRNG is only available while this is alive, and `main` never returns, so
+    // binding it here keeps it up for the life of the program.
+    let _trng_source = esp_hal::rng::TrngSource::new(peripherals.RNG, peripherals.ADC1);
+
+    // BLE HID keyboard for the macropad app.
+    match ble::task(peripherals.BT) {
+        Ok(token) => spawner.spawn(token),
+        Err(_) => log::error!("boot: failed to spawn ble task"),
     }
 
     // Bring up the CO5300 display.

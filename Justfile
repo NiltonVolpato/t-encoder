@@ -51,7 +51,7 @@ flash-only *ARGS:
 # `just flash` never terminates on its own, which makes it useless from a
 # script. Fails fast (non-zero) on timeout or if the app gives up on the
 # display. TIMEOUT is in seconds and covers the build too.
-flash-log MARKER='boot: ready' TIMEOUT='180':
+flash-log MARKER='boot: ready' TIMEOUT='180' TAIL='3':
     #!/usr/bin/env expect -f
 
     # Tear the whole tree down — just, cargo and espflash. Every exit path goes
@@ -77,7 +77,21 @@ flash-log MARKER='boot: ready' TIMEOUT='180':
     set timeout {{TIMEOUT}}
     set pid [spawn just flash]
     expect {
-        "{{MARKER}}" { shutdown $pid 0 }
+        "{{MARKER}}" {
+            # Keep reading for a moment. Exiting the instant the marker lands
+            # hides whatever follows it — a panic one line later is invisible,
+            # which is exactly how a BLE panic got missed once.
+            set timeout {{TAIL}}
+            expect {
+                "PANIC" {
+                    send_user "\n*** panicked after '{{MARKER}}'\n"
+                    shutdown $pid 1
+                }
+                timeout {}
+                eof {}
+            }
+            shutdown $pid 0
+        }
         "display unavailable" {
             send_user "\n*** app came up without a display\n"
             shutdown $pid 1
