@@ -95,16 +95,21 @@ fn router_takes_card_count_from_the_registry() {
 }
 
 #[test]
-fn rotate_moves_selection_and_dirties_only_the_card_band() {
+fn rotate_moves_selection_and_stays_a_partial_repaint() {
     with_router(|router, ctx| {
         let dirty = router.handle(Input::Rotate(1), ctx);
         assert_eq!(router.selected(), 1);
-        assert_eq!(dirty, router.carousel().band());
         assert_ne!(
             dirty,
             Dirty::Full,
             "a slide must not repaint the whole panel"
         );
+        // The band is bounded well under a full frame — that is the whole
+        // point of banding, since a full flush costs ~15ms.
+        let Dirty::Band { h, .. } = dirty else {
+            panic!("expected a band");
+        };
+        assert!(h < geometry::HEIGHT, "band must be smaller than the panel");
     });
 }
 
@@ -325,6 +330,43 @@ fn scroll_settles_on_the_selected_card() {
         router.handle(Input::Rotate(1), ctx);
         let carousel = *router.carousel();
         assert_eq!(router.scroll_at(10_000), carousel.scroll_for(1));
+    });
+}
+
+/// Regression: the launcher's dirty band must cover the page dots, not just
+/// the cards. Moving the selection moves the filled dot, and a band that stops
+/// at the card strip leaves a stale dot on the panel — visible as a wrong dot
+/// that never corrects until some unrelated full flush.
+#[test]
+fn launcher_dirty_band_covers_the_page_dots() {
+    let carousel = default_carousel(3);
+    let Dirty::Band { y, h } = crate::launcher_band(&carousel) else {
+        panic!("launcher band must be a band, not Full/None");
+    };
+    let top = i32::from(y);
+    let bottom = top + i32::from(h);
+
+    // The dots live at y = 344 with an 8px diameter, so [340, 348).
+    assert!(top <= 340, "band starts at {top}, above the dots");
+    assert!(bottom >= 348, "band ends at {bottom}, cutting the dots off");
+
+    // And it must still cover the cards.
+    let Dirty::Band { y: cy, h: ch } = carousel.band() else {
+        panic!("carousel band must be a band");
+    };
+    assert!(top <= i32::from(cy));
+    assert!(bottom >= i32::from(cy) + i32::from(ch));
+}
+
+#[test]
+fn rotating_dirties_the_dots_too() {
+    with_router(|router, ctx| {
+        let dirty = router.handle(Input::Rotate(1), ctx);
+        assert_eq!(
+            dirty,
+            crate::launcher_band(router.carousel()),
+            "a selection change must dirty the dots, not only the cards"
+        );
     });
 }
 

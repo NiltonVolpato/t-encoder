@@ -10,6 +10,7 @@ use enc_ui::{Dirty, InputEvent};
 use crate::anim::Tween;
 use crate::app::{Action, App, Canvas, Ctx};
 use crate::carousel::Carousel;
+use crate::render::launcher_band;
 
 /// Duration of a carousel slide.
 const SLIDE_MS: u32 = 250;
@@ -106,7 +107,7 @@ impl<'a> Router<'a> {
                 if self.scroll.is_settled(ctx.now_ms) {
                     Dirty::None
                 } else {
-                    self.carousel.band()
+                    launcher_band(&self.carousel)
                 }
             }
             View::App(index) => self
@@ -137,7 +138,7 @@ impl<'a> Router<'a> {
                 self.scroll =
                     self.scroll
                         .retarget(self.carousel.scroll_for(next), ctx.now_ms, SLIDE_MS);
-                self.carousel.band()
+                launcher_band(&self.carousel)
             }
             Input::ShortPress => self.launch(self.selected, ctx),
             // Already home; nothing to go back to.

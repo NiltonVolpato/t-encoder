@@ -64,12 +64,23 @@ fn flush_band(display: &mut display::Display, fb_bytes: &[u8], y: u16, h: u16) -
     let row_bytes = usize::from(DISPLAY_W).saturating_mul(2);
     let start = usize::from(y).saturating_mul(row_bytes);
     let end = start.saturating_add(usize::from(h).saturating_mul(row_bytes));
-    fb_bytes.get(start..end).is_some_and(|band| {
-        display
-            .driver
-            .flush_window(0, y, DISPLAY_W, h, band, display::DMA_CHUNK)
-            .is_ok()
-    })
+    // Both failure modes are logged separately: a silent `false` here used to
+    // be indistinguishable from a DMA error, which made display corruption
+    // impossible to diagnose from a serial log.
+    let Some(band) = fb_bytes.get(start..end) else {
+        log::error!("display: band y={y} h={h} out of framebuffer range");
+        return false;
+    };
+    match display
+        .driver
+        .flush_window(0, y, DISPLAY_W, h, band, display::DMA_CHUNK)
+    {
+        Ok(()) => true,
+        Err(e) => {
+            log::error!("display: band flush y={y} h={h} failed: {e:?}");
+            false
+        }
+    }
 }
 
 /// Device uptime in whole seconds (monotonic), clamped to `u32`. Feeds the
@@ -399,13 +410,22 @@ async fn main(spawner: Spawner) -> ! {
                     View::App(_) => router.render_app(&ctx, &mut fb),
                 }
                 let flushed = match dirty {
-                    Dirty::Full => panel.driver.flush(fb.bytes(), display::DMA_CHUNK).is_ok(),
+                    Dirty::Full => match panel.driver.flush(fb.bytes(), display::DMA_CHUNK) {
+                        Ok(()) => true,
+                        Err(e) => {
+                            log::error!("display: full flush failed: {e:?}");
+                            false
+                        }
+                    },
                     Dirty::Band { y, h } => flush_band(panel, fb.bytes(), y, h),
                     Dirty::None => true,
                 };
                 // Repair the whole frame if a band flush failed.
-                if !flushed && panel.driver.flush(fb.bytes(), display::DMA_CHUNK).is_err() {
-                    log::error!("display: flush failed");
+                if !flushed {
+                    log::warn!("display: repairing frame after a failed flush");
+                    if let Err(e) = panel.driver.flush(fb.bytes(), display::DMA_CHUNK) {
+                        log::error!("display: repair flush also failed: {e:?}");
+                    }
                 }
             }
         }

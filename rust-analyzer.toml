@@ -15,7 +15,3 @@ RUSTUP_TOOLCHAIN = "esp"
 [check]
 command = "check"
 extraArgs = ["-Zbuild-std=alloc,core", "-Zbuild-std-features=compiler-builtins-mem", "--release"]
-
-[procMacro]
-enable = true
-server = "/opt/homebrew/bin/rust-analyzer"

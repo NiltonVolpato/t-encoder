@@ -19,7 +19,7 @@ mod router;
 pub use anim::Tween;
 pub use app::{Action, App, Canvas, Ctx, IconId, Manifest, Outcome};
 pub use carousel::Carousel;
-pub use render::render_launcher;
+pub use render::{launcher_band, render_launcher};
 pub use router::{Input, Router, View};
 
 // Re-exported so apps need only depend on `launcher`.

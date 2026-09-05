@@ -15,7 +15,9 @@ use embedded_graphics::primitives::{
 use embedded_graphics::text::{Alignment, Baseline, Text, TextStyleBuilder};
 
 use crate::app::{Canvas, Ctx};
+use crate::carousel::Carousel;
 use crate::router::Router;
+use enc_ui::Dirty;
 
 /// Panel background. True black costs no power on AMOLED and makes the accent
 /// colours pop, so the launcher is deliberately black rather than dark grey.
@@ -30,6 +32,29 @@ const DOTS_Y: i32 = 344;
 const DOT_PITCH: i32 = 18;
 /// Page dot radius.
 const DOT_DIAMETER: u32 = 8;
+
+/// Dirty region covering everything the launcher repaints when the selection
+/// changes.
+///
+/// This is the card strip **union the page dots**, not just the cards: moving
+/// the selection also moves the filled dot, and the dots sit well below
+/// [`Carousel::band`]. Reporting only the card band leaves a stale dot on the
+/// panel until something else forces a full flush.
+#[must_use]
+pub fn launcher_band(carousel: &Carousel) -> Dirty {
+    carousel.band().merge(dots_band())
+}
+
+/// Dirty band covering the page-dot strip, matching [`draw_dots`]'s geometry:
+/// each dot's top edge is `DOTS_Y - radius` and it is `DOT_DIAMETER` tall.
+fn dots_band() -> Dirty {
+    let radius = i32::try_from(DOT_DIAMETER.saturating_div(2)).unwrap_or(0);
+    let top = DOTS_Y.saturating_sub(radius).max(0);
+    Dirty::Band {
+        y: u16::try_from(top).unwrap_or(0),
+        h: u16::try_from(DOT_DIAMETER).unwrap_or(0),
+    }
+}
 
 /// Scales a colour toward black by `numerator/16`, for unfocused cards.
 ///
