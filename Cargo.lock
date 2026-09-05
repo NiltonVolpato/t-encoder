@@ -1354,6 +1354,9 @@ name = "launcher"
 version = "0.1.0"
 dependencies = [
  "embedded-graphics",
+ "enc-co5300",
+ "enc-state",
+ "enc-ui",
  "heapless 0.9.3",
 ]
 

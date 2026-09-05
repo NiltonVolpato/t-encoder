@@ -1,13 +1,27 @@
 //! Pure app-launcher core.
 //!
-//! Hardware-independent so it unit-tests on the host: the `App` trait, the
-//! router that owns which app is active, input/dirty types, and layout maths.
-//! The device binary (`firmware`) supplies the framebuffer and the event source.
+//! Hardware-independent so it unit-tests on the host: the [`App`] trait, the
+//! [`Router`] that owns which app is active, carousel layout, and tweening.
+//! The device binary supplies the framebuffer, the clock, and the event source.
 //!
-//! Populated in P1 — this is currently the crate skeleton, present so the
-//! host-test and lint pipeline is wired end to end.
+//! Input and dirty-region types are reused from `enc_ui` rather than
+//! redefined — the launcher sits alongside upstream's UI code, not on top of a
+//! replacement for it.
 
 #![no_std]
+
+mod anim;
+mod app;
+mod carousel;
+mod router;
+
+pub use anim::Tween;
+pub use app::{Action, App, Canvas, Ctx, IconId, Manifest, Outcome};
+pub use carousel::Carousel;
+pub use router::{Input, Router, View};
+
+// Re-exported so apps need only depend on `launcher`.
+pub use enc_ui::{Dirty, InputEvent};
 
 /// Panel geometry the launcher lays out against. Mirrors `enc_config::display`,
 /// duplicated here so this crate stays free of device dependencies.
@@ -24,12 +38,19 @@ pub mod geometry {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::geometry;
-
-    #[test]
-    fn centre_is_panel_midpoint() {
-        assert_eq!(geometry::centre(), (195, 195));
+/// A carousel sized for the 390x390 round panel: one focal card with its
+/// neighbours peeking in at the rim.
+#[must_use]
+pub fn default_carousel(count: usize) -> Carousel {
+    Carousel {
+        pitch: 210,
+        card_w: 180,
+        card_h: 200,
+        centre_x: 195,
+        centre_y: 195,
+        count,
     }
 }
+
+#[cfg(test)]
+mod tests;
