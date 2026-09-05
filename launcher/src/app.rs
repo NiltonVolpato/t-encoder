@@ -108,21 +108,35 @@ impl Outcome {
     }
 }
 
-/// A launchable app.
+/// Creates app instances. The registry holds factories, not apps.
 ///
-/// Object-safe on purpose: the registry holds `&mut dyn App`, so a new app
-/// costs one struct and one registry line.
-pub trait App {
-    /// Static description used to draw this app's launcher card.
+/// An app exists only while it is on screen: launching constructs it, leaving
+/// drops it. That is what makes quitting and reopening a genuine reset, and it
+/// means an unopened app costs nothing but its manifest. The cost is that an
+/// app cannot run in the background — a timer left behind is gone. Background
+/// work will need its own shape (a timer service, or an app-supplied runner),
+/// not simply keeping every app alive forever.
+pub trait AppFactory {
+    /// Static description used to draw this app's launcher card. Lives on the
+    /// factory because the launcher must describe apps that are not running.
     fn manifest(&self) -> &Manifest;
 
-    /// Called when the app becomes active, before its first render.
-    fn on_enter(&mut self, ctx: &Ctx<'_>) {
-        let _ = ctx;
-    }
+    /// Builds a fresh instance, with no state carried over from last time.
+    ///
+    /// The instance borrows from the factory (`+ '_`), so a factory can lend
+    /// its app a handle — a Slint component, a shared bus — without that data
+    /// having to be `'static`. An app never outlives its factory, and factories
+    /// live in the registry for the life of the program.
+    fn create(&self) -> alloc::boxed::Box<dyn App + '_>;
+}
 
-    /// Called when the app is left. Should drop transient state; anything that
-    /// must survive belongs in shared state or flash.
+/// A running app.
+///
+/// Object-safe on purpose: the router owns a `Box<dyn App>`, so adding an app
+/// costs one struct, one factory and one registry line.
+pub trait App {
+    /// Called before the instance is dropped. Anything that must survive
+    /// belongs in shared state or flash — the instance itself does not.
     fn on_exit(&mut self) {}
 
     /// Handles one input event.

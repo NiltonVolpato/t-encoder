@@ -6,6 +6,8 @@
 
 #![no_std]
 
+extern crate alloc;
+
 mod pomodoro;
 
-pub use pomodoro::Pomodoro;
+pub use pomodoro::{Pomodoro, PomodoroFactory};

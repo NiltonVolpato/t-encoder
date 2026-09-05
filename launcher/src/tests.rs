@@ -3,55 +3,38 @@
 use embedded_graphics::pixelcolor::Rgb565;
 use enc_state::AppState;
 
+use alloc::boxed::Box;
+use core::cell::Cell;
+
 use crate::{
-    Action, App, Ctx, Dirty, Feedback, IconId, Input, InputEvent, Manifest, Outcome, Router, View,
-    default_carousel, geometry,
+    Action, App, AppFactory, Ctx, Dirty, Feedback, IconId, Input, InputEvent, Manifest, Outcome,
+    Router, View, default_carousel, geometry,
 };
 
-/// Records what the router did to it, so lifecycle can be asserted.
-struct StubApp {
-    manifest: Manifest,
-    entered: u32,
-    exited: u32,
-    events: u32,
-    /// Returned from `handle`, letting a test drive self-exit.
+/// Shared counters, so a test can observe an app that the router created and
+/// dropped without ever holding a reference to it.
+#[derive(Default)]
+struct Log {
+    created: Cell<u32>,
+    exited: Cell<u32>,
+    dropped: Cell<u32>,
+    events: Cell<u32>,
+}
+
+/// A stub app whose whole life is recorded in a shared [`Log`].
+struct StubApp<'a> {
+    log: &'a Log,
     action: Action,
-    /// Returned from `handle`, letting a test drive buzzer requests.
     feedback: Option<Feedback>,
 }
 
-impl StubApp {
-    fn new(name: &'static str) -> StubApp {
-        StubApp {
-            manifest: Manifest {
-                name,
-                icon: IconId(0),
-                accent: Rgb565::new(31, 0, 0),
-            },
-            entered: 0,
-            exited: 0,
-            events: 0,
-            action: Action::None,
-            feedback: None,
-        }
-    }
-}
-
-impl App for StubApp {
-    fn manifest(&self) -> &Manifest {
-        &self.manifest
-    }
-
-    fn on_enter(&mut self, _ctx: &Ctx<'_>) {
-        self.entered = self.entered.saturating_add(1);
-    }
-
+impl App for StubApp<'_> {
     fn on_exit(&mut self) {
-        self.exited = self.exited.saturating_add(1);
+        self.log.exited.set(self.log.exited.get().saturating_add(1));
     }
 
     fn handle(&mut self, _event: InputEvent, _ctx: &Ctx<'_>) -> Outcome {
-        self.events = self.events.saturating_add(1);
+        self.log.events.set(self.log.events.get().saturating_add(1));
         match self.action {
             Action::None => Outcome {
                 dirty: Dirty::Full,
@@ -65,18 +48,66 @@ impl App for StubApp {
     fn sync(&self) {}
 }
 
-/// Runs `body` with a two-app router. The registry borrow is fiddly enough
-/// that building it once here keeps the tests readable.
+impl Drop for StubApp<'_> {
+    fn drop(&mut self) {
+        self.log
+            .dropped
+            .set(self.log.dropped.get().saturating_add(1));
+    }
+}
+
+/// Builds [`StubApp`]s and counts how many it has made.
+struct StubFactory<'a> {
+    manifest: Manifest,
+    log: &'a Log,
+    action: Action,
+    feedback: Option<Feedback>,
+}
+
+impl<'a> StubFactory<'a> {
+    fn new(name: &'static str, log: &'a Log) -> StubFactory<'a> {
+        StubFactory {
+            manifest: Manifest {
+                name,
+                icon: IconId(0),
+                accent: Rgb565::new(31, 0, 0),
+            },
+            log,
+            action: Action::None,
+            feedback: None,
+        }
+    }
+}
+
+impl AppFactory for StubFactory<'_> {
+    fn manifest(&self) -> &Manifest {
+        &self.manifest
+    }
+
+    fn create(&self) -> Box<dyn App + '_> {
+        self.log
+            .created
+            .set(self.log.created.get().saturating_add(1));
+        Box::new(StubApp {
+            log: self.log,
+            action: self.action,
+            feedback: self.feedback,
+        })
+    }
+}
+
+/// Runs `body` with a two-app router.
 fn with_router(body: impl FnOnce(&mut Router<'_>, &Ctx<'_>)) {
     let state = AppState::new(4);
     let ctx = Ctx {
         now_ms: 0,
         state: &state,
     };
-    let mut first = StubApp::new("First");
-    let mut second = StubApp::new("Second");
-    let mut registry: [&mut dyn App; 2] = [&mut first, &mut second];
-    let mut router = Router::new(&mut registry, default_carousel(0));
+    let log = Log::default();
+    let first = StubFactory::new("First", &log);
+    let second = StubFactory::new("Second", &log);
+    let registry: [&dyn AppFactory; 2] = [&first, &second];
+    let mut router = Router::new(&registry, default_carousel(0));
     body(&mut router, &ctx);
 }
 
@@ -135,45 +166,6 @@ fn long_press_on_the_launcher_does_nothing() {
         assert_eq!(router.handle(Input::LongPress, ctx), Dirty::None);
         assert_eq!(router.view(), View::Launcher);
     });
-}
-
-#[test]
-fn long_press_never_reaches_the_app() {
-    let state = AppState::new(4);
-    let ctx = Ctx {
-        now_ms: 0,
-        state: &state,
-    };
-    let mut first = StubApp::new("First");
-    {
-        let mut registry: [&mut dyn App; 1] = [&mut first];
-        let mut router = Router::new(&mut registry, default_carousel(0));
-        router.handle(Input::ShortPress, &ctx);
-        router.handle(Input::LongPress, &ctx);
-    }
-    assert_eq!(first.events, 0, "navigation must be consumed by the router");
-    assert_eq!(first.entered, 1);
-    assert_eq!(first.exited, 1);
-}
-
-#[test]
-fn an_app_can_exit_itself() {
-    let state = AppState::new(4);
-    let ctx = Ctx {
-        now_ms: 0,
-        state: &state,
-    };
-    let mut first = StubApp::new("First");
-    first.action = Action::Exit;
-    {
-        let mut registry: [&mut dyn App; 1] = [&mut first];
-        let mut router = Router::new(&mut registry, default_carousel(0));
-        router.handle(Input::ShortPress, &ctx);
-        assert_eq!(router.view(), View::App(0));
-        router.handle(Input::ShortPress, &ctx);
-        assert_eq!(router.view(), View::Launcher);
-    }
-    assert_eq!(first.exited, 1, "self-exit must still run on_exit");
 }
 
 #[test]
@@ -265,6 +257,47 @@ fn launcher_tick_is_never_dirty() {
 
 /// Apps cannot touch the buzzer directly, so the router collects their
 /// requests for the firmware to act on.
+
+#[test]
+fn long_press_never_reaches_the_app() {
+    let state = AppState::new(1);
+    let ctx = Ctx {
+        now_ms: 0,
+        state: &state,
+    };
+    let log = Log::default();
+    let factory = StubFactory::new("First", &log);
+    let registry: [&dyn AppFactory; 1] = [&factory];
+    let mut router = Router::new(&registry, default_carousel(0));
+
+    router.handle(Input::ShortPress, &ctx); // launch
+    router.handle(Input::LongPress, &ctx); // back home
+
+    assert_eq!(log.events.get(), 0, "navigation is consumed by the router");
+    assert_eq!(log.created.get(), 1);
+    assert_eq!(log.exited.get(), 1);
+}
+
+#[test]
+fn an_app_can_exit_itself() {
+    let state = AppState::new(1);
+    let ctx = Ctx {
+        now_ms: 0,
+        state: &state,
+    };
+    let log = Log::default();
+    let mut factory = StubFactory::new("First", &log);
+    factory.action = Action::Exit;
+    let registry: [&dyn AppFactory; 1] = [&factory];
+    let mut router = Router::new(&registry, default_carousel(0));
+
+    router.handle(Input::ShortPress, &ctx);
+    assert_eq!(router.view(), View::App(0));
+    router.handle(Input::ShortPress, &ctx);
+    assert_eq!(router.view(), View::Launcher);
+    assert_eq!(log.exited.get(), 1, "self-exit still runs on_exit");
+}
+
 #[test]
 fn feedback_requests_reach_the_router() {
     let state = AppState::new(1);
@@ -272,67 +305,50 @@ fn feedback_requests_reach_the_router() {
         now_ms: 0,
         state: &state,
     };
-    let mut first = StubApp::new("First");
-    first.feedback = Some(Feedback::Haptic);
-    let mut registry: [&mut dyn App; 1] = [&mut first];
-    let mut router = Router::new(&mut registry, default_carousel(0));
+    let log = Log::default();
+    let mut factory = StubFactory::new("First", &log);
+    factory.feedback = Some(Feedback::Haptic);
+    let registry: [&dyn AppFactory; 1] = [&factory];
+    let mut router = Router::new(&registry, default_carousel(0));
 
-    router.handle(Input::ShortPress, &ctx); // launch; no app event yet
+    router.handle(Input::ShortPress, &ctx); // launch; the app sees no event
     assert_eq!(router.take_feedback(), None);
 
-    router.handle(Input::ShortPress, &ctx); // now the app sees a Select
+    router.handle(Input::ShortPress, &ctx); // now a Select reaches it
     assert_eq!(router.take_feedback(), Some(Feedback::Haptic));
     assert_eq!(router.take_feedback(), None, "taking clears it");
 }
 
-/// A countdown must not stop because the user went back to the launcher, and
-/// its alarm has to fire wherever they are.
+/// The point of the factory model: leaving an app destroys it, so reopening is
+/// a genuine reset rather than resuming whatever it was doing.
 #[test]
-fn background_apps_keep_ticking() {
-    /// Counts ticks so a test can prove it ran while off screen.
-    struct Ticker {
-        manifest: Manifest,
-        ticks: u32,
-    }
-
-    impl App for Ticker {
-        fn manifest(&self) -> &Manifest {
-            &self.manifest
-        }
-        fn handle(&mut self, _event: InputEvent, _ctx: &Ctx<'_>) -> Outcome {
-            Outcome::NONE
-        }
-        fn tick(&mut self, _ctx: &Ctx<'_>) -> Outcome {
-            self.ticks = self.ticks.saturating_add(1);
-            Outcome::dirty(Dirty::Full)
-        }
-        fn sync(&self) {}
-    }
-
+fn leaving_an_app_drops_it_and_reopening_builds_a_fresh_one() {
     let state = AppState::new(1);
     let ctx = Ctx {
         now_ms: 0,
         state: &state,
     };
-    let mut background = Ticker {
-        manifest: Manifest {
-            name: "Background",
-            icon: IconId(0),
-            accent: Rgb565::new(0, 0, 31),
-        },
-        ticks: 0,
-    };
-    {
-        let mut registry: [&mut dyn App; 1] = [&mut background];
-        let mut router = Router::new(&mut registry, default_carousel(0));
-        // Never launched: the router stays on the launcher throughout.
+    let log = Log::default();
+    let factory = StubFactory::new("First", &log);
+    let registry: [&dyn AppFactory; 1] = [&factory];
+    let mut router = Router::new(&registry, default_carousel(0));
+
+    router.handle(Input::ShortPress, &ctx);
+    assert_eq!(log.created.get(), 1);
+    assert_eq!(log.dropped.get(), 0, "still running");
+
+    router.handle(Input::LongPress, &ctx);
+    assert_eq!(log.dropped.get(), 1, "leaving must drop the instance");
+
+    router.handle(Input::ShortPress, &ctx);
+    assert_eq!(log.created.get(), 2, "reopening builds a new instance");
+}
+
+/// Nothing runs off screen: an app that is not on screen does not exist.
+#[test]
+fn nothing_ticks_while_on_the_launcher() {
+    with_router(|router, ctx| {
         assert_eq!(router.view(), View::Launcher);
-        let dirty = router.tick(&ctx);
-        assert_eq!(
-            dirty,
-            Dirty::None,
-            "an off-screen app has nothing to repaint"
-        );
-    }
-    assert_eq!(background.ticks, 1, "background app must still have ticked");
+        assert_eq!(router.tick(ctx), Dirty::None);
+    });
 }

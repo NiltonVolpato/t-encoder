@@ -33,7 +33,7 @@ use esp_hal::psram;
 use esp_hal::rng::Rng;
 use esp_hal::timer::timg::TimerGroup;
 // `Input` is aliased to `UiInput`: esp-hal's GPIO `Input` already owns that name.
-use launcher::{App, Ctx, Dirty, Input as UiInput, Router, View};
+use launcher::{AppFactory, Ctx, Dirty, Input as UiInput, Router, View};
 // `as_weak` on the generated Slint component comes from this trait.
 use slint::ComponentHandle;
 
@@ -91,11 +91,11 @@ fn now_ms() -> u64 {
 
 /// Builds the Slint card model from the app registry, so the carousel is
 /// driven by the same manifests the router uses — one source of truth.
-fn app_cards(apps: &[&mut dyn App]) -> slint::ModelRc<ui::CardData> {
-    let cards: alloc::vec::Vec<ui::CardData> = apps
+fn app_cards(factories: &[&dyn AppFactory]) -> slint::ModelRc<ui::CardData> {
+    let cards: alloc::vec::Vec<ui::CardData> = factories
         .iter()
-        .map(|app| {
-            let manifest = app.manifest();
+        .map(|factory| {
+            let manifest = factory.manifest();
             ui::CardData {
                 name: manifest.name.into(),
                 accent: rgb565_to_slint(manifest.accent),
@@ -178,12 +178,7 @@ async fn main(spawner: Spawner) -> ! {
     if psram_ok {
         log::info!("psram: smoke test OK (octal mode confirmed)");
         // Separate (non-global) PSRAM heap for app bulk, past the framebuffer.
-        if !heap::init_psram_heap(
-            psram_start,
-            psram_size,
-            DISPLAY_BYTES.saturating_mul(2),
-            PSRAM_PROBE_LEN,
-        ) {
+        if !heap::init_psram_heap(psram_start, psram_size, DISPLAY_BYTES, PSRAM_PROBE_LEN) {
             log::error!("psram: heap region not registered (range invalid/too small)");
         }
     } else {
@@ -257,10 +252,10 @@ async fn main(spawner: Spawner) -> ! {
     // recognition needs swipe tracking rather than the old tap-per-press
     // model, so it lands as new code — see the touch section of the plan.
 
-    // The framebuffers live at the base of PSRAM; only build them if PSRAM is
+    // The framebuffer lives at the base of PSRAM; only build it if PSRAM is
     // actually mapped and large enough (else `from_raw_parts_mut` is UB).
-    let framebuffers = psram_framebuffers(psram_start, psram_size, psram_ok);
-    if let (Some(panel), Some((render_buf, flush_buf))) = (panel.as_mut(), framebuffers) {
+    let framebuffer = psram_framebuffer(psram_start, psram_size, psram_ok);
+    if let (Some(panel), Some(fb_buf)) = (panel.as_mut(), framebuffer) {
         // Slint owns every pixel now, so the framebuffer stays a plain byte
         // slice that only `ui` writes to.
         let slint_ui = match ui::Ui::new() {
@@ -276,11 +271,11 @@ async fn main(spawner: Spawner) -> ! {
         // The app registry. Adding an app is its constructor plus one line
         // here — no enum variant, no match arm. `main` never returns, so these
         // locals live for the whole program and need no `StaticCell`.
-        let mut pomodoro = apps::Pomodoro::new(slint_ui.shell().as_weak());
-        let mut registry: [&mut dyn App; 1] = [&mut pomodoro];
-        let mut router = Router::new(&mut registry, launcher::default_carousel(0));
+        let pomodoro = apps::PomodoroFactory::new(slint_ui.shell().as_weak());
+        let registry: [&dyn AppFactory; 1] = [&pomodoro];
+        let mut router = Router::new(&registry, launcher::default_carousel(0));
 
-        slint_ui.shell().set_cards(app_cards(router.apps()));
+        slint_ui.shell().set_cards(app_cards(router.factories()));
         slint_ui.shell().set_selected(0);
 
         // Initial paint: the launcher, since that is where the router starts.
@@ -290,10 +285,10 @@ async fn main(spawner: Spawner) -> ! {
         };
         ui::set_now_ms(ctx.now_ms);
         let started = Instant::now();
-        let rect = slint_ui.render(render_buf, flush_buf);
+        let rect = slint_ui.render(fb_buf);
         let render_us = started.elapsed().as_micros();
         let started = Instant::now();
-        let flushed = rect.is_some_and(|r| flush_band(panel, flush_buf, r.y, r.h));
+        let flushed = rect.is_some_and(|r| flush_band(panel, fb_buf, r.y, r.h));
         let flush_us = started.elapsed().as_micros();
         log::info!(
             "slint: first frame {rect:?} render={render_us}us flush={flush_us}us ok={flushed}"
@@ -462,8 +457,8 @@ async fn main(spawner: Spawner) -> ! {
                 });
             }
 
-            if let Some(rect) = slint_ui.render(render_buf, flush_buf)
-                && !flush_band(panel, flush_buf, rect.y, rect.h)
+            if let Some(rect) = slint_ui.render(fb_buf)
+                && !flush_band(panel, fb_buf, rect.y, rect.h)
             {
                 log::error!("display: slint flush failed {rect:?}");
             }
@@ -476,20 +471,14 @@ async fn main(spawner: Spawner) -> ! {
     }
 }
 
-/// Builds the two PSRAM-backed framebuffers, or `None` if PSRAM is unavailable
-/// or too small. Gating here keeps `from_raw_parts_mut` from ever running on an
-/// invalid (e.g. `0..0`) range.
+/// Builds the PSRAM-backed framebuffer, or `None` if PSRAM is unavailable or
+/// smaller than a full frame. Gating here keeps `from_raw_parts_mut` from ever
+/// running on an invalid (e.g. `0..0`) range.
 ///
-/// Two buffers, not one: Slint renders into the first and reads it back between
-/// frames (`ReusedBuffer`), so it must stay in Slint's native-endian format.
-/// The second holds the big-endian copy the panel DMA streams from.
-fn psram_framebuffers(
-    start: *mut u8,
-    size: usize,
-    ok: bool,
-) -> Option<(&'static mut [u8], &'static mut [u8])> {
-    let needed = DISPLAY_BYTES.saturating_mul(2);
-    if !ok || start.is_null() || size < needed {
+/// One buffer: Slint renders directly in the panel's byte order via a custom
+/// `TargetPixel`, so no conversion pass and no second buffer are needed.
+fn psram_framebuffer(start: *mut u8, size: usize, ok: bool) -> Option<&'static mut [u8]> {
+    if !ok || start.is_null() || size < DISPLAY_BYTES {
         return None;
     }
     // SAFETY: `start`/`size` come from a successful `Psram` init; the region is
@@ -497,9 +486,7 @@ fn psram_framebuffers(
     // long. The framebuffer sits at the PSRAM base and never overlaps the
     // smoke-test probe (top 4 KiB). `u8` has alignment 1, so the pointer is
     // always suitably aligned.
-    let both = unsafe { core::slice::from_raw_parts_mut(start, needed) };
-    let (render, flush) = both.split_at_mut(DISPLAY_BYTES);
-    Some((render, flush))
+    Some(unsafe { core::slice::from_raw_parts_mut(start, DISPLAY_BYTES) })
 }
 
 /// Writes a 4 KiB pattern to the top of PSRAM, reads it back, and reports
