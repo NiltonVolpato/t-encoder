@@ -10,6 +10,9 @@
 //! - [`PSRAM_HEAP`] is a **separate, non-global** heap in PSRAM for the app's
 //!   bulk allocations (`Vec::new_in(&PSRAM_HEAP)`), so radio allocations can
 //!   never spill to PSRAM (PSRAM is unsafe for radio queues/atomics).
+//!
+//! PSRAM bring-up lives here too — [`smoke_test`] proves the chip is actually
+//! talking before [`framebuffer`] hands out a slice of it.
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
@@ -26,6 +29,10 @@ pub const INTERNAL_HEAP_EXTRA: usize = 128 * 1024;
 
 /// Separate, non-global heap backed by PSRAM (External capability) for app bulk.
 pub static PSRAM_HEAP: EspHeap = EspHeap::empty();
+
+/// PSRAM smoke-test probe length (written at the top of PSRAM, and reserved
+/// from the heap so nothing else ever lands there).
+pub const PROBE_LEN: usize = 4096;
 
 /// Guards [`init_psram_heap`] against a second registration (which would add an
 /// overlapping region and let the allocator hand out aliased blocks).
@@ -67,4 +74,53 @@ pub fn init_psram_heap(
         ));
     }
     true
+}
+
+/// Writes a [`PROBE_LEN`] pattern to the top of PSRAM, reads it back, and
+/// reports whether it round-trips.
+///
+/// A failure almost always means the configured PSRAM mode (octal/quad) does
+/// not match the module — this board is octal, and a quad config fails here.
+pub fn smoke_test(start: *mut u8, size: usize) -> bool {
+    if size < PROBE_LEN {
+        log::error!("psram: too small for smoke test ({size} bytes)");
+        return false;
+    }
+    let base = unsafe { start.add(size.saturating_sub(PROBE_LEN)) };
+    for i in 0..PROBE_LEN {
+        let byte = u8::try_from((i ^ 0xA5) & 0xFF).unwrap_or(0);
+        unsafe { core::ptr::write_volatile(base.add(i), byte) };
+    }
+    for i in 0..PROBE_LEN {
+        let want = u8::try_from((i ^ 0xA5) & 0xFF).unwrap_or(0);
+        let got = unsafe { core::ptr::read_volatile(base.add(i)) };
+        if got != want {
+            log::error!("psram: mismatch at {i}: want {want:#04x} got {got:#04x}");
+            return false;
+        }
+    }
+    true
+}
+
+/// Builds the PSRAM-backed framebuffer, or `None` if PSRAM is unavailable or
+/// smaller than a full frame. Gating here keeps `from_raw_parts_mut` from ever
+/// running on an invalid (e.g. `0..0`) range.
+///
+/// One buffer: Slint renders directly in the panel's byte order via a custom
+/// `TargetPixel`, so no conversion pass and no second buffer are needed.
+pub fn framebuffer(
+    start: *mut u8,
+    size: usize,
+    ok: bool,
+    bytes: usize,
+) -> Option<&'static mut [u8]> {
+    if !ok || start.is_null() || size < bytes {
+        return None;
+    }
+    // SAFETY: `start`/`size` come from a successful `Psram` init; the region is
+    // mapped for the whole program lifetime and is at least `bytes` long. The
+    // framebuffer sits at the PSRAM base and never overlaps the smoke-test probe
+    // (top `PROBE_LEN`). `u8` has alignment 1, so the pointer is always suitably
+    // aligned.
+    Some(unsafe { core::slice::from_raw_parts_mut(start, bytes) })
 }

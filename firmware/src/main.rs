@@ -48,8 +48,6 @@ const DISPLAY_BYTES: usize = enc_config::display::FRAMEBUFFER_BYTES;
 const LONG_PRESS: Duration = Duration::from_millis(600);
 /// Quadrature counts per mechanical detent (this encoder emits 2 per click).
 const COUNTS_PER_DETENT: u8 = 2;
-/// PSRAM smoke-test probe length (top of PSRAM); also reserved from the heap.
-const PSRAM_PROBE_LEN: usize = 4096;
 
 /// Shared, lock-free app state mirrored between the UI loop and the Wi-Fi tasks.
 static APP_STATE: AppState = AppState::new(1);
@@ -171,11 +169,11 @@ async fn main(spawner: Spawner) -> ! {
     );
     let (psram_start, psram_size) = psram.raw_parts();
     log::info!("psram: {} KiB mapped at {psram_start:p}", psram_size / 1024);
-    let psram_ok = psram_smoke_test(psram_start, psram_size);
+    let psram_ok = heap::smoke_test(psram_start, psram_size);
     if psram_ok {
         log::info!("psram: smoke test OK (octal mode confirmed)");
         // Separate (non-global) PSRAM heap for app bulk, past the framebuffer.
-        if !heap::init_psram_heap(psram_start, psram_size, DISPLAY_BYTES, PSRAM_PROBE_LEN) {
+        if !heap::init_psram_heap(psram_start, psram_size, DISPLAY_BYTES, heap::PROBE_LEN) {
             log::error!("psram: heap region not registered (range invalid/too small)");
         }
     } else {
@@ -275,7 +273,7 @@ async fn main(spawner: Spawner) -> ! {
 
     // The framebuffer lives at the base of PSRAM; only build it if PSRAM is
     // actually mapped and large enough (else `from_raw_parts_mut` is UB).
-    let framebuffer = psram_framebuffer(psram_start, psram_size, psram_ok);
+    let framebuffer = heap::framebuffer(psram_start, psram_size, psram_ok, DISPLAY_BYTES);
     if let (Some(panel), Some(fb_buf)) = (panel.as_mut(), framebuffer) {
         // Slint owns every pixel now, so the framebuffer stays a plain byte
         // slice that only `ui` writes to.
@@ -325,11 +323,7 @@ async fn main(spawner: Spawner) -> ! {
         // synced sample, and robust to SNTP wall-clock steps).
         let mut last_minute_slot: Option<u32> = None;
         let mut fired_slot: Option<u32> = None;
-        // Persisted settings + a debounce: save ~2 s after a change settles so
-        // rapid toggling collapses to one flash write.
-        let mut saved = saved;
-        let mut last_pending = saved;
-        let mut dirty_since: Option<Instant> = None;
+        let mut persister = settings::Persister::new(saved);
 
         // Terminal boot marker: everything is up and the UI loop is about to
         // start. `just flash-log` watches for this line and exits, so keep the
@@ -433,25 +427,7 @@ async fn main(spawner: Spawner) -> ! {
 
             // Persist alarm/toggles to flash, debounced so a burst of edits
             // becomes one write a couple of seconds after the change settles.
-            let pending = settings::Settings {
-                alarm: APP_STATE.alarm(),
-                toggles: APP_STATE.toggles(),
-            };
-            if pending == saved {
-                dirty_since = None;
-                last_pending = saved;
-            } else if pending != last_pending {
-                // Value still moving — (re)start the settle timer from this change.
-                last_pending = pending;
-                dirty_since = Some(Instant::now());
-            } else if let Some(since) = dirty_since
-                && Instant::now().duration_since(since) >= Duration::from_secs(2)
-            {
-                // Stable for the debounce window — persist once.
-                settings::save(&pending);
-                saved = pending;
-                dirty_since = None;
-            }
+            persister.poll(&APP_STATE);
 
             // Animate / adopt external state, then render + flush the dirty
             // area. `ctx` is re-read here so a carousel slide is sampled at the
@@ -510,47 +486,4 @@ async fn main(spawner: Spawner) -> ! {
     loop {
         Timer::after(Duration::from_secs(5)).await;
     }
-}
-
-/// Builds the PSRAM-backed framebuffer, or `None` if PSRAM is unavailable or
-/// smaller than a full frame. Gating here keeps `from_raw_parts_mut` from ever
-/// running on an invalid (e.g. `0..0`) range.
-///
-/// One buffer: Slint renders directly in the panel's byte order via a custom
-/// `TargetPixel`, so no conversion pass and no second buffer are needed.
-fn psram_framebuffer(start: *mut u8, size: usize, ok: bool) -> Option<&'static mut [u8]> {
-    if !ok || start.is_null() || size < DISPLAY_BYTES {
-        return None;
-    }
-    // SAFETY: `start`/`size` come from a successful `Psram` init; the region is
-    // mapped for the whole program lifetime and is at least `DISPLAY_BYTES`
-    // long. The framebuffer sits at the PSRAM base and never overlaps the
-    // smoke-test probe (top 4 KiB). `u8` has alignment 1, so the pointer is
-    // always suitably aligned.
-    Some(unsafe { core::slice::from_raw_parts_mut(start, DISPLAY_BYTES) })
-}
-
-/// Writes a 4 KiB pattern to the top of PSRAM, reads it back, and reports
-/// whether it round-trips. A failure almost always means the configured PSRAM
-/// mode (octal/quad) does not match the module.
-fn psram_smoke_test(start: *mut u8, size: usize) -> bool {
-    const PROBE_LEN: usize = PSRAM_PROBE_LEN;
-    if size < PROBE_LEN {
-        log::error!("psram: too small for smoke test ({size} bytes)");
-        return false;
-    }
-    let base = unsafe { start.add(size.saturating_sub(PROBE_LEN)) };
-    for i in 0..PROBE_LEN {
-        let byte = u8::try_from((i ^ 0xA5) & 0xFF).unwrap_or(0);
-        unsafe { core::ptr::write_volatile(base.add(i), byte) };
-    }
-    for i in 0..PROBE_LEN {
-        let want = u8::try_from((i ^ 0xA5) & 0xFF).unwrap_or(0);
-        let got = unsafe { core::ptr::read_volatile(base.add(i)) };
-        if got != want {
-            log::error!("psram: mismatch at {i}: want {want:#04x} got {got:#04x}");
-            return false;
-        }
-    }
-    true
 }

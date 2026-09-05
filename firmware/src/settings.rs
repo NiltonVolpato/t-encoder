@@ -10,7 +10,9 @@
 //! defaults rather than loading garbage. Writes are infrequent (debounced on
 //! change), so a single erased sector with no wear-levelling is fine.
 
+use embassy_time::{Duration, Instant};
 use embedded_storage::nor_flash::{NorFlash, ReadNorFlash};
+use enc_state::AppState;
 use esp_bootloader_esp_idf::partitions::{FlashRegion, read_partition_table};
 use esp_storage::FlashStorage;
 
@@ -125,5 +127,54 @@ pub fn save(settings: &Settings) {
     });
     if ok != Some(true) {
         log::error!("settings: save failed");
+    }
+}
+
+/// How long a change must hold still before it is written to flash.
+const SETTLE: Duration = Duration::from_secs(2);
+
+/// Debounces shared state into flash, so a burst of edits becomes one write.
+///
+/// The UI loop calls [`Persister::poll`] every tick. A value that is still
+/// moving restarts the timer, so spinning the alarm dial through twenty minutes
+/// erases one sector, not twenty.
+pub struct Persister {
+    /// What is currently on flash.
+    saved: Settings,
+    /// The last value seen, to notice that a change is still in progress.
+    last: Settings,
+    /// When the current pending value stopped changing.
+    since: Option<Instant>,
+}
+
+impl Persister {
+    /// Starts from what [`load`] returned, so the first tick is not a write.
+    #[must_use]
+    pub fn new(saved: Settings) -> Persister {
+        Persister {
+            saved,
+            last: saved,
+            since: None,
+        }
+    }
+
+    /// Samples `state` and writes it out once it has settled.
+    pub fn poll(&mut self, state: &AppState) {
+        let pending = Settings {
+            alarm: state.alarm(),
+            toggles: state.toggles(),
+        };
+        if pending == self.saved {
+            self.since = None;
+            self.last = self.saved;
+        } else if pending != self.last {
+            // Still moving — restart the settle timer from this change.
+            self.last = pending;
+            self.since = Some(Instant::now());
+        } else if self.since.is_some_and(|s| s.elapsed() >= SETTLE) {
+            save(&pending);
+            self.saved = pending;
+            self.since = None;
+        }
     }
 }
