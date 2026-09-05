@@ -59,7 +59,7 @@ impl PomodoroFactory {
         PomodoroFactory {
             manifest: Manifest {
                 name: "Pomodoro",
-                icon: IconId(3),
+                icon: IconId(0),
                 // Warm red — this is the "do not disturb" app.
                 accent: embedded_graphics::pixelcolor::Rgb565::new(28, 18, 8),
             },

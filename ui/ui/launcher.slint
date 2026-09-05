@@ -8,6 +8,17 @@
 export struct CardData {
     name: string,
     accent: color,
+    // Index into `Icons.all`. Comes from `Manifest.icon` on the Rust side.
+    icon: int,
+}
+
+// App icons, rasterized from SVG at build time by resvg on the host — so the
+// device only ever blits an anti-aliased bitmap, with no SVG parsing and no
+// runtime cost. Adding an icon is one entry here plus the matching `IconId`.
+export global Icons {
+    out property <[image]> all: [
+        @image-url("assets/tomato.svg"),
+    ];
 }
 
 // Distance between adjacent card centres. One source of truth for the strip.
@@ -43,13 +54,11 @@ component Card inherits Rectangle {
         // placeholder discs sit off-centre.
         HorizontalLayout {
             alignment: center;
-            Rectangle {
-                height: 88px;
+            Image {
                 width: 88px;
-                border-radius: 44px;
-                background: data.accent;
-                // Placeholder for the real icon; swapped for an image once the
-                // asset pipeline lands.
+                height: 88px;
+                source: Icons.all[data.icon];
+                image-fit: contain;
             }
         }
 

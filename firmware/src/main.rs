@@ -99,6 +99,7 @@ fn app_cards(factories: &[&dyn AppFactory]) -> slint::ModelRc<ui::CardData> {
             ui::CardData {
                 name: manifest.name.into(),
                 accent: rgb565_to_slint(manifest.accent),
+                icon: i32::from(manifest.icon.0),
             }
         })
         .collect();
