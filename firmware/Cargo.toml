@@ -1,0 +1,42 @@
+[package]
+name = "firmware"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "T-Encoder-Pro app launcher — device firmware (xtensa-esp32s3 only)."
+
+[dependencies]
+# Upstream drivers (vendor/rust-enc submodule).
+enc-config = { workspace = true }
+enc-co5300 = { workspace = true }
+enc-input = { workspace = true }
+enc-touch = { workspace = true }
+enc-ui = { workspace = true }
+enc-state = { workspace = true }
+enc-net = { workspace = true }
+
+embedded-hal = { workspace = true }
+embedded-graphics = { workspace = true }
+embassy-sync = { workspace = true }
+embassy-net = { workspace = true }
+heapless = { workspace = true }
+esp-hal = { workspace = true }
+esp-rtos = { workspace = true }
+esp-println = { workspace = true }
+esp-bootloader-esp-idf = { workspace = true }
+esp-storage = { workspace = true }
+embedded-storage = { workspace = true }
+esp-alloc = { workspace = true }
+esp-radio = { workspace = true }
+embassy-executor = { workspace = true }
+embassy-time = { workspace = true }
+log = { workspace = true }
+
+[features]
+# Lab-only: expose HTTP write endpoints (GET /toggle?i=N). Off by default.
+http-write = ["enc-net/http-write"]
+
+[lints]
+workspace = true

@@ -1,0 +1,3 @@
+[submodule "vendor/rust-enc"]
+	path = vendor/rust-enc
+	url = https://github.com/NiltonVolpato/rust-enc.git

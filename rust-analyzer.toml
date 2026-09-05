@@ -1,0 +1,16 @@
+# rust-analyzer needs the same treatment the Justfile gives cargo: the esp
+# toolchain ships no precompiled `core` for xtensa-esp32s3-none-elf, so any
+# check against the device target must build it from source. Without this,
+# RA reports "can't find crate for `core`" on every file.
+#
+# Editor-agnostic: VS Code, Zed, Helix and neovim all read rust-analyzer.toml.
+
+[cargo]
+target = "xtensa-esp32s3-none-elf"
+extraArgs = ["-Zbuild-std=alloc,core", "-Zbuild-std-features=compiler-builtins-mem"]
+
+[cargo.extraEnv]
+RUSTUP_TOOLCHAIN = "esp"
+
+[check]
+extraArgs = ["-Zbuild-std=alloc,core", "-Zbuild-std-features=compiler-builtins-mem"]

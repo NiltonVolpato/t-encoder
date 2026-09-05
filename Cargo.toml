@@ -1,6 +1,76 @@
-[package]
-name = "t-encoder"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+resolver = "3"
+members = ["firmware", "launcher"]
+# vendor/rust-enc is a submodule with its own [workspace] root. Its crates must
+# stay members of THAT workspace so their `edition.workspace = true` /
+# `[lints] workspace = true` inheritance resolves. We reach them by path
+# dependency only.
+exclude = ["vendor/rust-enc"]
 
-[dependencies]
+[workspace.package]
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/NiltonVolpato/t-encoder"
+publish = false
+
+[workspace.dependencies]
+# --- Upstream rust-enc crates (submodule, pinned) -------------------------
+enc-config = { path = "vendor/rust-enc/enc-config" }
+enc-co5300 = { path = "vendor/rust-enc/enc-co5300" }
+enc-input = { path = "vendor/rust-enc/enc-input" }
+enc-touch = { path = "vendor/rust-enc/enc-touch" }
+enc-ui = { path = "vendor/rust-enc/enc-ui" }
+enc-state = { path = "vendor/rust-enc/enc-state" }
+enc-net = { path = "vendor/rust-enc/enc-net" }
+
+# --- Pure / shared --------------------------------------------------------
+# These MUST stay semver-compatible with vendor/rust-enc/Cargo.toml's
+# [workspace.dependencies]. A mismatch builds two copies of esp-hal, which
+# fails at link time. Bump both together, deliberately.
+embedded-hal = "1"
+embedded-hal-async = "1"
+embedded-io-async = "0.7"
+embedded-graphics = "0.8"
+heapless = { version = "0.9", default-features = false }
+static_cell = "2"
+log = "0.4"
+
+# --- ESP / Embassy device stack ------------------------------------------
+esp-hal = { version = "1.1.1", features = ["esp32s3", "unstable"] }
+esp-rtos = { version = "0.3.0", features = ["embassy", "esp32s3", "esp-alloc", "esp-radio"] }
+esp-println = { version = "0.17.0", features = ["esp32s3", "log-04"] }
+esp-bootloader-esp-idf = { version = "0.5.0", features = ["esp32s3"] }
+embassy-executor = { version = "0.10.0", features = [] }
+embassy-time = "0.5"
+embassy-sync = "0.8"
+
+# --- Radio + heap ---------------------------------------------------------
+esp-alloc = { version = "0.10.0", features = ["esp32s3"] }
+esp-radio = { version = "0.18.0", features = ["wifi", "ble", "coex", "esp-alloc", "esp32s3", "unstable"] }
+
+# --- Networking -----------------------------------------------------------
+embassy-net = { version = "0.9.1", features = ["dhcpv4", "dns", "medium-ethernet", "tcp", "udp"] }
+
+# --- Storage --------------------------------------------------------------
+esp-storage = { version = "0.7", features = ["esp32s3"] }
+embedded-storage = "0.3"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+arithmetic_side_effects = "warn"
+as_conversions = "warn"
+allow_attributes = "warn"
+get_unwrap = "warn"
+indexing_slicing = "warn"
+unwrap_used = "warn"
+
+# The submodule's own [profile.release] is IGNORED — only the root workspace's
+# profiles apply. Replicated here; without this we silently ship a bloated build.
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+debug = "full"
+split-debuginfo = "packed"
+strip = "symbols"

@@ -1,0 +1,23 @@
+# Workspace-root cargo config (NOT inside the binary crate) so that
+# `cargo build -p firmware` works from anywhere without a `cd`.
+#
+# Deliberately NO [unstable] section: putting `build-std` here makes it global,
+# which breaks host test builds (duplicate lang items against the real `std`).
+# `-Zbuild-std` is passed only on the device recipes in the Justfile.
+
+[build]
+target = "xtensa-esp32s3-none-elf"
+# Disable any global sccache wrapper for device builds: it breaks the release
+# `-C linker-plugin-lto` compile (exit 254 with no diagnostic).
+rustc-wrapper = ""
+
+[target.xtensa-esp32s3-none-elf]
+# Native USB-Serial/JTAG. The custom partition table adds a `settings`
+# partition — flashing without it silently disables settings persistence.
+runner = "espflash flash --monitor --chip esp32s3 --partition-table firmware/partitions.csv"
+# linkall.x is appended by firmware/build.rs (must be the last linker script).
+rustflags = ["-C", "link-arg=-nostartfiles"]
+
+[env]
+ESP_LOG = "info"
+# PSRAM mode (octal/quad) is set in code via PsramConfig::mode, not esp-config.

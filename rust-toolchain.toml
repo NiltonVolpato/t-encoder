@@ -1,0 +1,5 @@
+[toolchain]
+# Custom Xtensa toolchain installed by espup. Targets are baked into the
+# toolchain's sysroot; listing them here is rejected by rustup for custom
+# channels and breaks plain cargo / rust-analyzer.
+channel = "esp"
