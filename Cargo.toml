@@ -87,5 +87,15 @@ lto = true
 codegen-units = 1
 panic = "abort"
 debug = "full"
+# NOTE: a no-op for the firmware. `split-debuginfo` is a *target* capability,
+# and `rustc --target xtensa-esp32s3-none-elf --print split-debuginfo` offers
+# only `off` — there is no .dSYM or .dwp for the device binary, and none is
+# possible. It still applies to host builds, which is why proc-macro dylibs get
+# .dSYM bundles. Kept because it costs nothing and is right for the host half.
 split-debuginfo = "packed"
+# So `debug = "full"` above is generated and then discarded at link time: the
+# device binary is 1.73 MiB stripped, 2.27 MiB with the symbol table
+# (`strip = "debuginfo"`), 19.6 MiB with the DWARF. Nothing keeps an unstripped
+# copy, so `just size` relinks with `CARGO_PROFILE_RELEASE_STRIP=none` when it
+# needs symbols.
 strip = "symbols"

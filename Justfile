@@ -130,6 +130,19 @@ size COUNT='25':
                END { printf "%9d  TOTAL\n", total }' \
         | sort -rn
     echo
+    echo "== {{COUNT}} largest crates (approximates bloaty -d compileunits) =="
+    # Buckets a demangled symbol by its leading path segment. Handles the two
+    # shapes rustc emits: `crate::path::item` and `<crate::Type as Trait>::item`.
+    xtensa-esp32s3-elf-nm --print-size --size-sort --radix=d -C "$bin" \
+        | awk 'toupper($3) ~ /^[TRDB]$/ && $2 + 0 > 0 {
+                 size = $2 + 0; $1=$2=$3=""; sub(/^ +/, ""); name = $0
+                 gsub(/^[<&*(]+/, "", name)
+                 crate = match(name, /^[A-Za-z_][A-Za-z0-9_]*::/) \
+                       ? substr(name, 1, RLENGTH - 2) : "(C / asm / no path)"
+                 total[crate] += size }
+               END { for (c in total) printf "%9d  %s\n", total[c], c }' \
+        | sort -rn | awk 'NR <= {{COUNT}}'
+    echo
     echo "== {{COUNT}} largest symbols =="
     # Column 3 is the symbol type; keep code and data. The positive-size test
     # drops the linker's own absolutes (`_rwtext_len` reports -12832).
