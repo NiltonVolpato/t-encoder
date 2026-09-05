@@ -303,6 +303,13 @@ async fn main(spawner: Spawner) -> ! {
         let mut saved = saved;
         let mut last_pending = saved;
         let mut dirty_since: Option<Instant> = None;
+
+        // Terminal boot marker: everything is up and the UI loop is about to
+        // start. `just flash-log` watches for this line and exits, so keep the
+        // wording stable — and short, since a line over the 64-byte
+        // USB-Serial/JTAG FIFO blocks until the host drains it.
+        log::info!("boot: ready");
+
         loop {
             // Fixed 5ms tick keeps the encoder/button responsive; taps arrive
             // asynchronously from the touch task via TOUCH_TAPS.
