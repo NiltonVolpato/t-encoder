@@ -61,7 +61,7 @@ esp-radio = { version = "0.18.0", features = ["wifi", "ble", "coex", "esp-alloc"
 # `security` is what makes HID-over-GATT work at all: hosts refuse to use a
 # keyboard over an unencrypted link.
 bt-hci = "0.8"
-trouble-host = { version = "0.6", default-features = false, features = ["peripheral", "gatt", "derive", "security", "default-packet-pool"] }
+trouble-host = { version = "0.6", default-features = false, features = ["peripheral", "gatt", "security", "default-packet-pool", "default-packet-pool-mtu-255"] }
 
 # --- Networking -----------------------------------------------------------
 embassy-net = { version = "0.9.1", features = ["dhcpv4", "dns", "medium-ethernet", "tcp", "udp"] }

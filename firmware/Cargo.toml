@@ -42,8 +42,6 @@ esp-alloc = { workspace = true }
 esp-radio = { workspace = true }
 bt-hci = { workspace = true }
 trouble-host = { workspace = true }
-# trouble-host's `#[gatt_service]` macro expands to `static_cell::` paths.
-static_cell = { workspace = true }
 embassy-executor = { workspace = true }
 embassy-time = { workspace = true }
 log = { workspace = true }

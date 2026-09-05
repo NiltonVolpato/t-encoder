@@ -188,8 +188,11 @@ impl App for Macropad {
             selected: i32::try_from(self.selected).unwrap_or(0),
             accent: slint::Color::from_rgb_u8(64, 140, 255),
             linked: self.linked,
+            // "connected", not "paired": a link can be up while bonding is
+            // still in progress, and claiming otherwise is how the last round
+            // of testing got confusing.
             status: if self.linked {
-                "paired"
+                "connected"
             } else {
                 "waiting for a host"
             }
