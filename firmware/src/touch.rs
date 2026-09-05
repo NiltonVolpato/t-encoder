@@ -25,12 +25,16 @@ use launcher::{TouchPhase, TouchSample};
 /// CST816 at 0x15; this unit is a CHSC5816 at 0x2E, confirmed by observation.
 const ADDRESS: u8 = 0x2E;
 
-/// Poll interval. ~100 Hz is far finer than a swipe needs, and leaves the I2C
-/// bus idle between the UI loop's 5 ms ticks.
+/// Delay between polls. Not the poll *period*: a point read is two I2C
+/// transactions at 100 kHz (the chip rejects repeated-start, so the register
+/// address and the 8-byte report cannot share one), which measured 12.5 ms end
+/// to end for 500 polls — about 80 Hz. That is ~16 samples across a 200 ms
+/// swipe, far more than the recogniser needs.
 const POLL: Duration = Duration::from_millis(10);
 
-/// Queue depth. The UI loop drains it every tick; the only thing that stalls it
-/// is a full-frame flush (~29 ms), which is three samples' worth.
+/// Queue depth. The UI loop drains it every tick and a poll only arrives every
+/// 12.5 ms, so this sits at one or two; it is sized for the case where a
+/// full-frame render and flush (~55 ms) blocks the loop outright.
 const QUEUE: usize = 16;
 
 /// Concrete CHSC5816 type on this board (async I2C + INT/RST GPIO).
@@ -84,8 +88,10 @@ pub async fn init(pins: TouchPins) -> Option<Touch> {
 pub async fn task(mut touch: Touch) {
     // Where the finger was last seen, and therefore whether one is down.
     let mut contact: Option<(i32, i32)> = None;
-    // Where and when the current stroke started, for the travel log.
+    // Where and when the current stroke started, and how many samples it has
+    // taken — all three only for the travel log.
     let mut landed: Option<(i32, i32, u64)> = None;
+    let mut points: u32 = 0;
     loop {
         Timer::after(POLL).await;
         let at_ms = Instant::now().as_millis();
@@ -94,9 +100,11 @@ pub async fn task(mut touch: Touch) {
                 let x = i32::from(point.x);
                 let y = i32::from(point.y);
                 let phase = if contact.is_some() {
+                    points = points.saturating_add(1);
                     TouchPhase::Move
                 } else {
                     landed = Some((x, y, at_ms));
+                    points = 1;
                     TouchPhase::Down
                 };
                 contact = Some((x, y));
@@ -111,7 +119,7 @@ pub async fn task(mut touch: Touch) {
                         // Short on purpose: a line past the 64-byte
                         // USB-Serial/JTAG FIFO blocks until the host drains it.
                         let ms = at_ms.saturating_sub(t0);
-                        log::info!("touch: {x0},{y0} -> {x},{y} {ms}ms");
+                        log::info!("touch: {x0},{y0} -> {x},{y} {ms}ms {points}p");
                     }
                     send(TouchSample {
                         phase: TouchPhase::Up,
