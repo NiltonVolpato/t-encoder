@@ -39,8 +39,8 @@ use slint::ComponentHandle;
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
-/// Panel dimensions (mirror `enc_config::display`).
-const DISPLAY_W: u16 = 390;
+/// Framebuffer size (mirrors `enc_config::display`); the panel's own width and
+/// height live in `display::Display`, which does the clipping.
 const DISPLAY_BYTES: usize = enc_config::display::FRAMEBUFFER_BYTES;
 /// How long the button must be held before the long press fires.
 const LONG_PRESS: Duration = Duration::from_millis(600);
@@ -52,27 +52,21 @@ const PSRAM_PROBE_LEN: usize = 4096;
 /// Shared, lock-free app state mirrored between the UI loop and the Wi-Fi tasks.
 static APP_STATE: AppState = AppState::new(1);
 
-/// Flushes a full-width horizontal band `[y, y+h)` of the framebuffer to the
-/// panel. Returns whether the band was flushed (false if out of range or DMA
-/// failed, so the caller can fall back to a full-frame flush).
-fn flush_band(display: &mut display::Display, fb_bytes: &[u8], y: u16, h: u16) -> bool {
-    let row_bytes = usize::from(DISPLAY_W).saturating_mul(2);
-    let start = usize::from(y).saturating_mul(row_bytes);
-    let end = start.saturating_add(usize::from(h).saturating_mul(row_bytes));
+/// Flushes one dirty rectangle to the panel. Returns whether it went out; a
+/// `false` is already logged with its reason, so the caller can just fall back
+/// to a full-frame flush.
+fn flush_rect(display: &mut display::Display, fb_bytes: &[u8], rect: ui::DirtyRect) -> bool {
     // Both failure modes are logged separately: a silent `false` here used to
     // be indistinguishable from a DMA error, which made display corruption
     // impossible to diagnose from a serial log.
-    let Some(band) = fb_bytes.get(start..end) else {
-        log::error!("display: band y={y} h={h} out of framebuffer range");
-        return false;
-    };
-    match display
-        .driver
-        .flush_window(0, y, DISPLAY_W, h, band, display::DMA_CHUNK)
-    {
+    match display.flush_rect(rect.x, rect.y, rect.w, rect.h, fb_bytes) {
         Ok(()) => true,
-        Err(e) => {
-            log::error!("display: band flush y={y} h={h} failed: {e:?}");
+        Err(display::FlushError::OutOfRange) => {
+            log::error!("display: flush {rect:?} outside the framebuffer");
+            false
+        }
+        Err(display::FlushError::Spi(e)) => {
+            log::error!("display: flush {rect:?} failed: {e:?}");
             false
         }
     }
@@ -289,7 +283,7 @@ async fn main(spawner: Spawner) -> ! {
         let rect = slint_ui.render(fb_buf);
         let render_us = started.elapsed().as_micros();
         let started = Instant::now();
-        let flushed = rect.is_some_and(|r| flush_band(panel, fb_buf, r.y, r.h));
+        let flushed = rect.is_some_and(|r| flush_rect(panel, fb_buf, r));
         let flush_us = started.elapsed().as_micros();
         log::info!(
             "slint: first frame {rect:?} render={render_us}us flush={flush_us}us ok={flushed}"
@@ -459,7 +453,7 @@ async fn main(spawner: Spawner) -> ! {
             }
 
             if let Some(rect) = slint_ui.render(fb_buf)
-                && !flush_band(panel, fb_buf, rect.y, rect.h)
+                && !flush_rect(panel, fb_buf, rect)
             {
                 log::error!("display: slint flush failed {rect:?}");
             }
