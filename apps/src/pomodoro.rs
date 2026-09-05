@@ -12,12 +12,15 @@ use ui::{PomodoroState, Shell};
 
 /// Shortest settable duration.
 const MIN_MINUTES: u32 = 1;
-/// Longest settable duration.
-const MAX_MINUTES: u32 = 90;
+/// Longest settable duration. Capped at 60 so the ring maps one dot per
+/// minute — a full circle is one hour, like a clock face.
+const MAX_MINUTES: u32 = 60;
 /// Default work interval.
 const DEFAULT_MINUTES: u32 = 25;
 /// Seconds per minute.
 const SECS_PER_MIN: u32 = 60;
+/// Seconds in the full ring (60 dots x 1 minute).
+const RING_SECS: u32 = MAX_MINUTES * SECS_PER_MIN;
 
 /// Where the timer is in its lifecycle.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -148,6 +151,13 @@ impl App for Pomodoro {
             // The encoder only means something while stopped; adjusting the
             // duration mid-run would be ambiguous about what it applies to.
             InputEvent::Rotate(delta) => {
+                // Rotating a paused timer abandons it and goes back to setting
+                // a duration — otherwise a paused timer has no way out except
+                // finishing it, which is the gap that made "how do I reset?"
+                // unanswerable.
+                if self.phase == Phase::Paused || self.phase == Phase::Done {
+                    self.reset();
+                }
                 if self.phase != Phase::Idle {
                     return Outcome::NONE;
                 }
@@ -197,17 +207,13 @@ impl App for Pomodoro {
     }
 
     fn sync(&self) {
-        let total = self.total_secs();
-        // Remaining fraction, clamped below 1.0: a full ring and an empty ring
-        // are the same drawing, and 1.0 would light every dot at t=0.
-        let progress = if self.phase == Phase::Idle {
-            0.0
-        } else {
-            let elapsed = total.saturating_sub(self.remaining);
-            (f32::from(u16::try_from(elapsed).unwrap_or(u16::MAX))
-                / f32::from(u16::try_from(total).unwrap_or(1).max(1)))
-            .clamp(0.0, 0.999)
-        };
+        // The ring shows *remaining* time against a fixed one-hour scale, so a
+        // dot is always one minute. Setting 30 minutes lights half the ring and
+        // counting down unlights it at the same rate — the dial and the digits
+        // never disagree, and the ring depletes rather than fills.
+        let progress = (f32::from(u16::try_from(self.remaining).unwrap_or(u16::MAX))
+            / f32::from(u16::try_from(RING_SECS).unwrap_or(1).max(1)))
+        .clamp(0.0, 1.0);
 
         let Some(shell) = self.shell.upgrade() else {
             return;

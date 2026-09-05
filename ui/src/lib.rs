@@ -101,19 +101,25 @@ impl Ui {
         &self.shell
     }
 
-    /// Renders into `fb_bytes` and returns the region that changed, or `None`
-    /// if nothing needed redrawing.
+    /// Renders one frame and returns the region that changed, or `None` if
+    /// nothing needed redrawing.
     ///
-    /// The returned bytes are **big-endian** RGB565, ready to stream to the
-    /// CO5300: Slint writes native-endian, so the changed region is swapped in
-    /// place afterwards. Only the dirty rows are touched, not the whole frame.
-    pub fn render(&self, fb_bytes: &mut [u8]) -> Option<DirtyRect> {
+    /// **Two buffers, and they must stay separate.** `render_buf` is Slint's:
+    /// with [`RepaintBufferType::ReusedBuffer`] Slint assumes it still holds
+    /// *its own* previous frame, in its own native-endian format, and reads it
+    /// back when blending partially-redrawn areas. The CO5300 wants big-endian,
+    /// so the changed rows are swap-*copied* into `flush_buf` for the DMA
+    /// rather than swapped in place.
+    ///
+    /// Swapping `render_buf` in place instead corrupts exactly what Slint reads
+    /// back, which shows up as wrong colours on partially-redrawn text.
+    pub fn render(&self, render_buf: &mut [u8], flush_buf: &mut [u8]) -> Option<DirtyRect> {
         slint::platform::update_timers_and_animations();
 
         let stride = usize::try_from(WIDTH).unwrap_or(0);
         let mut dirty = None;
         let drawn = self.window.draw_if_needed(|renderer| {
-            let pixels = as_pixels(fb_bytes);
+            let pixels = as_pixels(render_buf);
             let region = renderer.render(pixels, stride);
             let (origin, size) = (region.bounding_box_origin(), region.bounding_box_size());
             dirty = Some(DirtyRect {
@@ -128,7 +134,7 @@ impl Ui {
             return None;
         }
         let rect = dirty?;
-        swap_rows(fb_bytes, rect.y, rect.h);
+        swap_rows_into(render_buf, flush_buf, rect.y, rect.h);
         Some(rect)
     }
 
@@ -148,18 +154,22 @@ fn as_pixels(bytes: &mut [u8]) -> &mut [Rgb565Pixel] {
     unsafe { core::slice::from_raw_parts_mut(bytes.as_mut_ptr().cast::<Rgb565Pixel>(), len) }
 }
 
-/// Byte-swaps rows `[y, y + h)` to the panel's big-endian order.
+/// Copies rows `[y, y + h)` from `src` to `dst`, swapping each pixel to the
+/// panel's big-endian order on the way.
 ///
-/// Full-width rows only: a full-width band is contiguous in the framebuffer, so
+/// Full-width rows only: a full-width band is contiguous in both buffers, so
 /// this is one pass with no stride arithmetic, and the same band streams to the
 /// panel with no gather.
-fn swap_rows(bytes: &mut [u8], y: u16, h: u16) {
+fn swap_rows_into(src: &[u8], dst: &mut [u8], y: u16, h: u16) {
     let row_bytes = usize::try_from(WIDTH).unwrap_or(0).saturating_mul(2);
     let start = usize::from(y).saturating_mul(row_bytes);
     let end = start.saturating_add(usize::from(h).saturating_mul(row_bytes));
-    if let Some(band) = bytes.get_mut(start..end) {
-        for pixel in band.chunks_exact_mut(2) {
-            pixel.swap(0, 1);
+    let (Some(from), Some(to)) = (src.get(start..end), dst.get_mut(start..end)) else {
+        return;
+    };
+    for (source, target) in from.chunks_exact(2).zip(to.chunks_exact_mut(2)) {
+        if let (Some(&low), Some(&high)) = (source.first(), source.get(1)) {
+            target.copy_from_slice(&[high, low]);
         }
     }
 }

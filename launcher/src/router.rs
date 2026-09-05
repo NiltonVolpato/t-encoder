@@ -89,24 +89,37 @@ impl<'a> Router<'a> {
         }
     }
 
-    /// Advances animations and the active app's own clock.
+    /// Ticks **every** app, not just the visible one, and returns the dirty
+    /// region of the one on screen.
+    ///
+    /// Background apps keep running deliberately: a countdown that silently
+    /// stopped because you went back to the launcher would be wrong, and its
+    /// alarm has to fire wherever you are. Only the active app's dirty region
+    /// is returned — a background app has nothing on screen to repaint — but
+    /// feedback (buzzer/haptic) is collected from all of them.
     pub fn tick(&mut self, ctx: &Ctx<'_>) -> Dirty {
-        match self.view {
+        let active = match self.view {
             // Slint drives its own animation clock and reports what changed,
             // so the launcher has no tick-driven dirty region of its own.
-            View::Launcher => Dirty::None,
-            View::App(index) => {
-                let Some(app) = self.apps.get_mut(index) else {
-                    return Dirty::None;
-                };
-                let outcome = app.tick(ctx);
-                self.feedback = self.feedback.or(outcome.feedback);
-                match outcome.action {
-                    Action::None => outcome.dirty,
-                    Action::Exit => self.go_home(),
-                }
+            View::Launcher => None,
+            View::App(index) => Some(index),
+        };
+
+        let mut dirty = Dirty::None;
+        let mut exit_requested = false;
+        for (index, app) in self.apps.iter_mut().enumerate() {
+            let outcome = app.tick(ctx);
+            self.feedback = self.feedback.or(outcome.feedback);
+            if active == Some(index) {
+                dirty = dirty.merge(outcome.dirty);
+                exit_requested = outcome.action == Action::Exit;
             }
         }
+
+        if exit_requested {
+            return self.go_home();
+        }
+        dirty
     }
 
     /// Pushes the active app's state into the shared Slint tree.

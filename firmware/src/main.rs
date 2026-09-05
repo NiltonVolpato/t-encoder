@@ -20,16 +20,12 @@ mod display;
 mod heap;
 mod input;
 mod settings;
-mod touch;
 
 use buzzer::Feedback;
 use embassy_executor::Spawner;
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-use embassy_sync::channel::Channel;
 use embassy_time::{Duration, Instant, Timer};
 use enc_input::Encoder;
 use enc_state::{AppState, ConnState};
-use enc_touch::TouchPoint;
 use esp_hal::clock::CpuClock;
 use esp_hal::gpio::{Input, InputConfig, Pull};
 use esp_hal::interrupt::software::SoftwareInterruptControl;
@@ -43,12 +39,11 @@ use slint::ComponentHandle;
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
-/// Tap-down events from the touch task (queued so none are lost during a redraw).
-static TOUCH_TAPS: Channel<CriticalSectionRawMutex, TouchPoint, 4> = Channel::new();
-
 /// Panel dimensions (mirror `enc_config::display`).
 const DISPLAY_W: u16 = 390;
 const DISPLAY_BYTES: usize = enc_config::display::FRAMEBUFFER_BYTES;
+/// How long the button must be held before the long press fires.
+const LONG_PRESS: Duration = Duration::from_millis(600);
 /// Quadrature counts per mechanical detent (this encoder emits 2 per click).
 const COUNTS_PER_DETENT: u8 = 2;
 /// PSRAM smoke-test probe length (top of PSRAM); also reserved from the heap.
@@ -135,27 +130,6 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     }
 }
 
-/// Touch task: the CHSC5816's INT pulses are unreliable but its point register
-/// stays live while a finger is down, so poll it and queue one tap per press
-/// (on the touch-down edge).
-#[embassy_executor::task]
-async fn touch_task(mut touch: touch::Touch) {
-    let mut was_touched = false;
-    loop {
-        match touch.read_point().await {
-            Ok(Some(point)) => {
-                if !was_touched {
-                    was_touched = true;
-                    let _ = TOUCH_TAPS.try_send(point); // drop if the queue is full
-                }
-            }
-            Ok(None) => was_touched = false,
-            Err(_) => log::error!("touch: read failed"),
-        }
-        Timer::after(Duration::from_millis(20)).await;
-    }
-}
-
 #[esp_rtos::main]
 async fn main(spawner: Spawner) -> ! {
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
@@ -204,7 +178,12 @@ async fn main(spawner: Spawner) -> ! {
     if psram_ok {
         log::info!("psram: smoke test OK (octal mode confirmed)");
         // Separate (non-global) PSRAM heap for app bulk, past the framebuffer.
-        if !heap::init_psram_heap(psram_start, psram_size, DISPLAY_BYTES, PSRAM_PROBE_LEN) {
+        if !heap::init_psram_heap(
+            psram_start,
+            psram_size,
+            DISPLAY_BYTES.saturating_mul(2),
+            PSRAM_PROBE_LEN,
+        ) {
             log::error!("psram: heap region not registered (range invalid/too small)");
         }
     } else {
@@ -271,29 +250,17 @@ async fn main(spawner: Spawner) -> ! {
     );
     let mut encoder = Encoder::new(COUNTS_PER_DETENT);
 
-    // CHSC5816 touch task.
-    let touch = touch::init(
-        touch::TouchPins {
-            i2c: peripherals.I2C0,
-            sda: peripherals.GPIO5,
-            scl: peripherals.GPIO6,
-            int: peripherals.GPIO9,
-            rst: peripherals.GPIO8,
-        },
-        enc_config::i2c::CHSC5816_ADDRESS,
-    )
-    .await;
-    if let Some(t) = touch {
-        match touch_task(t) {
-            Ok(token) => spawner.spawn(token),
-            Err(_) => log::error!("boot: failed to spawn touch task"),
-        }
-    }
+    // Touch is DISABLED until gestures land, and its driver has been removed
+    // rather than left dead: raw taps reaching apps made them unusable, because
+    // pressing the encoder also registers a touch, so every press delivered a
+    // spurious tap on top of it. Nothing polls the I2C bus now. Gesture
+    // recognition needs swipe tracking rather than the old tap-per-press
+    // model, so it lands as new code — see the touch section of the plan.
 
-    // The framebuffer lives at the base of PSRAM; only build it if PSRAM is
+    // The framebuffers live at the base of PSRAM; only build them if PSRAM is
     // actually mapped and large enough (else `from_raw_parts_mut` is UB).
-    let framebuffer = psram_framebuffer(psram_start, psram_size, psram_ok);
-    if let (Some(panel), Some(fb_buf)) = (panel.as_mut(), framebuffer) {
+    let framebuffers = psram_framebuffers(psram_start, psram_size, psram_ok);
+    if let (Some(panel), Some((render_buf, flush_buf))) = (panel.as_mut(), framebuffers) {
         // Slint owns every pixel now, so the framebuffer stays a plain byte
         // slice that only `ui` writes to.
         let slint_ui = match ui::Ui::new() {
@@ -323,16 +290,18 @@ async fn main(spawner: Spawner) -> ! {
         };
         ui::set_now_ms(ctx.now_ms);
         let started = Instant::now();
-        let rect = slint_ui.render(fb_buf);
+        let rect = slint_ui.render(render_buf, flush_buf);
         let render_us = started.elapsed().as_micros();
         let started = Instant::now();
-        let flushed = rect.is_some_and(|r| flush_band(panel, fb_buf, r.y, r.h));
+        let flushed = rect.is_some_and(|r| flush_band(panel, flush_buf, r.y, r.h));
         let flush_us = started.elapsed().as_micros();
         log::info!(
             "slint: first frame {rect:?} render={render_us}us flush={flush_us}us ok={flushed}"
         );
 
         let mut press_start: Option<Instant> = None;
+        // Whether the current hold already fired its long press.
+        let mut long_fired = false;
         let mut had_ip = false;
         // Absolute Unix minute last observed / last fired, so the alarm fires
         // exactly once per minute slot on a real edge (never on the first
@@ -363,28 +332,31 @@ async fn main(spawner: Spawner) -> ! {
 
             // Button: the router decides what a press means — long-press is
             // "back to launcher", short-press launches or is the app's Select.
-            // The action fires on release so its duration is known.
+            //
+            // Long-press fires **the moment the threshold is crossed**, while
+            // the button is still down, and buzzes to say so. Waiting for
+            // release gave no feedback about when you had held it long enough.
+            // The short press then fires on release, but only if the long press
+            // did not already claim this hold.
             let down = button.is_low(); // active-low (pull-up + button to GND)
-            if down && press_start.is_none() {
-                press_start = Some(Instant::now());
-            } else if !down && let Some(start) = press_start.take() {
-                let input = if Instant::now().duration_since(start) >= Duration::from_millis(600) {
-                    UiInput::LongPress
-                } else {
-                    UiInput::ShortPress
-                };
-                dirty = dirty.merge(router.handle(input, &ctx));
-                buzzer::signal(Feedback::Beep);
-            }
-
-            // Touch taps → router (none lost during a redraw).
-            while let Ok(point) = TOUCH_TAPS.try_receive() {
-                let input = UiInput::Touch {
-                    x: i32::from(point.x),
-                    y: i32::from(point.y),
-                };
-                dirty = dirty.merge(router.handle(input, &ctx));
-                buzzer::signal(Feedback::Beep);
+            if down {
+                match press_start {
+                    None => press_start = Some(Instant::now()),
+                    Some(start)
+                        if !long_fired && Instant::now().duration_since(start) >= LONG_PRESS =>
+                    {
+                        long_fired = true;
+                        dirty = dirty.merge(router.handle(UiInput::LongPress, &ctx));
+                        buzzer::signal(Feedback::Haptic);
+                    }
+                    Some(_) => {}
+                }
+            } else {
+                if press_start.take().is_some() && !long_fired {
+                    dirty = dirty.merge(router.handle(UiInput::ShortPress, &ctx));
+                    buzzer::signal(Feedback::Beep);
+                }
+                long_fired = false;
             }
 
             // Observe the DHCP lease: publish `Connected` only with an IPv4
@@ -490,8 +462,8 @@ async fn main(spawner: Spawner) -> ! {
                 });
             }
 
-            if let Some(rect) = slint_ui.render(fb_buf)
-                && !flush_band(panel, fb_buf, rect.y, rect.h)
+            if let Some(rect) = slint_ui.render(render_buf, flush_buf)
+                && !flush_band(panel, flush_buf, rect.y, rect.h)
             {
                 log::error!("display: slint flush failed {rect:?}");
             }
@@ -504,11 +476,20 @@ async fn main(spawner: Spawner) -> ! {
     }
 }
 
-/// Builds the PSRAM-backed framebuffer slice, or `None` if PSRAM is unavailable
-/// or smaller than a full frame. Gating here keeps `from_raw_parts_mut` from
-/// ever running on an invalid (e.g. `0..0`) range.
-fn psram_framebuffer(start: *mut u8, size: usize, ok: bool) -> Option<&'static mut [u8]> {
-    if !ok || start.is_null() || size < DISPLAY_BYTES {
+/// Builds the two PSRAM-backed framebuffers, or `None` if PSRAM is unavailable
+/// or too small. Gating here keeps `from_raw_parts_mut` from ever running on an
+/// invalid (e.g. `0..0`) range.
+///
+/// Two buffers, not one: Slint renders into the first and reads it back between
+/// frames (`ReusedBuffer`), so it must stay in Slint's native-endian format.
+/// The second holds the big-endian copy the panel DMA streams from.
+fn psram_framebuffers(
+    start: *mut u8,
+    size: usize,
+    ok: bool,
+) -> Option<(&'static mut [u8], &'static mut [u8])> {
+    let needed = DISPLAY_BYTES.saturating_mul(2);
+    if !ok || start.is_null() || size < needed {
         return None;
     }
     // SAFETY: `start`/`size` come from a successful `Psram` init; the region is
@@ -516,7 +497,9 @@ fn psram_framebuffer(start: *mut u8, size: usize, ok: bool) -> Option<&'static m
     // long. The framebuffer sits at the PSRAM base and never overlaps the
     // smoke-test probe (top 4 KiB). `u8` has alignment 1, so the pointer is
     // always suitably aligned.
-    Some(unsafe { core::slice::from_raw_parts_mut(start, DISPLAY_BYTES) })
+    let both = unsafe { core::slice::from_raw_parts_mut(start, needed) };
+    let (render, flush) = both.split_at_mut(DISPLAY_BYTES);
+    Some((render, flush))
 }
 
 /// Writes a 4 KiB pattern to the top of PSRAM, reads it back, and reports

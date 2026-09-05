@@ -74,6 +74,14 @@ pub struct Display {
 /// Per-transfer DMA staging size (bytes); also bounds the pixel chunk.
 pub const DMA_CHUNK: usize = 4096;
 
+/// QSPI clock. The vendor firmware demonstrates 40 MHz, but a pixel burst is
+/// ~75 back-to-back write-continue transactions and a single short or dropped
+/// one desyncs the panel's GRAM pointer for the rest of the frame — which is
+/// what the "bottom half shifted left" corruption looks like. Backed off to
+/// trade frame time for margin; raise it again once the corruption is
+/// understood (see the display-corruption section of the architecture plan).
+const QSPI_CLOCK_MHZ: u32 = 30;
+
 /// Why display bring-up failed.
 #[derive(Debug)]
 pub enum DisplayInitError {
@@ -116,7 +124,7 @@ pub fn init(
     let spi = Spi::new(
         spi2,
         SpiConfig::default()
-            .with_frequency(Rate::from_mhz(40))
+            .with_frequency(Rate::from_mhz(QSPI_CLOCK_MHZ))
             .with_mode(Mode::_0),
     )
     .map_err(DisplayInitError::Spi)?

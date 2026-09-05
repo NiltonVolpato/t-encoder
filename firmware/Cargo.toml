@@ -19,7 +19,6 @@ slint = { version = "1.17.1", default-features = false, features = ["compat-1-2"
 enc-config = { workspace = true }
 enc-co5300 = { workspace = true }
 enc-input = { workspace = true }
-enc-touch = { workspace = true }
 enc-ui = { workspace = true }
 enc-state = { workspace = true }
 enc-net = { workspace = true }

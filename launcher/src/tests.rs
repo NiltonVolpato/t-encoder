@@ -284,3 +284,55 @@ fn feedback_requests_reach_the_router() {
     assert_eq!(router.take_feedback(), Some(Feedback::Haptic));
     assert_eq!(router.take_feedback(), None, "taking clears it");
 }
+
+/// A countdown must not stop because the user went back to the launcher, and
+/// its alarm has to fire wherever they are.
+#[test]
+fn background_apps_keep_ticking() {
+    /// Counts ticks so a test can prove it ran while off screen.
+    struct Ticker {
+        manifest: Manifest,
+        ticks: u32,
+    }
+
+    impl App for Ticker {
+        fn manifest(&self) -> &Manifest {
+            &self.manifest
+        }
+        fn handle(&mut self, _event: InputEvent, _ctx: &Ctx<'_>) -> Outcome {
+            Outcome::NONE
+        }
+        fn tick(&mut self, _ctx: &Ctx<'_>) -> Outcome {
+            self.ticks = self.ticks.saturating_add(1);
+            Outcome::dirty(Dirty::Full)
+        }
+        fn sync(&self) {}
+    }
+
+    let state = AppState::new(1);
+    let ctx = Ctx {
+        now_ms: 0,
+        state: &state,
+    };
+    let mut background = Ticker {
+        manifest: Manifest {
+            name: "Background",
+            icon: IconId(0),
+            accent: Rgb565::new(0, 0, 31),
+        },
+        ticks: 0,
+    };
+    {
+        let mut registry: [&mut dyn App; 1] = [&mut background];
+        let mut router = Router::new(&mut registry, default_carousel(0));
+        // Never launched: the router stays on the launcher throughout.
+        assert_eq!(router.view(), View::Launcher);
+        let dirty = router.tick(&ctx);
+        assert_eq!(
+            dirty,
+            Dirty::None,
+            "an off-screen app has nothing to repaint"
+        );
+    }
+    assert_eq!(background.ticks, 1, "background app must still have ticked");
+}

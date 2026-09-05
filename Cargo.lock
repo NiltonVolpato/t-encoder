@@ -1549,14 +1549,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "enc-touch"
-version = "0.1.0"
-dependencies = [
- "embedded-hal 1.0.0",
- "embedded-hal-async",
-]
-
-[[package]]
 name = "enc-ui"
 version = "0.1.0"
 dependencies = [
@@ -2139,7 +2131,6 @@ dependencies = [
  "enc-input",
  "enc-net",
  "enc-state",
- "enc-touch",
  "enc-ui",
  "esp-alloc",
  "esp-bootloader-esp-idf",
