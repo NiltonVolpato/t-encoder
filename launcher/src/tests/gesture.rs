@@ -4,7 +4,7 @@
 use enc_state::AppState;
 
 use crate::{
-    AppFactory, Ctx, Dirty, Gesture, Input, Recognizer, Router, TouchPhase, TouchSample, View,
+    AppFactory, Ctx, Gesture, Input, Recognizer, Router, TouchPhase, TouchSample, View,
     default_carousel,
 };
 
@@ -218,7 +218,7 @@ fn a_suppressed_stroke_does_not_poison_the_next_one() {
 fn tapping_the_focal_card_launches_it() {
     with_router(|router, ctx| {
         let x = router.carousel().card_centre_x(0, 0);
-        assert_eq!(feed(router, ctx, &tap(x, 195)), Dirty::Full);
+        assert!(feed(router, ctx, &tap(x, 195)));
         assert_eq!(router.view(), View::App(0));
     });
 }
@@ -235,7 +235,7 @@ fn tapping_a_neighbour_brings_it_to_the_centre() {
             .card_centre_x(1, 0)
             .saturating_sub(carousel.card_w / 2)
             .saturating_add(20);
-        assert_eq!(feed(router, ctx, &tap(x, 195)), Dirty::Full);
+        assert!(feed(router, ctx, &tap(x, 195)));
         assert_eq!(router.selected(), 1);
         assert_eq!(router.view(), View::Launcher, "the first tap only scrolls");
 
@@ -250,7 +250,7 @@ fn tapping_a_neighbour_brings_it_to_the_centre() {
 fn tapping_outside_the_cards_does_nothing() {
     with_router(|router, ctx| {
         // Well above the card band.
-        assert_eq!(feed(router, ctx, &tap(195, 10)), Dirty::None);
+        assert!(!(feed(router, ctx, &tap(195, 10))));
         assert_eq!(router.view(), View::Launcher);
     });
 }
@@ -261,10 +261,7 @@ fn tapping_outside_the_cards_does_nothing() {
 fn a_card_launches_on_the_lift_not_the_landing() {
     with_router(|router, ctx| {
         let x = router.carousel().card_centre_x(0, 0);
-        assert_eq!(
-            router.handle(Input::Touch(sample(TouchPhase::Down, x, 195, 0)), ctx),
-            Dirty::None
-        );
+        assert!(!(router.handle(Input::Touch(sample(TouchPhase::Down, x, 195, 0)), ctx)));
         assert_eq!(router.view(), View::Launcher);
         router.handle(Input::Touch(sample(TouchPhase::Up, x, 195, 0)), ctx);
         assert_eq!(router.view(), View::App(0));
@@ -275,7 +272,7 @@ fn a_card_launches_on_the_lift_not_the_landing() {
 #[test]
 fn swiping_across_the_launcher_does_not_launch() {
     with_router(|router, ctx| {
-        assert_eq!(feed(router, ctx, &swipe(340, 195, 40, 195)), Dirty::None);
+        assert!(!(feed(router, ctx, &swipe(340, 195, 40, 195))));
         assert_eq!(router.view(), View::Launcher);
     });
 }
@@ -285,7 +282,7 @@ fn swiping_up_leaves_the_app() {
     with_router(|router, ctx| {
         router.handle(Input::ShortPress, ctx);
         assert_eq!(router.view(), View::App(0));
-        assert_eq!(feed(router, ctx, &swipe(195, 340, 195, 40)), Dirty::Full);
+        assert!(feed(router, ctx, &swipe(195, 340, 195, 40)));
         assert_eq!(router.view(), View::Launcher);
     });
 }
@@ -294,7 +291,7 @@ fn swiping_up_leaves_the_app() {
 fn swiping_left_goes_back() {
     with_router(|router, ctx| {
         router.handle(Input::ShortPress, ctx);
-        assert_eq!(feed(router, ctx, &swipe(340, 195, 40, 195)), Dirty::Full);
+        assert!(feed(router, ctx, &swipe(340, 195, 40, 195)));
         assert_eq!(router.view(), View::Launcher);
     });
 }
@@ -305,8 +302,8 @@ fn swiping_left_goes_back() {
 fn swiping_down_or_right_stays_in_the_app() {
     with_router(|router, ctx| {
         router.handle(Input::ShortPress, ctx);
-        assert_eq!(feed(router, ctx, &swipe(195, 40, 195, 340)), Dirty::None);
-        assert_eq!(feed(router, ctx, &swipe(40, 195, 340, 195)), Dirty::None);
+        assert!(!(feed(router, ctx, &swipe(195, 40, 195, 340))));
+        assert!(!(feed(router, ctx, &swipe(40, 195, 340, 195))));
         assert_eq!(router.view(), View::App(0));
     });
 }
@@ -349,9 +346,9 @@ fn a_raw_touch_app_receives_every_sample_and_keeps_the_swipes() {
     let mut router = Router::new(&registry, default_carousel(0));
 
     router.handle(Input::ShortPress, &ctx);
-    let dirty = feed(&mut router, &ctx, &swipe(340, 195, 40, 195));
+    let changed = feed(&mut router, &ctx, &swipe(340, 195, 40, 195));
 
-    assert_eq!(dirty, Dirty::Full);
+    assert!(changed);
     assert_eq!(log.touches.get(), 3, "down, move and up all reach the app");
     assert_eq!(
         router.view(),
@@ -370,8 +367,8 @@ fn an_encoder_press_does_not_also_tap() {
         let x = router.carousel().card_centre_x(0, 0);
         // The contact closes, the panel feels it, then the press is released.
         router.set_button(true, 100);
-        let dirty = feed(router, ctx, &tap(x, 195));
-        assert_eq!(dirty, Dirty::None, "the phantom must not launch anything");
+        let changed = feed(router, ctx, &tap(x, 195));
+        assert!(!changed, "the phantom must not launch anything");
         assert_eq!(router.view(), View::Launcher);
     });
 }

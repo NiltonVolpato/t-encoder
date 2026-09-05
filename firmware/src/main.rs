@@ -35,7 +35,7 @@ use esp_hal::psram;
 use esp_hal::rng::Rng;
 use esp_hal::timer::timg::TimerGroup;
 // `Input` is aliased to `UiInput`: esp-hal's GPIO `Input` already owns that name.
-use launcher::{AppFactory, Ctx, Dirty, Input as UiInput, Router, View};
+use launcher::{AppFactory, Ctx, Input as UiInput, Router, View};
 // `as_weak` on the generated Slint component comes from this trait.
 use slint::ComponentHandle;
 
@@ -335,7 +335,7 @@ async fn main(spawner: Spawner) -> ! {
             // Fixed 5ms tick keeps the encoder/button responsive; touch samples
             // arrive asynchronously from the touch task via `touch::SAMPLES`.
             Timer::after(Duration::from_millis(5)).await;
-            let mut dirty = Dirty::None;
+            let mut changed = false;
             let ctx = Ctx {
                 now_ms: now_ms(),
                 state: &APP_STATE,
@@ -344,7 +344,7 @@ async fn main(spawner: Spawner) -> ! {
             // Encoder → router (carousel, or the active app).
             let detents = encoder.update(encoder_hw.raw());
             if detents != 0 {
-                dirty = dirty.merge(router.handle(UiInput::Rotate(detents), &ctx));
+                changed |= router.handle(UiInput::Rotate(detents), &ctx);
                 buzzer::signal(Feedback::Beep);
             }
 
@@ -368,14 +368,14 @@ async fn main(spawner: Spawner) -> ! {
                         if !long_fired && Instant::now().duration_since(start) >= LONG_PRESS =>
                     {
                         long_fired = true;
-                        dirty = dirty.merge(router.handle(UiInput::LongPress, &ctx));
+                        changed |= router.handle(UiInput::LongPress, &ctx);
                         buzzer::signal(Feedback::Haptic);
                     }
                     Some(_) => {}
                 }
             } else {
                 if press_start.take().is_some() && !long_fired {
-                    dirty = dirty.merge(router.handle(UiInput::ShortPress, &ctx));
+                    changed |= router.handle(UiInput::ShortPress, &ctx);
                     buzzer::signal(Feedback::Beep);
                 }
                 long_fired = false;
@@ -384,7 +384,7 @@ async fn main(spawner: Spawner) -> ! {
             // Touch → router. Drained to empty so a stroke's `Up` is never left
             // queued behind a slow frame, which would strand the gesture.
             while let Ok(sample) = touch::SAMPLES.try_receive() {
-                dirty = dirty.merge(router.handle(UiInput::Touch(sample), &ctx));
+                changed |= router.handle(UiInput::Touch(sample), &ctx);
             }
 
             // Observe the DHCP lease: publish `Connected` only with an IPv4
@@ -436,7 +436,7 @@ async fn main(spawner: Spawner) -> ! {
                 now_ms: now_ms(),
                 state: &APP_STATE,
             };
-            dirty = dirty.merge(router.tick(&ctx));
+            changed |= router.tick(&ctx);
 
             // Everything is Slint now: publish state, then let it decide what
             // actually changed. `draw_if_needed` is cheap when nothing did, so
@@ -453,7 +453,7 @@ async fn main(spawner: Spawner) -> ! {
                 // struct property unconditionally would dirty Slint every tick
                 // and repaint at full loop speed.
                 View::App(_) => {
-                    if dirty != Dirty::None {
+                    if changed {
                         router.sync_app();
                     }
                 }

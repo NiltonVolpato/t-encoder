@@ -6,8 +6,8 @@
 //! the same split as the buzzer.
 
 use launcher::{
-    App, AppFactory, Ctx, Dirty, Feedback, IconId, InputEvent, KeyChord, Manifest, Outcome,
-    TouchAccess, ViewId,
+    App, AppFactory, Ctx, Feedback, IconId, InputEvent, KeyChord, Manifest, Outcome, TouchAccess,
+    ViewId,
 };
 use ui::{MacroEntry, MacropadState, Shell};
 
@@ -150,12 +150,12 @@ impl App for Macropad {
                     return Outcome::NONE;
                 }
                 self.selected = next;
-                Outcome::dirty(Dirty::Full)
+                Outcome::CHANGED
             }
             InputEvent::Select => match MACROS.get(self.selected) {
                 // Beep rather than buzz: this is a keystroke leaving the
                 // device, and it should sound like a key.
-                Some(entry) => Outcome::send_keys(Dirty::Full, entry.keys, Feedback::Beep),
+                Some(entry) => Outcome::send_keys(entry.keys, Feedback::Beep),
                 None => Outcome::NONE,
             },
             // Unreachable: the router turns touch into navigation and never
@@ -172,7 +172,7 @@ impl App for Macropad {
             return Outcome::NONE;
         }
         self.linked = linked;
-        Outcome::dirty(Dirty::Full)
+        Outcome::CHANGED
     }
 
     fn sync(&self) {

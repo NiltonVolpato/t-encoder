@@ -1,12 +1,9 @@
-//! Horizontal card carousel: layout, hit-testing, and the dirty band it needs.
+//! Horizontal card carousel: layout and hit-testing.
 //!
 //! Cards sit on one horizontal line through the centre of the round panel. The
-//! focal card is centred; neighbours peek in at the rim. Motion is a single
-//! horizontal scroll offset in pixels, which is why a transition is a band of
-//! blits at shifted offsets rather than a full repaint — see the UI section of
-//! the architecture plan.
-
-use enc_ui::Dirty;
+//! focal card is centred; neighbours peek in at the rim. Slint owns the motion
+//! — the strip's `animate x` does the sliding — so what survives here is the
+//! geometry a *tap* has to be resolved against.
 
 /// Geometry of the card strip.
 #[derive(Clone, Copy, Debug)]
@@ -66,21 +63,6 @@ impl Carousel {
             let cx = self.card_centre_x(index, scroll);
             x >= cx.saturating_sub(half_w) && x < cx.saturating_add(half_w)
         })
-    }
-
-    /// Full-width dirty band covering the card strip.
-    ///
-    /// Deliberately full width: a full-width band is contiguous in the
-    /// framebuffer and streams straight to the panel, whereas a narrower rect
-    /// would need a row-by-row gather into scratch first.
-    #[must_use]
-    pub fn band(&self) -> Dirty {
-        let half_h = self.card_h.saturating_div(2);
-        let top = self.centre_y.saturating_sub(half_h).max(0);
-        let bottom = self.centre_y.saturating_add(half_h).max(0);
-        let y = u16::try_from(top).unwrap_or(0);
-        let h = u16::try_from(bottom.saturating_sub(top)).unwrap_or(0);
-        Dirty::Band { y, h }
     }
 
     /// Moves `selected` by `delta` cards, clamped to the registry.

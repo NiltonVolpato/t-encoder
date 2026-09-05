@@ -6,9 +6,8 @@
 //! **Rendering and animation belong to Slint** (the `ui` crate) — this crate
 //! holds navigation state, not pixels.
 //!
-//! Input and dirty-region types are reused from `enc_ui` rather than
-//! redefined — the launcher sits alongside upstream's UI code, not on top of a
-//! replacement for it.
+//! [`InputEvent`] is still reused from `enc_ui` rather than redefined. It is
+//! the last thing that crate is used for here — see the backlog.
 
 #![no_std]
 
@@ -28,7 +27,7 @@ pub use gesture::{Gesture, Recognizer, TouchPhase, TouchSample};
 pub use router::{Input, Router, View};
 
 // Re-exported so apps need only depend on `launcher`.
-pub use enc_ui::{Dirty, InputEvent};
+pub use enc_ui::InputEvent;
 
 /// Panel geometry the launcher lays out against. Mirrors `enc_config::display`,
 /// duplicated here so this crate stays free of device dependencies.

@@ -1,14 +1,14 @@
 //! The `App` trait and its surrounding types.
 //!
-//! An app is a self-contained screen: it consumes normalized [`InputEvent`]s,
-//! reports a [`Dirty`] region so the host flushes minimally, and paints itself
-//! onto the shared framebuffer. Apps are held as trait objects so that adding
-//! one is a struct plus a registry entry — never an edit to an enum and every
-//! match arm over it.
+//! An app is a self-contained screen: it consumes normalized input, owns its
+//! state, and publishes that state into the shared Slint tree. It never paints
+//! — Slint renders from the properties [`App::sync`] sets, and computes its own
+//! repaint region. Apps are held as trait objects so that adding one is a
+//! struct plus a registry entry — never an edit to an enum and every match arm
+//! over it.
 
 use embedded_graphics::pixelcolor::Rgb565;
 use enc_state::AppState;
-use enc_ui::Dirty;
 
 use crate::gesture::TouchSample;
 
@@ -104,12 +104,18 @@ pub struct KeyChord {
     pub usage: u8,
 }
 
-/// An app's response to an event: what changed, where to go next, and whether
-/// to buzz or send a keystroke.
+/// An app's response to an event: whether anything changed, where to go next,
+/// and whether to buzz or send a keystroke.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Outcome {
-    /// Region that needs repainting.
-    pub dirty: Dirty,
+    /// Whether any state changed, so the host republishes to Slint.
+    ///
+    /// Deliberately a flag and not a region: Slint tracks its own dirty
+    /// rectangle and hands one back from `render`, so an app describing *where*
+    /// it changed would be describing something nobody reads. All this decides
+    /// is whether [`App::sync`] is worth calling — republishing unconditionally
+    /// would dirty Slint every tick and repaint at full loop speed.
+    pub changed: bool,
     /// Requested navigation.
     pub action: Action,
     /// Optional buzzer/haptic request.
@@ -121,39 +127,36 @@ pub struct Outcome {
 impl Outcome {
     /// Nothing changed, stay put.
     pub const NONE: Outcome = Outcome {
-        dirty: Dirty::None,
+        changed: false,
         action: Action::None,
         feedback: None,
         keys: None,
     };
 
-    /// Repaint `dirty`, stay in the app.
-    #[must_use]
-    pub const fn dirty(dirty: Dirty) -> Outcome {
-        Outcome {
-            dirty,
-            action: Action::None,
-            feedback: None,
-            keys: None,
-        }
-    }
+    /// State changed, stay in the app.
+    pub const CHANGED: Outcome = Outcome {
+        changed: true,
+        action: Action::None,
+        feedback: None,
+        keys: None,
+    };
 
-    /// Repaint `dirty` and buzz.
+    /// State changed; buzz as well.
     #[must_use]
-    pub const fn buzz(dirty: Dirty, feedback: Feedback) -> Outcome {
+    pub const fn buzz(feedback: Feedback) -> Outcome {
         Outcome {
-            dirty,
+            changed: true,
             action: Action::None,
             feedback: Some(feedback),
             keys: None,
         }
     }
 
-    /// Send `keys` to the paired host, buzz to confirm, and repaint `dirty`.
+    /// Send `keys` to the paired host and buzz to confirm.
     #[must_use]
-    pub const fn send_keys(dirty: Dirty, keys: KeyChord, feedback: Feedback) -> Outcome {
+    pub const fn send_keys(keys: KeyChord, feedback: Feedback) -> Outcome {
         Outcome {
-            dirty,
+            changed: true,
             action: Action::None,
             feedback: Some(feedback),
             keys: Some(keys),
@@ -164,7 +167,7 @@ impl Outcome {
     #[must_use]
     pub const fn exit() -> Outcome {
         Outcome {
-            dirty: Dirty::Full,
+            changed: true,
             action: Action::Exit,
             feedback: None,
             keys: None,

@@ -9,7 +9,7 @@
 //! the resulting [`Gesture`] means anything. An app receives raw samples only
 //! if its manifest asks for them.
 
-use enc_ui::{Dirty, InputEvent};
+use enc_ui::InputEvent;
 
 use alloc::boxed::Box;
 
@@ -111,8 +111,8 @@ impl<'a> Router<'a> {
         }
     }
 
-    /// Handles one raw input, returning the region to repaint.
-    pub fn handle(&mut self, input: Input, ctx: &Ctx<'_>) -> Dirty {
+    /// Handles one raw input, returning whether anything changed.
+    pub fn handle(&mut self, input: Input, ctx: &Ctx<'_>) -> bool {
         match input {
             // Touch is the system's: it becomes navigation, unless the app on
             // screen asked for the raw panel.
@@ -120,7 +120,7 @@ impl<'a> Router<'a> {
             // Long press is navigation everywhere, and never reaches an app.
             // From the launcher there is nowhere to go back to.
             Input::LongPress => match self.view {
-                View::Launcher => Dirty::None,
+                View::Launcher => false,
                 View::App(_) => self.go_home(),
             },
             Input::Rotate(delta) => match self.view {
@@ -149,11 +149,11 @@ impl<'a> Router<'a> {
     /// Only the running app ticks. There is no background execution: leaving an
     /// app drops it, so a timer left behind is gone. Background work needs its
     /// own design rather than keeping every app alive forever.
-    pub fn tick(&mut self, ctx: &Ctx<'_>) -> Dirty {
-        // Slint drives its own animation clock and reports what changed, so the
-        // launcher has no tick-driven dirty region of its own.
+    pub fn tick(&mut self, ctx: &Ctx<'_>) -> bool {
+        // Slint drives its own animation clock, so the launcher has nothing of
+        // its own to advance on a tick.
         let Some(app) = self.active.as_mut() else {
-            return Dirty::None;
+            return false;
         };
         let outcome = app.tick(ctx);
         self.apply(outcome)
@@ -180,19 +180,19 @@ impl<'a> Router<'a> {
     }
 
     /// Moves the launcher's highlight by `delta` cards.
-    fn move_selection(&mut self, delta: i32) -> Dirty {
+    fn move_selection(&mut self, delta: i32) -> bool {
         let next = self.carousel.step(self.selected, delta);
         if next == self.selected {
-            return Dirty::None;
+            return false;
         }
         self.selected = next;
         // Slint owns the slide: setting `selected` on the shell drives an
         // `animate x`, so there is no scroll state to keep here.
-        Dirty::Full
+        true
     }
 
     /// Forwards a normalized event to the running app.
-    fn deliver(&mut self, event: InputEvent, ctx: &Ctx<'_>) -> Dirty {
+    fn deliver(&mut self, event: InputEvent, ctx: &Ctx<'_>) -> bool {
         let Some(app) = self.active.as_mut() else {
             return self.go_home();
         };
@@ -202,7 +202,7 @@ impl<'a> Router<'a> {
 
     /// Routes one touch sample: to the app if it owns the panel, otherwise
     /// through the recogniser and on to navigation.
-    fn handle_touch(&mut self, sample: TouchSample, ctx: &Ctx<'_>) -> Dirty {
+    fn handle_touch(&mut self, sample: TouchSample, ctx: &Ctx<'_>) -> bool {
         if self.app_owns_touch() {
             let Some(app) = self.active.as_mut() else {
                 return self.go_home();
@@ -211,7 +211,7 @@ impl<'a> Router<'a> {
             return self.apply(outcome);
         }
         let Some(gesture) = self.gestures.push(sample) else {
-            return Dirty::None;
+            return false;
         };
         match self.view {
             View::Launcher => self.handle_launcher_gesture(gesture, ctx),
@@ -220,16 +220,16 @@ impl<'a> Router<'a> {
             // swallowed — apps do not see touch.
             View::App(_) => match gesture {
                 Gesture::SwipeUp | Gesture::SwipeLeft => self.go_home(),
-                Gesture::SwipeDown | Gesture::SwipeRight | Gesture::Tap { .. } => Dirty::None,
+                Gesture::SwipeDown | Gesture::SwipeRight | Gesture::Tap { .. } => false,
             },
         }
     }
 
     /// The launcher's own view of touch: a tap picks a card.
-    fn handle_launcher_gesture(&mut self, gesture: Gesture, ctx: &Ctx<'_>) -> Dirty {
+    fn handle_launcher_gesture(&mut self, gesture: Gesture, ctx: &Ctx<'_>) -> bool {
         // Already home, so a swipe has nowhere to go.
         let Gesture::Tap { x, y } = gesture else {
-            return Dirty::None;
+            return false;
         };
         // Hit-test at the settled position: Slint owns the in-flight offset.
         let scroll = self.carousel.scroll_for(self.selected);
@@ -242,9 +242,9 @@ impl<'a> Router<'a> {
             Some(index) if index == self.selected => self.launch(index, ctx),
             Some(index) => {
                 self.selected = index;
-                Dirty::Full
+                true
             }
-            None => Dirty::None,
+            None => false,
         }
     }
 
@@ -259,34 +259,34 @@ impl<'a> Router<'a> {
     }
 
     /// Banks an app's feedback and keystroke requests and resolves its action.
-    fn apply(&mut self, outcome: Outcome) -> Dirty {
+    fn apply(&mut self, outcome: Outcome) -> bool {
         self.feedback = self.feedback.or(outcome.feedback);
         self.keys = self.keys.or(outcome.keys);
         match outcome.action {
-            Action::None => outcome.dirty,
+            Action::None => outcome.changed,
             Action::Exit => self.go_home(),
         }
     }
 
     /// Constructs a fresh instance of app `index` and shows it.
-    fn launch(&mut self, index: usize, ctx: &Ctx<'_>) -> Dirty {
+    fn launch(&mut self, index: usize, ctx: &Ctx<'_>) -> bool {
         let _ = ctx;
         let Some(factory) = self.factories.get(index) else {
-            return Dirty::None;
+            return false;
         };
         self.active = Some(factory.create());
         self.view = View::App(index);
-        Dirty::Full
+        true
     }
 
     /// Drops the running app and returns to the launcher.
-    fn go_home(&mut self) -> Dirty {
+    fn go_home(&mut self) -> bool {
         if let Some(mut app) = self.active.take() {
             app.on_exit();
             // `app` is dropped here: all of its state goes with it, which is
             // what makes reopening a real reset.
         }
         self.view = View::Launcher;
-        Dirty::Full
+        true
     }
 }

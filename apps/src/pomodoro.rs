@@ -11,8 +11,7 @@
 //! tick, so a slow frame cannot make it drift.
 
 use launcher::{
-    App, AppFactory, Ctx, Dirty, Feedback, IconId, InputEvent, Manifest, Outcome, TouchAccess,
-    ViewId,
+    App, AppFactory, Ctx, Feedback, IconId, InputEvent, Manifest, Outcome, TouchAccess, ViewId,
 };
 use ui::{PomodoroState, Shell};
 
@@ -166,7 +165,7 @@ impl App for Pomodoro {
                 }
                 if remaining == 0 {
                     self.cancel();
-                    return Outcome::dirty(Dirty::Full);
+                    return Outcome::CHANGED;
                 }
                 self.remaining = remaining;
                 match self.phase {
@@ -176,7 +175,7 @@ impl App for Pomodoro {
                     Phase::Done => self.phase = Phase::Idle,
                     Phase::Idle | Phase::Paused => {}
                 }
-                Outcome::dirty(Dirty::Full)
+                Outcome::CHANGED
             }
             InputEvent::Select => {
                 match self.phase {
@@ -187,7 +186,7 @@ impl App for Pomodoro {
                     Phase::Running => self.pause(ctx.now_ms),
                     Phase::Done => self.cancel(),
                 }
-                Outcome::buzz(Dirty::Full, Feedback::Beep)
+                Outcome::buzz(Feedback::Beep)
             }
             // Unreachable: the router turns touch into navigation and never
             // forwards it, since this manifest does not ask for the raw panel.
@@ -204,9 +203,9 @@ impl App for Pomodoro {
             self.started_ms = None;
             // Haptic rather than a beep: a finished pomodoro should be felt
             // even if the device is face-down or the room is noisy.
-            return Outcome::buzz(Dirty::Full, Feedback::Haptic);
+            return Outcome::buzz(Feedback::Haptic);
         }
-        Outcome::dirty(Dirty::Full)
+        Outcome::CHANGED
     }
 
     fn sync(&self) {

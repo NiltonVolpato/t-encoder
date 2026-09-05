@@ -10,9 +10,8 @@ use alloc::boxed::Box;
 use core::cell::Cell;
 
 use crate::{
-    Action, App, AppFactory, Ctx, Dirty, Feedback, IconId, Input, InputEvent, KeyChord, Manifest,
-    Outcome, Router, TouchAccess, TouchPhase, TouchSample, View, ViewId, default_carousel,
-    geometry,
+    Action, App, AppFactory, Ctx, Feedback, IconId, Input, InputEvent, KeyChord, Manifest, Outcome,
+    Router, TouchAccess, TouchPhase, TouchSample, View, ViewId, default_carousel, geometry,
 };
 
 /// A sample at `(x, y)`, `at_ms` after boot.
@@ -47,10 +46,11 @@ fn swipe(x0: i32, y0: i32, x1: i32, y1: i32) -> [TouchSample; 3] {
     ]
 }
 
-/// Feeds a whole stroke to the router, returning the merged dirty region.
-fn feed(router: &mut Router<'_>, ctx: &Ctx<'_>, stroke: &[TouchSample]) -> Dirty {
-    stroke.iter().fold(Dirty::None, |dirty, &s| {
-        dirty.merge(router.handle(Input::Touch(s), ctx))
+/// Feeds a whole stroke to the router, reporting whether any of it changed
+/// anything.
+fn feed(router: &mut Router<'_>, ctx: &Ctx<'_>, stroke: &[TouchSample]) -> bool {
+    stroke.iter().fold(false, |changed, &s| {
+        changed | router.handle(Input::Touch(s), ctx)
     })
 }
 
@@ -82,7 +82,7 @@ impl App for StubApp<'_> {
         self.log.events.set(self.log.events.get().saturating_add(1));
         match self.action {
             Action::None => Outcome {
-                dirty: Dirty::Full,
+                changed: true,
                 action: Action::None,
                 feedback: self.feedback,
                 keys: self.keys,
@@ -95,7 +95,7 @@ impl App for StubApp<'_> {
         self.log
             .touches
             .set(self.log.touches.get().saturating_add(1));
-        Outcome::dirty(Dirty::Full)
+        Outcome::CHANGED
     }
 
     fn sync(&self) {}
@@ -214,19 +214,19 @@ fn selection_clamps_at_both_ends() {
 }
 
 #[test]
-fn rotate_onto_the_same_card_is_not_dirty() {
+fn rotate_onto_the_same_card_changes_nothing() {
     with_router(|router, ctx| {
-        assert_eq!(router.handle(Input::Rotate(-1), ctx), Dirty::None);
+        assert!(!(router.handle(Input::Rotate(-1), ctx)));
     });
 }
 
 #[test]
 fn short_press_launches_and_long_press_returns_home() {
     with_router(|router, ctx| {
-        assert_eq!(router.handle(Input::ShortPress, ctx), Dirty::Full);
+        assert!(router.handle(Input::ShortPress, ctx));
         assert_eq!(router.view(), View::App(0));
 
-        assert_eq!(router.handle(Input::LongPress, ctx), Dirty::Full);
+        assert!(router.handle(Input::LongPress, ctx));
         assert_eq!(router.view(), View::Launcher);
     });
 }
@@ -248,7 +248,7 @@ fn the_view_id_follows_the_active_app() {
 #[test]
 fn long_press_on_the_launcher_does_nothing() {
     with_router(|router, ctx| {
-        assert_eq!(router.handle(Input::LongPress, ctx), Dirty::None);
+        assert!(!(router.handle(Input::LongPress, ctx)));
         assert_eq!(router.view(), View::Launcher);
     });
 }
@@ -285,23 +285,14 @@ fn carousel_handles_an_empty_registry() {
     assert_eq!(carousel.hit_test(195, 195, 0), None);
 }
 
-#[test]
-fn dirty_bands_merge_into_a_covering_band() {
-    let a = Dirty::Band { y: 10, h: 20 };
-    let b = Dirty::Band { y: 40, h: 10 };
-    assert_eq!(a.merge(b), Dirty::Band { y: 10, h: 40 });
-    assert_eq!(a.merge(Dirty::Full), Dirty::Full);
-    assert_eq!(a.merge(Dirty::None), a);
-}
-
-/// Slint owns the slide now, so a selection change reports `Full` and lets
-/// Slint's own dirty tracking decide what actually gets flushed.
+/// Slint owns the slide, and its own dirty tracking decides what gets flushed;
+/// all the router says is that something moved.
 #[test]
 fn rotate_moves_selection_and_delegates_painting_to_slint() {
     with_router(|router, ctx| {
         let dirty = router.handle(Input::Rotate(1), ctx);
         assert_eq!(router.selected(), 1);
-        assert_eq!(dirty, Dirty::Full);
+        assert!(dirty);
     });
 }
 
@@ -311,7 +302,7 @@ fn rotate_moves_selection_and_delegates_painting_to_slint() {
 fn launcher_tick_is_never_dirty() {
     with_router(|router, ctx| {
         router.handle(Input::Rotate(1), ctx);
-        assert_eq!(router.tick(ctx), Dirty::None);
+        assert!(!router.tick(ctx));
     });
 }
 
@@ -409,6 +400,6 @@ fn leaving_an_app_drops_it_and_reopening_builds_a_fresh_one() {
 fn nothing_ticks_while_on_the_launcher() {
     with_router(|router, ctx| {
         assert_eq!(router.view(), View::Launcher);
-        assert_eq!(router.tick(ctx), Dirty::None);
+        assert!(!router.tick(ctx));
     });
 }
