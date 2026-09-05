@@ -46,6 +46,30 @@ globs, so toolchain upgrades need no edit here.
   ours we silently ship a bloated, slow build.
 - Flashing without `--partition-table firmware/partitions.csv` silently disables
   settings persistence (the custom `settings` NVS partition goes missing).
+- **`--after hard-reset` is required.** Without it espflash leaves the chip in
+  ROM download mode ("waiting for download") with a black screen — no app is
+  running, so nothing initializes the display. Recover with `espflash reset`.
+
+### espflash behaviour worth knowing
+
+- **`espflash flash` does not erase the whole chip and does not repartition.**
+  It writes only the offsets that changed, so the `settings` and `nvs` data
+  partitions survive a reflash. Full erase is opt-in and explicit:
+  `erase-flash`, `erase-parts`, `erase-data-parts`. (Verified on device.)
+- **espflash subcommands need a TTY.** Headless they either die with "Failed to
+  initialize input reader" or hang silently with no output. Wrap in
+  `script -q /dev/null <cmd>`. `read-flash` / `write-bin` hang even then — do
+  not use them from automation.
+- **Mid-execution monitoring does not work with espflash** on this board.
+  `monitor` always tries to sync with the bootloader, and the app is not one, so
+  `--before no-reset` and `--before no-reset-no-sync` both hang at
+  "Connecting...". Unlike boards with an external USB-UART bridge (CP2102/CH340)
+  that stays enumerated regardless, this board uses the ESP's *own*
+  USB-Serial/JTAG, which re-enumerates across reset. To watch a running app, use
+  a dumb terminal (`screen /dev/cu.usbmodem101 115200`) — `esp-println` output
+  reads fine; it is espflash's handshake that is the blocker.
+- Only one process may hold `/dev/cu.usbmodem101`. A stray `cat` or a background
+  monitor blocks every espflash invocation, usually as an unexplained hang.
 
 ## Layout
 

@@ -12,9 +12,14 @@ target = "xtensa-esp32s3-none-elf"
 rustc-wrapper = ""
 
 [target.xtensa-esp32s3-none-elf]
-# Native USB-Serial/JTAG. The custom partition table adds a `settings`
-# partition — flashing without it silently disables settings persistence.
-runner = "espflash flash --monitor --chip esp32s3 --partition-table firmware/partitions.csv"
+# Native USB-Serial/JTAG. Three parts of this are load-bearing:
+#   --partition-table  the custom table adds the `settings` partition; without
+#                      it, settings persistence silently stops working
+#   --after hard-reset resets into the app after flashing. Without it the chip
+#                      is left sitting in ROM download mode ("waiting for
+#                      download") with a black screen, needing a manual reset
+#   --port             explicit; auto-detect can hang waiting on a device probe
+runner = "espflash flash --monitor --chip esp32s3 --port /dev/cu.usbmodem101 --partition-table firmware/partitions.csv --after hard-reset"
 # linkall.x is appended by firmware/build.rs (must be the last linker script).
 rustflags = ["-C", "link-arg=-nostartfiles"]
 
