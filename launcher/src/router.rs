@@ -234,9 +234,15 @@ impl<'a> Router<'a> {
         // Hit-test at the settled position: Slint owns the in-flight offset.
         let scroll = self.carousel.scroll_for(self.selected);
         match self.carousel.hit_test(x, y, scroll) {
+            // Tapping the focal card opens it; tapping a neighbour peeking in
+            // at the rim brings it to the centre instead, which is what a
+            // carousel normally does. Opening a half-visible card straight from
+            // the rim was the odd part: you could launch a card you could not
+            // scroll to by dragging.
+            Some(index) if index == self.selected => self.launch(index, ctx),
             Some(index) => {
                 self.selected = index;
-                self.launch(index, ctx)
+                Dirty::Full
             }
             None => Dirty::None,
         }

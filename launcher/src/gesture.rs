@@ -8,6 +8,8 @@
 //! knows nothing about I2C, so the whole gesture contract is exercised on the
 //! host and only the sampling loop has to be trusted on device.
 
+use crate::geometry;
+
 /// Where a sample sits in a stroke.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TouchPhase {
@@ -67,6 +69,26 @@ const SWIPE_MIN_TRAVEL: i32 = 220;
 /// rather than to whichever axis happened to win by a pixel.
 const AXIS_RATIO: i32 = 2;
 
+/// How much longer than its straight-line travel a swipe's path may be, in
+/// percent. A straight drag measures ~100 and a gentle arc ~103, while a V
+/// measures ~135 and a spiral far worse. Endpoints alone are not enough:
+/// circling the middle of the screen and finishing at the left rim is not a
+/// swipe left, however much it looks like one to a subtraction.
+const SWIPE_MAX_PATH_PCT: i32 = 120;
+
+/// Minimum movement before a segment counts toward the path length.
+///
+/// Without it the path measurement depends on the sample rate: a finger held
+/// steady still reports a pixel or two of jitter every 10 ms, and summing those
+/// makes a slow straight drag score worse than a fast crooked one. Below this,
+/// a sample moves nothing.
+const PATH_STEP: i32 = 20;
+
+/// How long a swipe may take. A navigation gesture is a flick, not a journey —
+/// without this, a minute of wandering that happens to end at the far edge
+/// still quit the app.
+const SWIPE_MAX_MS: u64 = 800;
+
 /// How far a stroke may wander and still be a tap. Fingers roll a little on a
 /// panel this small; anything past this was a drag, and a drag that is not a
 /// swipe means nothing.
@@ -77,11 +99,29 @@ const TAP_MAX_WANDER: i32 = 16;
 /// settling, not a new gesture.
 const PHANTOM_GRACE_MS: u64 = 250;
 
-/// A stroke in progress: only its ends and its worst excursion matter.
+/// Whether a reported point is actually on the panel.
+///
+/// The controller's coordinate registers are 12-bit and can read back garbage —
+/// the first poll after reset returns a stale point, `501,3784` observed on
+/// this unit. A garbage endpoint is indistinguishable from an enormous swipe
+/// (that one measures as 3591 px upward), and panel bounds are the one thing
+/// we can check it against.
+fn on_panel(x: i32, y: i32) -> bool {
+    (0..i32::from(geometry::WIDTH)).contains(&x) && (0..i32::from(geometry::HEIGHT)).contains(&y)
+}
+
+/// A stroke in progress.
 #[derive(Clone, Copy, Debug)]
 struct Stroke {
     start_x: i32,
     start_y: i32,
+    /// When the finger landed, for the swipe's time limit.
+    start_ms: u64,
+    /// Last point that advanced the path, so jitter accumulates nothing.
+    anchor_x: i32,
+    anchor_y: i32,
+    /// Distance actually travelled, in `PATH_STEP`-sized segments.
+    path: i32,
     /// Farthest the finger has been from the start, so a stroke that wandered
     /// out and came back is not reported as a tap.
     wander: i32,
@@ -91,12 +131,52 @@ struct Stroke {
 }
 
 impl Stroke {
+    /// Starts a stroke at `sample`.
+    fn landed(sample: TouchSample, suppressed: bool) -> Stroke {
+        Stroke {
+            start_x: sample.x,
+            start_y: sample.y,
+            start_ms: sample.at_ms,
+            anchor_x: sample.x,
+            anchor_y: sample.y,
+            path: 0,
+            wander: 0,
+            suppressed,
+        }
+    }
+
     /// Records that the finger reached `(x, y)`.
     fn reached(&mut self, x: i32, y: i32) {
-        let dx = x.saturating_sub(self.start_x).saturating_abs();
-        let dy = y.saturating_sub(self.start_y).saturating_abs();
-        self.wander = self.wander.max(dx.max(dy));
+        let dx = x.saturating_sub(self.anchor_x);
+        let dy = y.saturating_sub(self.anchor_y);
+        if dx.saturating_abs().max(dy.saturating_abs()) >= PATH_STEP {
+            self.path = self.path.saturating_add(distance(dx, dy));
+            self.anchor_x = x;
+            self.anchor_y = y;
+        }
+
+        let from_start_x = x.saturating_sub(self.start_x).saturating_abs();
+        let from_start_y = y.saturating_sub(self.start_y).saturating_abs();
+        self.wander = self.wander.max(from_start_x.max(from_start_y));
     }
+
+    /// Adds the last part-segment, so the path is not short by up to one step.
+    fn closed(&mut self, x: i32, y: i32) {
+        let dx = x.saturating_sub(self.anchor_x);
+        let dy = y.saturating_sub(self.anchor_y);
+        self.path = self.path.saturating_add(distance(dx, dy));
+    }
+}
+
+/// Length of the vector `(dx, dy)`, rounded down.
+///
+/// Euclidean rather than Manhattan: on a near-straight drag Manhattan charges
+/// the full cross-axis jitter, which is what made the measurement depend on how
+/// crooked the *controller* was rather than how crooked the finger was.
+fn distance(dx: i32, dy: i32) -> i32 {
+    dx.saturating_mul(dx)
+        .saturating_add(dy.saturating_mul(dy))
+        .isqrt()
 }
 
 /// Turns a stream of [`TouchSample`]s into [`Gesture`]s.
@@ -125,14 +205,15 @@ impl Recognizer {
 
     /// Feeds one sample, returning the gesture it completed.
     pub fn push(&mut self, sample: TouchSample) -> Option<Gesture> {
+        // An off-panel reading is the controller talking nonsense, not a
+        // finger. Drop it whole rather than let it start, extend or end a
+        // stroke: a stroke built on a garbage endpoint measures as a swipe.
+        if !on_panel(sample.x, sample.y) {
+            return None;
+        }
         match sample.phase {
             TouchPhase::Down => {
-                self.stroke = Some(Stroke {
-                    start_x: sample.x,
-                    start_y: sample.y,
-                    wander: 0,
-                    suppressed: self.is_phantom(sample.at_ms),
-                });
+                self.stroke = Some(Stroke::landed(sample, self.is_phantom(sample.at_ms)));
                 None
             }
             TouchPhase::Move => {
@@ -146,10 +227,11 @@ impl Recognizer {
                 // suppressed one, so the next press starts clean.
                 let mut stroke = self.stroke.take()?;
                 stroke.reached(sample.x, sample.y);
+                stroke.closed(sample.x, sample.y);
                 if stroke.suppressed {
                     return None;
                 }
-                classify(&stroke, sample.x, sample.y)
+                classify(&stroke, sample.x, sample.y, sample.at_ms)
             }
         }
     }
@@ -185,27 +267,44 @@ impl Recognizer {
     }
 }
 
-/// Classifies a finished stroke that ended at `(end_x, end_y)`.
-fn classify(stroke: &Stroke, end_x: i32, end_y: i32) -> Option<Gesture> {
+/// Classifies a finished stroke that ended at `(end_x, end_y)` at `end_ms`.
+fn classify(stroke: &Stroke, end_x: i32, end_y: i32, end_ms: u64) -> Option<Gesture> {
     let dx = end_x.saturating_sub(stroke.start_x);
     let dy = end_y.saturating_sub(stroke.start_y);
     let across = dx.saturating_abs();
     let down = dy.saturating_abs();
 
-    if across >= SWIPE_MIN_TRAVEL && across >= down.saturating_mul(AXIS_RATIO) {
-        return Some(if dx < 0 {
-            Gesture::SwipeLeft
-        } else {
-            Gesture::SwipeRight
-        });
-    }
-    if down >= SWIPE_MIN_TRAVEL && down >= across.saturating_mul(AXIS_RATIO) {
-        // `y` grows downward, so a negative `dy` is a swipe up the screen.
-        return Some(if dy < 0 {
-            Gesture::SwipeUp
-        } else {
-            Gesture::SwipeDown
-        });
+    // `y` grows downward, so a negative `dy` is a swipe up the screen.
+    let (travel, direction) = if across >= down {
+        (
+            across,
+            if dx < 0 {
+                Gesture::SwipeLeft
+            } else {
+                Gesture::SwipeRight
+            },
+        )
+    } else {
+        (
+            down,
+            if dy < 0 {
+                Gesture::SwipeUp
+            } else {
+                Gesture::SwipeDown
+            },
+        )
+    };
+
+    // Far enough, straight enough, one-directional enough, and quick enough.
+    // Any one of these alone is trivially fooled — the last two were both found
+    // on hardware, by a spiral and by a leisurely wander respectively.
+    let off_axis = across.min(down);
+    if travel >= SWIPE_MIN_TRAVEL
+        && travel >= off_axis.saturating_mul(AXIS_RATIO)
+        && stroke.path.saturating_mul(100) <= travel.saturating_mul(SWIPE_MAX_PATH_PCT)
+        && end_ms.saturating_sub(stroke.start_ms) <= SWIPE_MAX_MS
+    {
+        return Some(direction);
     }
     if stroke.wander <= TAP_MAX_WANDER {
         return Some(Gesture::Tap {

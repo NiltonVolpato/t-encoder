@@ -87,6 +87,113 @@ fn a_lift_without_a_landing_recognises_nothing() {
     assert_eq!(recognise(&[sample(TouchPhase::Up, 195, 195, 0)]), None);
 }
 
+/// Observed on device: the first poll after reset returned `501,3784`, which
+/// as a stroke start measures 3591 px upward — a swipe up big enough to quit
+/// whatever was on screen.
+#[test]
+fn an_off_panel_reading_cannot_start_a_swipe() {
+    let stroke = [
+        sample(TouchPhase::Down, 501, 3784, 0),
+        sample(TouchPhase::Up, 204, 193, 60),
+    ];
+    assert_eq!(recognise(&stroke), None);
+}
+
+/// A glitched sample mid-stroke is dropped, not treated as a lift: one bad
+/// reading must not cut a real swipe in half.
+#[test]
+fn an_off_panel_reading_mid_stroke_is_ignored() {
+    let stroke = [
+        sample(TouchPhase::Down, 340, 195, 0),
+        sample(TouchPhase::Move, 4000, 4000, 20),
+        sample(TouchPhase::Move, 190, 195, 40),
+        sample(TouchPhase::Up, 40, 195, 80),
+    ];
+    assert_eq!(recognise(&stroke), Some(Gesture::SwipeLeft));
+}
+
+/// Observed on device: circling the middle of the screen and finishing at the
+/// left rim quit the app, because only the endpoints were being measured.
+#[test]
+fn a_spiral_that_ends_at_the_far_edge_is_not_a_swipe() {
+    let mut stroke = alloc::vec::Vec::new();
+    stroke.push(sample(TouchPhase::Down, 340, 195, 0));
+    // Four laps around the middle, then out to the left rim.
+    for lap in 0..4 {
+        let at = 20 + lap * 80;
+        stroke.push(sample(TouchPhase::Move, 260, 120, at));
+        stroke.push(sample(TouchPhase::Move, 190, 195, at + 20));
+        stroke.push(sample(TouchPhase::Move, 260, 270, at + 40));
+        stroke.push(sample(TouchPhase::Move, 330, 195, at + 60));
+    }
+    stroke.push(sample(TouchPhase::Up, 40, 195, 400));
+    assert_eq!(recognise(&stroke), None);
+}
+
+/// Observed on device: a V counted as a swipe toward whichever arm it ended on.
+#[test]
+fn a_v_is_not_a_swipe() {
+    let stroke = [
+        sample(TouchPhase::Down, 380, 190, 0),
+        sample(TouchPhase::Move, 200, 350, 60),
+        sample(TouchPhase::Up, 30, 190, 120),
+    ];
+    assert_eq!(recognise(&stroke), None);
+}
+
+/// A swipe is a flick, not a journey. Nilton's report: "if I take 1 minute
+/// swiping it works".
+#[test]
+fn a_slow_drag_across_the_panel_is_not_a_swipe() {
+    let stroke = [
+        sample(TouchPhase::Down, 340, 195, 0),
+        sample(TouchPhase::Move, 190, 195, 30_000),
+        sample(TouchPhase::Up, 40, 195, 60_000),
+    ];
+    assert_eq!(recognise(&stroke), None);
+}
+
+/// The straightness test must survive a real finger: 100 Hz sampling with a
+/// few pixels of cross-axis jitter on every single sample. Summing raw segment
+/// lengths would charge all of that to the path and reject a clean swipe, which
+/// is why the path only advances in `PATH_STEP` chunks.
+#[test]
+fn a_dense_jittery_but_straight_swipe_still_counts() {
+    let mut stroke = alloc::vec::Vec::new();
+    stroke.push(sample(TouchPhase::Down, 340, 195, 0));
+    for step in 1..60 {
+        let x = 340 - step * 5;
+        let y = 195 + if step % 2 == 0 { 4 } else { -4 };
+        stroke.push(sample(
+            TouchPhase::Move,
+            x,
+            y,
+            u64::try_from(step).unwrap_or(0) * 10,
+        ));
+    }
+    stroke.push(sample(TouchPhase::Up, 40, 195, 600));
+    assert_eq!(recognise(&stroke), Some(Gesture::SwipeLeft));
+}
+
+/// The same swipe sampled coarsely must be classified the same way: the
+/// measurement is about the finger's path, not the controller's poll rate.
+#[test]
+fn the_sample_rate_does_not_change_the_verdict() {
+    let mut sparse = alloc::vec::Vec::new();
+    sparse.push(sample(TouchPhase::Down, 340, 195, 0));
+    for step in 1..6 {
+        let x = 340 - step * 50;
+        sparse.push(sample(
+            TouchPhase::Move,
+            x,
+            195,
+            u64::try_from(step).unwrap_or(0) * 100,
+        ));
+    }
+    sparse.push(sample(TouchPhase::Up, 40, 195, 600));
+    assert_eq!(recognise(&sparse), Some(Gesture::SwipeLeft));
+}
+
 /// A suppressed stroke still has to *end*, or the next real gesture would
 /// inherit the phantom's start point.
 #[test]
@@ -108,15 +215,34 @@ fn a_suppressed_stroke_does_not_poison_the_next_one() {
 // --- Routing -------------------------------------------------------------
 
 #[test]
-fn tapping_a_card_launches_that_card() {
+fn tapping_the_focal_card_launches_it() {
+    with_router(|router, ctx| {
+        let x = router.carousel().card_centre_x(0, 0);
+        assert_eq!(feed(router, ctx, &tap(x, 195)), Dirty::Full);
+        assert_eq!(router.view(), View::App(0));
+    });
+}
+
+/// A neighbour peeking in at the rim scrolls to the centre rather than opening
+/// from where it stands — the card you can see is the card you can open.
+#[test]
+fn tapping_a_neighbour_brings_it_to_the_centre() {
     with_router(|router, ctx| {
         let carousel = *router.carousel();
-        // Card 1 sits one pitch right of centre while card 0 is focal.
-        let x = carousel.card_centre_x(1, 0);
-        let dirty = feed(router, ctx, &tap(x, 195));
-        assert_eq!(dirty, Dirty::Full);
-        assert_eq!(router.view(), View::App(1));
+        // Card 1's centre sits at 405 — off the panel entirely. Only its left
+        // sliver is reachable, which is exactly the card this is about.
+        let x = carousel
+            .card_centre_x(1, 0)
+            .saturating_sub(carousel.card_w / 2)
+            .saturating_add(20);
+        assert_eq!(feed(router, ctx, &tap(x, 195)), Dirty::Full);
         assert_eq!(router.selected(), 1);
+        assert_eq!(router.view(), View::Launcher, "the first tap only scrolls");
+
+        // Now it is focal, so the same tap opens it.
+        let x = carousel.card_centre_x(1, carousel.scroll_for(1));
+        feed(router, ctx, &tap(x, 195));
+        assert_eq!(router.view(), View::App(1));
     });
 }
 

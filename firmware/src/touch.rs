@@ -84,8 +84,8 @@ pub async fn init(pins: TouchPins) -> Option<Touch> {
 pub async fn task(mut touch: Touch) {
     // Where the finger was last seen, and therefore whether one is down.
     let mut contact: Option<(i32, i32)> = None;
-    // Where the current stroke started, for the travel log.
-    let mut landed: Option<(i32, i32)> = None;
+    // Where and when the current stroke started, for the travel log.
+    let mut landed: Option<(i32, i32, u64)> = None;
     loop {
         Timer::after(POLL).await;
         let at_ms = Instant::now().as_millis();
@@ -96,7 +96,7 @@ pub async fn task(mut touch: Touch) {
                 let phase = if contact.is_some() {
                     TouchPhase::Move
                 } else {
-                    landed = Some((x, y));
+                    landed = Some((x, y, at_ms));
                     TouchPhase::Down
                 };
                 contact = Some((x, y));
@@ -107,10 +107,11 @@ pub async fn task(mut touch: Touch) {
                 // nothing at all once the finger is gone, and a swipe is
                 // measured between where it landed and where it left.
                 if let Some((x, y)) = contact.take() {
-                    if let Some((x0, y0)) = landed.take() {
+                    if let Some((x0, y0, t0)) = landed.take() {
                         // Short on purpose: a line past the 64-byte
                         // USB-Serial/JTAG FIFO blocks until the host drains it.
-                        log::info!("touch: {x0},{y0} -> {x},{y}");
+                        let ms = at_ms.saturating_sub(t0);
+                        log::info!("touch: {x0},{y0} -> {x},{y} {ms}ms");
                     }
                     send(TouchSample {
                         phase: TouchPhase::Up,

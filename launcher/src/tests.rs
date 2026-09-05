@@ -235,9 +235,8 @@ fn short_press_launches_and_long_press_returns_home() {
 fn the_view_id_follows_the_active_app() {
     with_router(|router, ctx| {
         assert_eq!(router.view_id(), ViewId::LAUNCHER);
-        // Card 1 sits one pitch right of centre while card 0 is focal.
-        let x = router.carousel().card_centre_x(1, 0);
-        feed(router, ctx, &tap(x, 195));
+        router.handle(Input::Rotate(1), ctx);
+        router.handle(Input::ShortPress, ctx);
         // The second app's own id, not its registry index — the host publishes
         // this blind, so the two must not be conflated.
         assert_eq!(router.view_id(), ViewId(2));
