@@ -4,12 +4,20 @@
 
 //! CHSC5816 touch bring-up, and the stroke stream it feeds the router.
 //!
-//! The controller's INT line is unreliable on this unit, so [`task`] polls the
-//! point register and derives the stroke edges itself: the first report of a
-//! contact is a [`TouchPhase::Down`], later ones are `Move`s, and the report
-//! going empty is an `Up` at the last known position. The recogniser in
-//! `launcher` wants edges, not levels, and it is the only thing that reads
-//! them — this file recognises nothing.
+//! [`task`] polls the point register and derives the stroke edges itself: the
+//! first report of a contact is a [`TouchPhase::Down`], later ones are `Move`s,
+//! and the report going empty is an `Up` at the last known position. The
+//! recogniser in `launcher` wants edges, not levels, and it is the only thing
+//! that reads them — this file recognises nothing.
+//!
+//! **INT (GPIO9) is wired and unused.** It is constructed and handed to the
+//! driver, which offers `wait_for_touch()` on it, and nothing calls that: the
+//! claim that its pulses are unreliable was inherited from earlier bring-up
+//! (`enc-app`) and has never been re-tested here. Waking on the edge instead of
+//! polling would take the bus from ~20% duty to idle and cut touch latency to
+//! near zero; worth revisiting, and worth verifying the claim first.
+//!
+//! This is the board's only I2C device — I2C1 is entirely free.
 
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
@@ -51,7 +59,8 @@ pub struct TouchPins {
     pub sda: GPIO5<'static>,
     /// I2C clock line.
     pub scl: GPIO6<'static>,
-    /// Interrupt line (unused: polled instead).
+    /// Interrupt line. Wired, handed to the driver, never waited on — see the
+    /// module docs.
     pub int: GPIO9<'static>,
     /// Active-low reset.
     pub rst: GPIO8<'static>,
@@ -94,9 +103,11 @@ pub async fn task(mut touch: Touch) {
     let mut points: u32 = 0;
     loop {
         Timer::after(POLL).await;
-        let at_ms = Instant::now().as_millis();
+        // The clock is read per *sample*, not per poll: an empty report is the
+        // overwhelmingly common case and there is nothing there to timestamp.
         match touch.read_point().await {
             Ok(Some(point)) => {
+                let at_ms = Instant::now().as_millis();
                 let x = i32::from(point.x);
                 let y = i32::from(point.y);
                 let phase = if contact.is_some() {
@@ -115,6 +126,7 @@ pub async fn task(mut touch: Touch) {
                 // nothing at all once the finger is gone, and a swipe is
                 // measured between where it landed and where it left.
                 if let Some((x, y)) = contact.take() {
+                    let at_ms = Instant::now().as_millis();
                     if let Some((x0, y0, t0)) = landed.take() {
                         // Short on purpose: a line past the 64-byte
                         // USB-Serial/JTAG FIFO blocks until the host drains it.
