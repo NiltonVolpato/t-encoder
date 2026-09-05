@@ -1,3 +1,5 @@
+cargo-features = ["panic-immediate-abort"]
+
 [workspace]
 resolver = "3"
 members = ["apps", "firmware", "launcher", "ui"]
@@ -82,10 +84,10 @@ unwrap_used = "warn"
 # The submodule's own [profile.release] is IGNORED — only the root workspace's
 # profiles apply. Replicated here; without this we silently ship a bloated build.
 [profile.release]
-opt-level = "s"
+opt-level = "z"
 lto = true
 codegen-units = 1
-panic = "abort"
+panic = "immediate-abort"
 debug = "full"
 # NOTE: a no-op for the firmware. `split-debuginfo` is a *target* capability,
 # and `rustc --target xtensa-esp32s3-none-elf --print split-debuginfo` offers
@@ -93,9 +95,23 @@ debug = "full"
 # possible. It still applies to host builds, which is why proc-macro dylibs get
 # .dSYM bundles. Kept because it costs nothing and is right for the host half.
 split-debuginfo = "packed"
-# So `debug = "full"` above is generated and then discarded at link time: the
-# device binary is 1.73 MiB stripped, 2.27 MiB with the symbol table
-# (`strip = "debuginfo"`), 19.6 MiB with the DWARF. Nothing keeps an unstripped
-# copy, so `just size` relinks with `CARGO_PROFILE_RELEASE_STRIP=none` when it
-# needs symbols.
+# So `debug = "full"` above is generated and then discarded at link time.
+# Measured at `opt-level = "s"` / `panic = "abort"`: 1.73 MiB stripped, 2.27 MiB
+# with the symbol table (`strip = "debuginfo"`), 19.6 MiB with the DWARF.
+# Nothing keeps an unstripped copy, so `just size` relinks with
+# `CARGO_PROFILE_RELEASE_STRIP=none` when it needs symbols.
 strip = "symbols"
+
+# `panic = "immediate-abort"` (with the `cargo-features` line at the top of this
+# file) needs `-Zbuild-std`, which only the device recipes pass — host builds use
+# the dev/test profiles and are unaffected.
+#
+# It took the binary from 1.73 to 1.49 MiB, and the saving is exactly the panic
+# machinery: every panic string is gone, **including our own**. Verified by
+# `strings` on the binary — "attempt to subtract with overflow", "index out of
+# bounds" and the `PANIC: ` literal from `main.rs`'s `#[panic_handler]` are all
+# absent. `panic!` compiles straight to an abort, so the handler is never
+# called and a panic now dies silently rather than printing.
+#
+# That is the trade: 240 KiB against ever seeing why a panic happened. Undo by
+# dropping the `cargo-features` line and setting `panic = "abort"`.

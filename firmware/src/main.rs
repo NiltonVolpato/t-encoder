@@ -104,6 +104,11 @@ fn rgb565_to_slint(color: embedded_graphics::pixelcolor::Rgb565) -> slint::Color
     )
 }
 
+/// Required as a lang item, but **not reached under the current release
+/// profile**: `panic = "immediate-abort"` compiles `panic!` straight to an
+/// abort, and this string is not even in the binary (checked with `strings`).
+/// It is kept for the debug profile and for whenever the trade is reversed —
+/// see the note in the root `Cargo.toml`.
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
     esp_println::println!("PANIC: {info}");
