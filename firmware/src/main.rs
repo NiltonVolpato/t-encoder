@@ -48,6 +48,13 @@ const DISPLAY_BYTES: usize = enc_config::display::FRAMEBUFFER_BYTES;
 const LONG_PRESS: Duration = Duration::from_millis(600);
 /// Quadrature counts per mechanical detent (this encoder emits 2 per click).
 const COUNTS_PER_DETENT: u8 = 2;
+/// Log every one of the first this-many repaints, then one in
+/// [`FRAME_LOG_EVERY`]. The first frames are the interesting ones; a periodic
+/// sample after that shows the steady-state repaint rate without a 200 Hz loop
+/// flooding a 64-byte serial FIFO.
+const FRAME_LOG_FIRST: u32 = 5;
+/// Sampling interval for repaint logging once past [`FRAME_LOG_FIRST`].
+const FRAME_LOG_EVERY: u32 = 500;
 
 /// Shared, lock-free app state mirrored between the UI loop and the Wi-Fi tasks.
 static APP_STATE: AppState = AppState::new(1);
@@ -292,9 +299,12 @@ async fn main(spawner: Spawner) -> ! {
         let first = slint_ui.render(panel);
         let frame_us = started.elapsed().as_micros();
         match first {
-            Ok(()) => log::info!("slint: first frame {frame_us}us"),
+            Ok(_) => log::info!("slint: first frame {frame_us}us"),
             Err(e) => log::error!("slint: first frame failed: {e:?}"),
         }
+        // Repaints since boot — only frames Slint actually drew, not loop
+        // iterations, which is the number worth knowing.
+        let mut frames: u32 = 0;
 
         let mut press_start: Option<Instant> = None;
         // Whether the current hold already fired its long press.
@@ -456,8 +466,19 @@ async fn main(spawner: Spawner) -> ! {
                 });
             }
 
-            if let Err(e) = slint_ui.render(panel) {
-                log::error!("display: flush failed: {e:?}");
+            let started = Instant::now();
+            match slint_ui.render(panel) {
+                // Nothing changed — the overwhelmingly common case.
+                Ok(None) => {}
+                Ok(Some(rect)) => {
+                    frames = frames.saturating_add(1);
+                    if frames <= FRAME_LOG_FIRST || frames.checked_rem(FRAME_LOG_EVERY) == Some(0) {
+                        let us = started.elapsed().as_micros();
+                        let (w, h, x, y) = (rect.w, rect.h, rect.x, rect.y);
+                        log::info!("slint: frame {frames} {w}x{h}+{x},{y} {us}us");
+                    }
+                }
+                Err(e) => log::error!("display: flush failed: {e:?}"),
             }
         }
     }

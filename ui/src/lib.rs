@@ -185,13 +185,15 @@ impl Ui {
 
     /// Renders one frame and sends what changed to `panel`.
     ///
-    /// A frame in which nothing changed is `Ok(())` — Slint decides whether
-    /// there was anything to draw, and the caller has nothing to decide.
+    /// Returns the rectangle that went out, or `None` for a frame in which
+    /// nothing changed — Slint decides whether there was anything to draw. That
+    /// is reporting, not a decision: the caller has nothing to do with it but
+    /// count and log, and is free to ignore it entirely.
     ///
     /// # Errors
     /// Returns the panel's own error if the transfer fails. The frame is still
     /// rendered; only its delivery failed.
-    pub fn render<P: Panel>(&mut self, panel: &mut P) -> Result<(), P::Error> {
+    pub fn render<P: Panel>(&mut self, panel: &mut P) -> Result<Option<DirtyRect>, P::Error> {
         slint::platform::update_timers_and_animations();
 
         let stride = usize::try_from(WIDTH).unwrap_or(0);
@@ -222,8 +224,8 @@ impl Ui {
         });
 
         match dirty.filter(|_| drawn) {
-            Some(rect) => panel.flush(rect, framebuffer),
-            None => Ok(()),
+            Some(rect) => panel.flush(rect, framebuffer).map(|()| Some(rect)),
+            None => Ok(None),
         }
     }
 
