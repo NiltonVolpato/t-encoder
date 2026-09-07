@@ -3,9 +3,25 @@
 # check against the device target must build it from source. Without this,
 # RA reports "can't find crate for `core`" on every file.
 #
-# Editor-agnostic: VS Code, Zed, Helix and neovim all read rust-analyzer.toml.
+# CAVEAT: every editor *reads* this file, but rust-analyzer applies only the
+# source-root-scoped settings from it. `check.overrideCommand`,
+# `check.allTargets` and `cargo.*` — i.e. everything below — are client-scoped
+# and reachable only through the LSP client's initializationOptions. The server
+# log confirms it loads this file without validation errors and then spawns the
+# stock check command anyway. So `.zed/settings.json` is the file that actually
+# takes effect in Zed, and this one is documentation plus insurance for any
+# client that grows ratoml support for these keys. Keep the two in sync.
 
 [cargo]
+# Without `target`, rust-analyzer analyses the whole workspace against the host
+# — its log reports the aarch64-darwin data layout — which is what produced
+# phantom `!bool` and `None` errors in firmware. It is not inferred from
+# CARGO_BUILD_TARGET, even though every cargo process RA spawns does honour it.
+target = "xtensa-esp32s3-none-elf"
+extraArgs = [
+    "-Zbuild-std=alloc,core",
+    "-Zbuild-std-features=compiler-builtins-mem",
+]
 buildScripts.overrideCommand = [
     "cargo",
     "check",

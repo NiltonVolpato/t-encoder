@@ -93,6 +93,8 @@ fn app_cards(factories: &[&dyn AppFactory]) -> slint::ModelRc<ui::CardData> {
 /// full-scale (a plain `<< 3` would cap red at 248 and never reach white).
 fn rgb565_to_slint(color: embedded_graphics::pixelcolor::Rgb565) -> slint::Color {
     use embedded_graphics::prelude::RgbColor;
+    // `checked_div` rather than a guarded `/`: every caller passes a non-zero
+    // max, and this keeps that fact checked rather than assumed.
     let scale = |value: u8, max: u8| -> u8 {
         let widened = u16::from(value)
             .saturating_mul(255)

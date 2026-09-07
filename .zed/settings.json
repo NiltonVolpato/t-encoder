@@ -7,6 +7,11 @@
     "rust-analyzer": {
       "initialization_options": {
         "cargo": {
+          "target": "xtensa-esp32s3-none-elf",
+          "extraArgs": [
+            "-Zbuild-std=alloc,core",
+            "-Zbuild-std-features=compiler-builtins-mem",
+          ],
           "buildScripts": {
             "overrideCommand": [
               "cargo",

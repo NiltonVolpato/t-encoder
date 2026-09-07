@@ -36,6 +36,28 @@ cargo-adjacent tools that have no recipe (`cargo expand`, `cargo tree`). Long-
 lived tools are worth starting this way too — `just exec-device claude` — so
 their rust-analyzer inherits the device target rather than guessing at it.
 
+`rust-analyzer.toml` is read but only partly obeyed. The server loads it (its
+log shows `updating ra-toml workspace config` with no validation errors) and
+then ignores `check.overrideCommand`, `check.allTargets` and `cargo.*`, which
+are client-scoped settings that only an LSP client's `initializationOptions`
+can supply. That is why `.zed/settings.json` exists; Claude Code exposes no
+such hook, so its rust-analyzer runs the stock `cargo check … --keep-going
+--all-targets` no matter what the toml says — confirmed by logging what it
+spawns. Two classes of phantom diagnostic follow. Neither is real
+breakage — `just check` and `just lint-device` are the source of truth — and
+neither should be "fixed" in the source, least of all by gating test modules on
+`target_os`:
+
+- from *rustc*: `can't find crate for 'test'`, "`#[panic_handler]` required",
+  "no global memory allocator", against the test targets of `launcher` /
+  `apps` / `ui` / `firmware`. Flycheck keeps rust-analyzer's `allTargets`
+  default, and `--all-targets` cannot succeed on a bare-metal target.
+- from *rust-analyzer* itself: `unresolved extern crate` on `extern crate
+  alloc`, `cannot apply unary operator !` on any `!bool`, and `None` reported
+  as a non-snake-case *variable*. All one cause — RA has no `core` in its crate
+  graph for xtensa, so the prelude is missing. Beware that hover can still look
+  healthy here: primitives like `u16` and local modules resolve without `core`.
+
 Cargo's progress output is suppressed by default (`CARGO_TERM_QUIET`); set
 `CARGO_TERM_QUIET=false` for one invocation when a build is misbehaving. The
 test recipes default the other way, since quiet also hides per-test names.
