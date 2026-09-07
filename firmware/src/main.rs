@@ -94,7 +94,10 @@ fn app_cards(factories: &[&dyn AppFactory]) -> slint::ModelRc<ui::CardData> {
 fn rgb565_to_slint(color: embedded_graphics::pixelcolor::Rgb565) -> slint::Color {
     use embedded_graphics::prelude::RgbColor;
     let scale = |value: u8, max: u8| -> u8 {
-        let widened = u16::from(value).saturating_mul(255) / u16::from(max).max(1);
+        let widened = u16::from(value)
+            .saturating_mul(255)
+            .checked_div(u16::from(max))
+            .unwrap_or(0);
         u8::try_from(widened).unwrap_or(0)
     };
     slint::Color::from_rgb_u8(

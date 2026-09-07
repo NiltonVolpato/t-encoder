@@ -360,13 +360,23 @@ async fn session<C: Controller>(
         ..AdvertisementParameters::default()
     };
 
-    log::info!("ble: advertising {:02x?}", &adv_data[..adv_len]);
+    // `encode_slice` returns what it wrote, so these are in bounds by
+    // construction — but say so with `get` rather than an index, and let the
+    // impossible case travel as the error it would be.
+    let adv = adv_data
+        .get(..adv_len)
+        .ok_or(BleHostError::BleHost(Error::InsufficientSpace))?;
+    let scan = scan_data
+        .get(..scan_len)
+        .ok_or(BleHostError::BleHost(Error::InsufficientSpace))?;
+
+    log::info!("ble: advertising {adv:02x?}");
     let advertiser = peripheral
         .advertise(
             &params,
             Advertisement::ConnectableScannableUndirected {
-                adv_data: &adv_data[..adv_len],
-                scan_data: &scan_data[..scan_len],
+                adv_data: adv,
+                scan_data: scan,
             },
         )
         .await?;

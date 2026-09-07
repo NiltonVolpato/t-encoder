@@ -234,10 +234,14 @@ lint *ARGS:
     {{RESET_ENV}}
     cargo clippy --workspace --exclude firmware --exclude ui --all-targets {{ARGS}} -- -D warnings
 
-# Clippy on the device firmware.
+# No `--all-targets`: that adds the bin's implicit test harness, which wants
+# libtest, which does not exist for a no_std xtensa target — the recipe fails
+# with "can't find crate for `test`" before it lints anything. Firmware has no
+# tests of its own anyway; they live in the pure crates, covered by `just lint`.
+[doc("Clippy on the device firmware.")]
 [group("verification")]
 lint-device *ARGS:
-    cargo clippy -p firmware --release --all-targets {{ARGS}} -- -D warnings
+    cargo clippy -p firmware --release {{ARGS}} -- -D warnings
 
 [group("verification")]
 fmt:
