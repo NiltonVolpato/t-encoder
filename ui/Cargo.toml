@@ -21,4 +21,4 @@ slint = { version = "1.17.1", default-features = false, features = [
 slint-build = "1.17.1"
 
 [lints]
-workspace = true
+# Do not set `workspace = true` since Slint generated code is full of clippy lints

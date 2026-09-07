@@ -6,52 +6,93 @@
 
 set shell := ["bash", "-uc"]
 
-
 set unstable := true
 set lists := true
 set dotenv-load := true
 set dotenv-filename := [".env", ".env.local"]
 set dotenv-override := true
 
-export LIBCLANG_PATH := `ls -d ~/.rustup/toolchains/esp/xtensa-esp32-elf-clang/*/esp-clang/lib 2>/dev/null | head -1`
 xtensa_bin := `ls -d ~/.rustup/toolchains/esp/xtensa-esp-elf/*/xtensa-esp-elf/bin 2>/dev/null | head -1`
 export PATH := xtensa_bin + ":" + env('PATH')
-export RUSTUP_TOOLCHAIN := "esp"
 
-# Device builds need core/alloc from source for the `compiler-builtins-mem`
-# intrinsics. Passed here, never in .cargo/config.toml — see that file.
-nostd := "-Zbuild-std=alloc,core -Zbuild-std-features=compiler-builtins-mem"
-# Host crates are pure and test natively; `--target` overrides [build] target.
-host := "--target aarch64-apple-darwin"
+# Set up environment variables for device builds by default.
+# Device builds need core/alloc from source for the `compiler-builtins-mem` intrinsics.
+#
+# LIBCLANG_PATH is one of the two things export-esp.sh sets, so we carry it, but
+# nothing in the current graph consumes it: the only lockfile entry wanting
+# bindgen is skia-bindings, a Slint backend we do not enable. Keep it for the
+# day a dep does need libclang; do not be surprised that unsetting it changes
+# nothing today.
+export LIBCLANG_PATH := `ls -d ~/.rustup/toolchains/esp/xtensa-esp32-elf-clang/*/esp-clang/lib 2>/dev/null | head -1`
+export CARGO_BUILD_TARGET := "xtensa-esp32s3-none-elf"
+export RUSTUP_TOOLCHAIN := "esp"
+export CARGO_UNSTABLE_BUILD_STD := "alloc,core"
+export CARGO_UNSTABLE_BUILD_STD_FEATURES := "compiler-builtins-mem"
+
+# Flashing-related variables:
+# Native USB-Serial/JTAG. Note that:
+#   --partition-table  the custom table adds the `settings` partition; without
+#                      it, settings persistence silently stops working
+#   --after hard-reset resets into the app after flashing. Without it the chip
+#                      is left sitting in ROM download mode ("waiting for
+#                      download") with a black screen, needing a manual reset
+#   --port             explicit; auto-detect can hang waiting on a device probe.
+#                      it can be overridden with `FLASH_PORT` in `.env.local`.
+FLASH_PORT := env('FLASH_PORT', "/dev/cu.usbmodem101")
+FIRMWARE_PATH := justfile_directory() + "/target/xtensa-esp32s3-none-elf/release/firmware"
+FLASH_ARGS := "--chip esp32s3 --port " + FLASH_PORT + " --partition-table firmware/partitions.csv --after hard-reset " + FIRMWARE_PATH
+
+export ESP_LOG := "info"
+
+# Cargo's per-crate compile chatter is suppressed by default. When a build is
+# misbehaving and the progress lines matter, put it back for one invocation:
+#   CARGO_TERM_QUIET=false just build
+# Warnings and errors are unaffected; quiet only drops the progress output.
+export CARGO_TERM_QUIET := env('CARGO_TERM_QUIET', "true")
+
+# ...except for the test recipes, where quiet would also swallow the per-test
+# names on a pass — the one place cargo's progress output earns its keep. An
+# explicit CARGO_TERM_QUIET=1 still wins here, it only changes the default.
+TEST_QUIET := env('CARGO_TERM_QUIET', "false")
+
+# Host crates are pure and test natively, so reset the environment vars.
+RESET_ENV := "
+    unset LIBCLANG_PATH
+    unset CARGO_BUILD_TARGET
+    unset RUSTUP_TOOLCHAIN
+    unset CARGO_UNSTABLE_BUILD_STD
+    unset CARGO_UNSTABLE_BUILD_STD_FEATURES
+"
 
 _default:
     @just --list
 
-# Build the device firmware.
+[doc("Build the device firmware.")]
+[group("deploy")]
 build *ARGS:
-    cargo build -p firmware --release {{nostd}} {{ARGS}}
+    cargo build -p firmware --release {{ARGS}}
 
-# Build, flash, and open the serial monitor. Interactive: runs until you quit.
-flash *ARGS:
-    cargo run -p firmware --release {{nostd}} {{ARGS}}
+[doc("Build, flash, and open the serial monitor. Interactive: runs until you quit.")]
+[group("deploy")]
+flash *ARGS: (build ARGS)
+    espflash flash --monitor {{FLASH_ARGS}}
 
 # Flash without waiting for the app — for when the logs do not matter, or the
-# build may never reach its boot marker. espflash needs a TTY for its input
-# reader, so with stdin redirected it flashes and then dies on the monitor,
-# which is the point; but that also means a *successful* flash exits non-zero,
-# so the outcome comes from espflash's own completion line instead.
-flash-only *ARGS:
-    #!/usr/bin/env bash
-    set -uo pipefail
-    out=$(cargo run -p firmware --release {{nostd}} {{ARGS}} < /dev/null 2>&1)
-    echo "$out"
-    grep -q 'Flashing has completed' <<< "$out"
+# build may never reach its boot marker. Never attaching the monitor is what
+# makes this headless-safe: it is the monitor's input reader that wants a TTY,
+# so `espflash flash` on its own runs clean from a script and exits 0.
+[doc("Flash without attaching to the serial monitor.")]
+[group("deploy")]
+flash-only *ARGS: (build ARGS)
+    espflash flash {{FLASH_ARGS}}
 
 # Flash, stream the boot log, and exit as soon as the app reports MARKER —
-# `just flash` never terminates on its own, which makes it useless from a
+# `espflash monitor` never terminates on its own, which makes it useless from a
 # script. Fails fast (non-zero) on timeout or if the app gives up on the
-# display. TIMEOUT is in seconds and covers the build too.
-flash-log MARKER='boot: ready' TIMEOUT='180' TAIL='3':
+# display. TIMEOUT is in seconds and doesn't include the build time.
+[doc("Flash, stream the boot log, and exit as soon as the app reports MARKER.")]
+[group("deploy")]
+flash-log MARKER='boot: ready' TIMEOUT='20' TAIL='3': (build)
     #!/usr/bin/env expect -f
 
     # Tear the whole tree down — just, cargo and espflash. Every exit path goes
@@ -75,7 +116,7 @@ flash-log MARKER='boot: ready' TIMEOUT='180' TAIL='3':
     }
 
     set timeout {{TIMEOUT}}
-    set pid [spawn just flash]
+    set pid [spawn espflash flash --monitor {{FLASH_ARGS}}]
     expect {
         "{{MARKER}}" {
             # Keep reading for a moment. Exiting the instant the marker lands
@@ -114,10 +155,12 @@ flash-log MARKER='boot: ready' TIMEOUT='180' TAIL='3':
 # The release profile sets `strip = "symbols"`, so the shipped binary has no
 # symbol table at all; this overrides that for one build via the environment
 # rather than editing the profile. It therefore relinks — expect a minute.
+[doc("Show the top COUNT largest sections in the firmware binary.")]
+[group("debug")]
 size COUNT='25':
     #!/usr/bin/env bash
     set -euo pipefail
-    CARGO_PROFILE_RELEASE_STRIP=none cargo build -p firmware --release {{nostd}} 2>&1 \
+    CARGO_PROFILE_RELEASE_STRIP=none cargo build -p firmware --release 2>&1 \
         | grep -Ev '^(warning|  |$|note:)' || true
     bin=$(cargo metadata --format-version 1 --no-deps \
         | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')/xtensa-esp32s3-none-elf/release/firmware
@@ -155,47 +198,93 @@ size COUNT='25':
         | tail -{{COUNT}} | sort -rn
 
 # Serial monitor only (no flash).
+[group("deploy")]
 monitor:
-    espflash monitor
+    espflash monitor --port {{FLASH_PORT}}
 
-# Host-side unit tests for our pure crates. `firmware` is device-only, so it is
-# excluded; the exclusion list stays correct as pure crates are added.
+# Everything but `firmware`, which is device-only. `ui` and `apps` are in scope
+# here — they build natively once the device env vars are unset, which is what
+# RESET_ENV is for. A multi-line comment would become the recipe's `just --list`
+# blurb (just takes the last line), so the summary goes in [doc] instead.
+[doc("Host-side unit tests for our pure crates.")]
+[group("verification")]
 test *ARGS:
-    cargo test {{host}} --workspace --exclude firmware --exclude ui --exclude apps {{ARGS}}
+    #!/bin/sh
+    set -e
+    {{RESET_ENV}}
+    CARGO_TERM_QUIET={{TEST_QUIET}} cargo test --workspace --exclude firmware {{ARGS}}
 
-# Host tests for the vendored upstream crates (uses their workspace's
-# default-members, which already excludes their device-only crates).
+# Uses their workspace's default-members, which already excludes their
+# device-only crates.
+[doc("Host tests for the vendored upstream crates.")]
+[group("verification")]
 test-vendor *ARGS:
-    cargo test {{host}} --manifest-path vendor/rust-enc/Cargo.toml {{ARGS}}
+    #!/bin/sh
+    set -e
+    {{RESET_ENV}}
+    CARGO_TERM_QUIET={{TEST_QUIET}} cargo test --manifest-path vendor/rust-enc/Cargo.toml {{ARGS}}
 
-# Clippy on our pure crates (host target, warnings are errors).
+# `ui` is excluded because Slint's generated code trips a pile of pedantic
+# lints we do not control — same reason ui/Cargo.toml drops `[lints] workspace`.
+[doc("Clippy on our pure crates (host target, warnings are errors).")]
+[group("verification")]
 lint *ARGS:
-    cargo clippy {{host}} --workspace --exclude firmware --exclude ui --exclude apps --all-targets {{ARGS}} -- -D warnings
+    #!/bin/sh
+    set -e
+    {{RESET_ENV}}
+    cargo clippy --workspace --exclude firmware --exclude ui --all-targets {{ARGS}} -- -D warnings
 
 # Clippy on the device firmware.
+[group("verification")]
 lint-device *ARGS:
-    cargo clippy -p firmware --release {{nostd}} --all-targets {{ARGS}} -- -D warnings
+    cargo clippy -p firmware --release --all-targets {{ARGS}} -- -D warnings
 
+[group("verification")]
 fmt:
     cargo fmt --all
 
+[group("verification")]
 fmt-check:
     cargo fmt --all -- --check
 
 # Everything CI would run.
+[group("verification")]
 check: fmt-check lint test build
 
+[doc("Generates documentation for a given package in Markdown.")]
+[group("debug")]
 doc PACKAGE:
     #!/bin/sh
     set -e
-    RUSTDOCFLAGS="-Z unstable-options --output-format json" cargo doc --release {{nostd}} --no-deps --package {{PACKAGE}}
+    RUSTDOCFLAGS="-Z unstable-options --output-format json" cargo doc --release --no-deps --package {{PACKAGE}}
     CRATE=$(echo {{PACKAGE}} | tr '-' '_')
     rustdoc-md --path target/xtensa-esp32s3-none-elf/doc/${CRATE}.json --output target/xtensa-esp32s3-none-elf/doc/${CRATE}.md
     mkdir -p target/doc
     ln -sf ../xtensa-esp32s3-none-elf/doc/${CRATE}.md target/doc/${CRATE}.md
     echo "Documentation written to target/doc/${CRATE}.md"
 
+# The device environment is this Justfile's default (see the exports at the
+# top), so this recipe only has to hand the command that environment — no
+# exports of its own. For anything cargo-adjacent that has no recipe here:
+#   just exec-device cargo expand -p firmware
+#   just exec-device cargo tree -i some-crate
+# Also worth starting long-lived tools under, so their rust-analyzer inherits
+# the device target instead of guessing: `just exec-device claude`.
+[doc("Run any command with the device toolchain environment.")]
+[group("debug")]
+exec-device *COMMAND:
+    #!/bin/sh
+    {{COMMAND}}
+
+# Prints the path and size of the compiled binary.
+[group("debug")]
+binary-info:
+    #!/bin/sh
+    TARGET=$(cargo build -p firmware --release --message-format=json-render-diagnostics | jq -r 'select(.reason == "compiler-artifact" and .target.kind[] == "bin") | .filenames[]')
+    du -h $TARGET
+
 # Print the toolchain paths this Justfile derived, for debugging.
+[group("debug")]
 env-info:
     @echo "LIBCLANG_PATH = $LIBCLANG_PATH"
     @echo "xtensa bin    = {{xtensa_bin}}"

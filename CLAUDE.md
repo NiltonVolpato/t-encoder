@@ -31,16 +31,33 @@ just check          # fmt-check + lint + test + build (what CI runs)
 wrapper — the Justfile derives `LIBCLANG_PATH` and the xtensa-gcc `PATH` with
 globs, so toolchain upgrades need no edit here.
 
+`just exec-device <cmd>` runs anything under the device environment, for the
+cargo-adjacent tools that have no recipe (`cargo expand`, `cargo tree`). Long-
+lived tools are worth starting this way too — `just exec-device claude` — so
+their rust-analyzer inherits the device target rather than guessing at it.
+
+Cargo's progress output is suppressed by default (`CARGO_TERM_QUIET`); set
+`CARGO_TERM_QUIET=false` for one invocation when a build is misbehaving. The
+test recipes default the other way, since quiet also hides per-test names.
+
 ### Critical build invariants — do not "simplify" these
 
-- **Never put `[unstable] build-std` in `.cargo/config.toml`.** It would apply
-  globally and break host test builds (duplicate lang items vs real `std`).
-  `-Zbuild-std` is passed *only* on device recipes in the Justfile. The root
-  config sets `[build] target` alone.
+- **The device target and build-std live in the Justfile as environment
+  variables, not in `.cargo/config.toml`.** A cargo config setting can be
+  appended to but never unset, and there is no value of `[build] target` that
+  means "build natively" — so with the target pinned in the config file, host
+  test and clippy runs cannot escape xtensa. `[unstable] build-std` there has
+  the same problem in reverse: applied globally, it breaks host builds with
+  duplicate lang items vs the real `std`. So the Justfile exports
+  `CARGO_BUILD_TARGET` and `CARGO_UNSTABLE_BUILD_STD{,_FEATURES}` by default,
+  and the host recipes (`test`, `test-vendor`, `lint`) `unset` them via
+  `RESET_ENV`. The root config carries no target at all.
 - The esp toolchain ships **no precompiled `core`** for
   `xtensa-esp32s3-none-elf`, which is why build-std is required at all — and why
-  `rust-analyzer.toml` must pass the same flags. Deleting it makes RA report
-  "can't find crate for `core`" on every file.
+  `rust-analyzer.toml` must pass the same flags in its `overrideCommand`s.
+  Deleting it makes RA report "can't find crate for `core`" on every file.
+  `.zed/settings.json` repeats the same commands because a client's
+  `initialization_options` win over `rust-analyzer.toml`; keep the two in sync.
 - **`[profile.release]` must live in the root `Cargo.toml`.** The submodule's
   own profile section is ignored (only root workspace profiles apply); without
   ours we silently ship a bloated, slow build.
@@ -56,10 +73,12 @@ globs, so toolchain upgrades need no edit here.
   It writes only the offsets that changed, so the `settings` and `nvs` data
   partitions survive a reflash. Full erase is opt-in and explicit:
   `erase-flash`, `erase-parts`, `erase-data-parts`. (Verified on device.)
-- **espflash subcommands need a TTY.** Headless they either die with "Failed to
-  initialize input reader" or hang silently with no output. Wrap in
-  `script -q /dev/null <cmd>`. `read-flash` / `write-bin` hang even then — do
-  not use them from automation.
+- **It is the *monitor* that needs a TTY, not flashing.** `espflash flash`
+  without `--monitor` runs clean headlessly and exits 0 — that is what `just
+  flash-only` relies on (verified on device). Add `--monitor` and the input
+  reader wants a terminal: headless it either dies with "Failed to initialize
+  input reader" or hangs silently. Wrap those in `script -q /dev/null <cmd>`.
+  `read-flash` / `write-bin` hang even then — do not use them from automation.
 - **Mid-execution monitoring does not work with espflash** on this board.
   `monitor` always tries to sync with the bootloader, and the app is not one, so
   `--before no-reset` and `--before no-reset-no-sync` both hang at

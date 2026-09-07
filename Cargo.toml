@@ -116,3 +116,9 @@ strip = "symbols"
 # Held in reserve rather than taken: ~240 KiB is worth roughly eight 88x88
 # icons, which is a real amount of room, but not at the price of never learning
 # why a panic happened. Reach for it if flash actually gets tight.
+
+[profile.dev]
+# The ESP toolchain prints a large banner on every unoptimized build telling you
+# to use `--release`. rust-analyzer checks with the dev profile, so without this
+# that banner lands in the editor's diagnostics on every save.
+opt-level = 2

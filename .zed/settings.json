@@ -1,0 +1,41 @@
+// Folder-specific settings
+//
+// For a full list of overridable settings, and general information on folder-specific settings,
+// see the documentation: https://zed.dev/docs/configuring-zed#settings-files
+{
+  "lsp": {
+    "rust-analyzer": {
+      "initialization_options": {
+        "cargo": {
+          "buildScripts": {
+            "overrideCommand": [
+              "cargo",
+              "check",
+              "-Zbuild-std=alloc,core",
+              "-Zbuild-std-features=compiler-builtins-mem",
+              "--target",
+              "xtensa-esp32s3-none-elf",
+              "--quiet",
+              "--workspace",
+              "--message-format=json",
+              "--keep-going",
+            ],
+          },
+        },
+        "check": {
+          "allTargets": false,
+          "overrideCommand": [
+            "cargo",
+            "check",
+            "-Zbuild-std=alloc,core",
+            "-Zbuild-std-features=compiler-builtins-mem",
+            "--target",
+            "xtensa-esp32s3-none-elf",
+            "--workspace",
+            "--message-format=json",
+          ],
+        },
+      },
+    },
+  },
+}

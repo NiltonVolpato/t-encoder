@@ -1,28 +1,32 @@
 # Workspace-root cargo config (NOT inside the binary crate) so that
 # `cargo build -p firmware` works from anywhere without a `cd`.
 #
-# Deliberately NO [unstable] section: putting `build-std` here makes it global,
-# which breaks host test builds (duplicate lang items against the real `std`).
-# `-Zbuild-std` is passed only on the device recipes in the Justfile.
+# This file holds only what is unconditionally true for every build. Anything a
+# recipe might need to turn *off* lives in the Justfile as an environment
+# variable instead, because cargo config settings can be appended to but never
+# unset — see `[build] target` below for the case that forced the split.
 
 [build]
-target = "xtensa-esp32s3-none-elf"
-# Disable any global sccache wrapper for device builds: it breaks the release
-# `-C linker-plugin-lto` compile (exit 254 with no diagnostic).
-rustc-wrapper = ""
+# Left unset, so a bare `cargo` builds for the host. That is the whole reason
+# the device flags moved to the Justfile: with `target` set here there is no
+# value ("", "host", anything) that means "build natively", so host test and
+# clippy runs could not escape the xtensa target.
+#
+# Device recipes set CARGO_BUILD_TARGET instead. Same for build-std: putting
+# `[unstable] build-std` here would apply it globally and break host builds with
+# duplicate lang items against the real `std`, so the device recipes export
+# CARGO_UNSTABLE_BUILD_STD{,_FEATURES} and the host recipes unset them.
 
 [target.xtensa-esp32s3-none-elf]
-# Native USB-Serial/JTAG. Three parts of this are load-bearing:
-#   --partition-table  the custom table adds the `settings` partition; without
-#                      it, settings persistence silently stops working
-#   --after hard-reset resets into the app after flashing. Without it the chip
-#                      is left sitting in ROM download mode ("waiting for
-#                      download") with a black screen, needing a manual reset
-#   --port             explicit; auto-detect can hang waiting on a device probe
-runner = "espflash flash --monitor --chip esp32s3 --port /dev/cu.usbmodem101 --partition-table firmware/partitions.csv --after hard-reset"
-# linkall.x is appended by firmware/build.rs (must be the last linker script).
-rustflags = ["-C", "link-arg=-nostartfiles"]
+rustflags = [
+    # linkall.x is appended by firmware/build.rs (must be the last linker script).
+    "-C", "link-arg=-nostartfiles",
+    # The ESP linker scripts deliberately map read/write/execute segments, which
+    # newer LLD warns about on every single link. The layout is correct for this
+    # target and not something we can change, so silence the warning.
+    "-C", "link-arg=-Wl,--no-warn-rwx-segments",
+]
 
-[env]
-ESP_LOG = "info"
-# PSRAM mode (octal/quad) is set in code via PsramConfig::mode, not esp-config.
+# No [env] section: ESP_LOG and the toolchain paths are exported by the
+# Justfile, where they can be overridden per-invocation. PSRAM mode
+# (octal/quad) is set in code via PsramConfig::mode, not esp-config.

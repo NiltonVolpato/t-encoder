@@ -6,12 +6,29 @@
 # Editor-agnostic: VS Code, Zed, Helix and neovim all read rust-analyzer.toml.
 
 [cargo]
-target = "xtensa-esp32s3-none-elf"
-extraArgs = ["-Zbuild-std=alloc,core", "-Zbuild-std-features=compiler-builtins-mem", "--release"]
+buildScripts.overrideCommand = [
+    "cargo",
+    "check",
+    "-Zbuild-std=alloc,core",
+    "-Zbuild-std-features=compiler-builtins-mem",
+    "--target", "xtensa-esp32s3-none-elf",
+    "--quiet",
+    "--workspace",
+    "--message-format=json",
+    "--keep-going",
+]
 
 [cargo.extraEnv]
 RUSTUP_TOOLCHAIN = "esp"
 
 [check]
-command = "check"
-extraArgs = ["-Zbuild-std=alloc,core", "-Zbuild-std-features=compiler-builtins-mem", "--release"]
+overrideCommand = [
+    "cargo",
+    "check",
+    "-Zbuild-std=alloc,core",
+    "-Zbuild-std-features=compiler-builtins-mem",
+    "--target", "xtensa-esp32s3-none-elf",
+    "--workspace",
+    "--message-format=json",
+]
+allTargets = false
