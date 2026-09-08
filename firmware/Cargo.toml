@@ -51,6 +51,9 @@ embedded-cli = { workspace = true }
 embedded-io = { workspace = true }
 ufmt = { workspace = true }
 
+[build-dependencies]
+time = { version = "0.3.55", default-features = false, features = ["local-offset", "macros", "formatting"] }
+
 [features]
 default = ["radio", "float-save-restore"]
 

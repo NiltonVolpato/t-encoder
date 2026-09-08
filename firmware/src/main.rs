@@ -158,7 +158,12 @@ async fn main(spawner: Spawner) -> ! {
     let sw_int = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
     esp_rtos::start(timg0.timer0, sw_int.software_interrupt0);
 
-    log::info!("enc-app v{} boot OK", env!("CARGO_PKG_VERSION"));
+    log::info!(
+        "t-encoder firmware: built by {} @ {} on {}",
+        env!("BUILD_USER"),
+        env!("BUILD_HOST"),
+        env!("BUILD_DATE")
+    );
 
     // Restore persisted settings (alarm + toggles) from flash into shared state.
     let saved = settings::load();
@@ -290,230 +295,230 @@ async fn main(spawner: Spawner) -> ! {
     // The framebuffer lives at the base of PSRAM; only build it if PSRAM is
     // actually mapped and large enough (else `from_raw_parts_mut` is UB).
     let framebuffer = heap::framebuffer(psram_start, psram_size, psram_ok, DISPLAY_BYTES);
-    if let (Some(panel), Some(fb_buf)) = (panel.as_mut(), framebuffer) {
-        // The framebuffer goes into `Ui` and is never seen again: nothing out
-        // here writes pixels, so nothing out here needs the bytes.
-        let mut slint_ui = match ui::Ui::new(fb_buf) {
-            Ok(slint_ui) => slint_ui,
-            Err(e) => {
-                log::error!("ui: Slint init failed: {e}");
-                loop {
-                    Timer::after(Duration::from_secs(5)).await;
-                }
+    let (Some(panel), Some(fb_buf)) = (panel.as_mut(), framebuffer) else {
+        log::info!("t-encoder: display unavailable, idling");
+        loop {
+            Timer::after(Duration::from_secs(5)).await;
+        }
+    };
+
+    // The framebuffer goes into `Ui` and is never seen again: nothing out
+    // here writes pixels, so nothing out here needs the bytes.
+    let mut slint_ui = match ui::Ui::new(fb_buf) {
+        Ok(slint_ui) => slint_ui,
+        Err(e) => {
+            log::error!("ui: Slint init failed: {e}");
+            loop {
+                Timer::after(Duration::from_secs(5)).await;
             }
-        };
+        }
+    };
 
-        // The app registry. Adding an app is its constructor plus one line
-        // here — no enum variant, no match arm. `main` never returns, so these
-        // locals live for the whole program and need no `StaticCell`.
-        let pomodoro = apps::PomodoroFactory::new(slint_ui.shell().as_weak());
-        let macropad = apps::MacropadFactory::new(slint_ui.shell().as_weak());
-        let registry: [&dyn AppFactory; 2] = [&pomodoro, &macropad];
-        let mut router = Router::new(&registry, launcher::default_carousel(0));
+    // The app registry. Adding an app is its constructor plus one line
+    // here — no enum variant, no match arm. `main` never returns, so these
+    // locals live for the whole program and need no `StaticCell`.
+    let pomodoro = apps::PomodoroFactory::new(slint_ui.shell().as_weak());
+    let macropad = apps::MacropadFactory::new(slint_ui.shell().as_weak());
+    let registry: [&dyn AppFactory; 2] = [&pomodoro, &macropad];
+    let mut router = Router::new(&registry, launcher::default_carousel(0));
 
-        slint_ui.shell().set_cards(app_cards(router.factories()));
-        slint_ui.shell().set_selected(0);
+    slint_ui.shell().set_cards(app_cards(router.factories()));
+    slint_ui.shell().set_selected(0);
 
-        // Initial paint: the launcher, since that is where the router starts.
+    // Initial paint: the launcher, since that is where the router starts.
+    let ctx = Ctx {
+        now_ms: now_ms(),
+        state: &APP_STATE,
+    };
+    ui::set_now_ms(ctx.now_ms);
+    // Render and flush are one call now, so this is the pair's total. The
+    // split (~35 ms render, ~21 ms flush for a full frame) needs an
+    // instrumented build to recover, which is what it took to measure
+    // anyway.
+    let started = Instant::now();
+    let first = slint_ui.render(panel);
+    let frame_us = started.elapsed().as_micros();
+    match first {
+        Ok(_) => log::info!("slint: first frame {frame_us}us"),
+        Err(e) => log::error!("slint: first frame failed: {e}"),
+    }
+    // Repaints since boot — only frames Slint actually drew, not loop
+    // iterations, which is the number worth knowing.
+    let mut frames: u32 = 0;
+
+    let mut press_start: Option<Instant> = None;
+    // Whether the current hold already fired its long press.
+    let mut long_fired = false;
+    let mut had_ip = false;
+    // Absolute Unix minute last observed / last fired, so the alarm fires
+    // exactly once per minute slot on a real edge (never on the first
+    // synced sample, and robust to SNTP wall-clock steps).
+    let mut last_minute_slot: Option<u32> = None;
+    let mut fired_slot: Option<u32> = None;
+    let mut persister = settings::Persister::new(saved);
+
+    // Terminal boot marker: everything is up and the UI loop is about to
+    // start. `just flash-log` watches for this line and exits, so keep the
+    // wording stable — and short, since a line over the 64-byte
+    // USB-Serial/JTAG FIFO blocks until the host drains it.
+    log::info!("boot: ready");
+
+    loop {
+        // Fixed 5ms tick keeps the encoder/button responsive; touch samples
+        // arrive asynchronously from the touch task via `touch::SAMPLES`.
+        Timer::after(Duration::from_millis(5)).await;
+        let mut changed = false;
         let ctx = Ctx {
             now_ms: now_ms(),
             state: &APP_STATE,
         };
-        ui::set_now_ms(ctx.now_ms);
-        // Render and flush are one call now, so this is the pair's total. The
-        // split (~35 ms render, ~21 ms flush for a full frame) needs an
-        // instrumented build to recover, which is what it took to measure
-        // anyway.
-        let started = Instant::now();
-        let first = slint_ui.render(panel);
-        let frame_us = started.elapsed().as_micros();
-        match first {
-            Ok(_) => log::info!("slint: first frame {frame_us}us"),
-            Err(e) => log::error!("slint: first frame failed: {e}"),
+
+        // Encoder → router (carousel, or the active app).
+        let detents = encoder.update(encoder_hw.raw());
+        if detents != 0 {
+            changed |= router.handle(UiInput::Rotate(detents), &ctx);
+            buzzer::signal(Feedback::Beep);
         }
-        // Repaints since boot — only frames Slint actually drew, not loop
-        // iterations, which is the number worth knowing.
-        let mut frames: u32 = 0;
 
-        let mut press_start: Option<Instant> = None;
-        // Whether the current hold already fired its long press.
-        let mut long_fired = false;
-        let mut had_ip = false;
-        // Absolute Unix minute last observed / last fired, so the alarm fires
-        // exactly once per minute slot on a real edge (never on the first
-        // synced sample, and robust to SNTP wall-clock steps).
-        let mut last_minute_slot: Option<u32> = None;
-        let mut fired_slot: Option<u32> = None;
-        let mut persister = settings::Persister::new(saved);
-
-        // Terminal boot marker: everything is up and the UI loop is about to
-        // start. `just flash-log` watches for this line and exits, so keep the
-        // wording stable — and short, since a line over the 64-byte
-        // USB-Serial/JTAG FIFO blocks until the host drains it.
-        log::info!("boot: ready");
-
-        loop {
-            // Fixed 5ms tick keeps the encoder/button responsive; touch samples
-            // arrive asynchronously from the touch task via `touch::SAMPLES`.
-            Timer::after(Duration::from_millis(5)).await;
-            let mut changed = false;
-            let ctx = Ctx {
-                now_ms: now_ms(),
-                state: &APP_STATE,
-            };
-
-            // Encoder → router (carousel, or the active app).
-            let detents = encoder.update(encoder_hw.raw());
-            if detents != 0 {
-                changed |= router.handle(UiInput::Rotate(detents), &ctx);
+        // Button: the router decides what a press means — long-press is
+        // "back to launcher", short-press launches or is the app's Select.
+        //
+        // Long-press fires **the moment the threshold is crossed**, while
+        // the button is still down, and buzzes to say so. Waiting for
+        // release gave no feedback about when you had held it long enough.
+        // The short press then fires on release, but only if the long press
+        // did not already claim this hold.
+        let down = button.is_low(); // active-low (pull-up + button to GND)
+        // The gesture recogniser needs the *contact*, not the press event:
+        // pressing the encoder also registers a touch, and that phantom has
+        // to be discarded before it navigates anywhere.
+        router.set_button(down, ctx.now_ms);
+        if down {
+            match press_start {
+                None => press_start = Some(Instant::now()),
+                Some(start)
+                    if !long_fired && Instant::now().duration_since(start) >= LONG_PRESS =>
+                {
+                    long_fired = true;
+                    changed |= router.handle(UiInput::LongPress, &ctx);
+                    buzzer::signal(Feedback::Haptic);
+                }
+                Some(_) => {}
+            }
+        } else {
+            if press_start.take().is_some() && !long_fired {
+                changed |= router.handle(UiInput::ShortPress, &ctx);
                 buzzer::signal(Feedback::Beep);
             }
+            long_fired = false;
+        }
 
-            // Button: the router decides what a press means — long-press is
-            // "back to launcher", short-press launches or is the app's Select.
-            //
-            // Long-press fires **the moment the threshold is crossed**, while
-            // the button is still down, and buzzes to say so. Waiting for
-            // release gave no feedback about when you had held it long enough.
-            // The short press then fires on release, but only if the long press
-            // did not already claim this hold.
-            let down = button.is_low(); // active-low (pull-up + button to GND)
-            // The gesture recogniser needs the *contact*, not the press event:
-            // pressing the encoder also registers a touch, and that phantom has
-            // to be discarded before it navigates anywhere.
-            router.set_button(down, ctx.now_ms);
-            if down {
-                match press_start {
-                    None => press_start = Some(Instant::now()),
-                    Some(start)
-                        if !long_fired && Instant::now().duration_since(start) >= LONG_PRESS =>
-                    {
-                        long_fired = true;
-                        changed |= router.handle(UiInput::LongPress, &ctx);
-                        buzzer::signal(Feedback::Haptic);
-                    }
-                    Some(_) => {}
+        // Touch → router. Drained to empty so a stroke's `Up` is never left
+        // queued behind a slow frame, which would strand the gesture.
+        while let Ok(sample) = touch::SAMPLES.try_receive() {
+            changed |= router.handle(UiInput::Touch(sample), &ctx);
+        }
+
+        // Observe the DHCP lease: publish `Connected` only with an IPv4
+        // (the connection task owns `Connecting`/`Disconnected`). Log the
+        // address once when it first appears.
+        if let Some(stack) = stack {
+            if let Some(cfg) = stack.config_v4() {
+                let octets = cfg.address.address().octets();
+                APP_STATE.set_ip(octets);
+                APP_STATE.set_conn(ConnState::Connected);
+                if !had_ip {
+                    had_ip = true;
+                    let [a, b, c, d] = octets;
+                    log::info!("net: ip={a}.{b}.{c}.{d}");
                 }
             } else {
-                if press_start.take().is_some() && !long_fired {
-                    changed |= router.handle(UiInput::ShortPress, &ctx);
-                    buzzer::signal(Feedback::Beep);
-                }
-                long_fired = false;
-            }
-
-            // Touch → router. Drained to empty so a stroke's `Up` is never left
-            // queued behind a slow frame, which would strand the gesture.
-            while let Ok(sample) = touch::SAMPLES.try_receive() {
-                changed |= router.handle(UiInput::Touch(sample), &ctx);
-            }
-
-            // Observe the DHCP lease: publish `Connected` only with an IPv4
-            // (the connection task owns `Connecting`/`Disconnected`). Log the
-            // address once when it first appears.
-            if let Some(stack) = stack {
-                if let Some(cfg) = stack.config_v4() {
-                    let octets = cfg.address.address().octets();
-                    APP_STATE.set_ip(octets);
-                    APP_STATE.set_conn(ConnState::Connected);
-                    if !had_ip {
-                        had_ip = true;
-                        let [a, b, c, d] = octets;
-                        log::info!("net: ip={a}.{b}.{c}.{d}");
-                    }
-                } else {
-                    APP_STATE.clear_ip();
-                    had_ip = false;
-                }
-            }
-
-            // Alarm: beep once when the hour hand reaches the armed mark. Keyed
-            // on the absolute Unix minute so a real minute edge (not the first
-            // synced sample or an SNTP step) triggers exactly one fire per slot.
-            // Fires on any screen since the alarm lives in shared state.
-            if let Some(epoch) = APP_STATE.current_epoch(uptime_secs()) {
-                let slot = epoch.checked_div(60).unwrap_or(0);
-                if last_minute_slot != Some(slot) {
-                    if last_minute_slot.is_some() {
-                        let minute12 = u16::try_from(slot.rem_euclid(720)).unwrap_or(0);
-                        if APP_STATE.alarm() == Some(minute12) && fired_slot != Some(slot) {
-                            fired_slot = Some(slot);
-                            log::info!("alarm: fired (12h-minute {minute12})");
-                            buzzer::signal(Feedback::Haptic);
-                        }
-                    }
-                    last_minute_slot = Some(slot);
-                }
-            }
-
-            // Persist alarm/toggles to flash, debounced so a burst of edits
-            // becomes one write a couple of seconds after the change settles.
-            persister.poll(&APP_STATE);
-
-            // Animate / adopt external state, then render + flush the dirty
-            // area. `ctx` is re-read here so a carousel slide is sampled at the
-            // moment it is drawn rather than at the top of the tick.
-            let ctx = Ctx {
-                now_ms: now_ms(),
-                state: &APP_STATE,
-            };
-            changed |= router.tick(&ctx);
-
-            // Everything is Slint now: publish state, then let it decide what
-            // actually changed. `draw_if_needed` is cheap when nothing did, so
-            // this runs unconditionally rather than being gated on `dirty`.
-            ui::set_now_ms(ctx.now_ms);
-            // The host publishes the active view id and never learns which app
-            // it belongs to — that is the whole point of `Manifest::view`.
-            slint_ui.shell().set_view(i32::from(router.view_id().0));
-            match router.view() {
-                View::Launcher => slint_ui
-                    .shell()
-                    .set_selected(i32::try_from(router.selected()).unwrap_or(0)),
-                // Only republish when the app says something changed: setting a
-                // struct property unconditionally would dirty Slint every tick
-                // and repaint at full loop speed.
-                View::App(_) => {
-                    if changed {
-                        router.sync_app();
-                    }
-                }
-            }
-
-            // Apps cannot reach the radio either; a chord becomes a press and
-            // release report, dropped if the queue is full rather than blocking
-            // the UI loop for a host that may not even be paired.
-            if let Some(chord) = router.take_keys() {
-                radio::send_chord(chord.modifiers, chord.usage);
-            }
-
-            // Apps cannot reach the buzzer; the router collects their requests.
-            if let Some(feedback) = router.take_feedback() {
-                buzzer::signal(match feedback {
-                    launcher::Feedback::Beep => Feedback::Beep,
-                    launcher::Feedback::Haptic => Feedback::Haptic,
-                });
-            }
-
-            let started = Instant::now();
-            match slint_ui.render(panel) {
-                // Nothing changed — the overwhelmingly common case.
-                Ok(None) => {}
-                Ok(Some(rect)) => {
-                    frames = frames.saturating_add(1);
-                    if frames <= FRAME_LOG_FIRST || frames.checked_rem(FRAME_LOG_EVERY) == Some(0) {
-                        let us = started.elapsed().as_micros();
-                        let (w, h, x, y) = (rect.w, rect.h, rect.x, rect.y);
-                        log::info!("slint: frame {frames} {w}x{h}+{x},{y} {us}us");
-                    }
-                }
-                Err(e) => log::error!("display: {e}"),
+                APP_STATE.clear_ip();
+                had_ip = false;
             }
         }
-    }
 
-    log::info!("enc-app: display unavailable, idling");
-    loop {
-        Timer::after(Duration::from_secs(5)).await;
+        // Alarm: beep once when the hour hand reaches the armed mark. Keyed
+        // on the absolute Unix minute so a real minute edge (not the first
+        // synced sample or an SNTP step) triggers exactly one fire per slot.
+        // Fires on any screen since the alarm lives in shared state.
+        if let Some(epoch) = APP_STATE.current_epoch(uptime_secs()) {
+            let slot = epoch.checked_div(60).unwrap_or(0);
+            if last_minute_slot != Some(slot) {
+                if last_minute_slot.is_some() {
+                    let minute12 = u16::try_from(slot.rem_euclid(720)).unwrap_or(0);
+                    if APP_STATE.alarm() == Some(minute12) && fired_slot != Some(slot) {
+                        fired_slot = Some(slot);
+                        log::info!("alarm: fired (12h-minute {minute12})");
+                        buzzer::signal(Feedback::Haptic);
+                    }
+                }
+                last_minute_slot = Some(slot);
+            }
+        }
+
+        // Persist alarm/toggles to flash, debounced so a burst of edits
+        // becomes one write a couple of seconds after the change settles.
+        persister.poll(&APP_STATE);
+
+        // Animate / adopt external state, then render + flush the dirty
+        // area. `ctx` is re-read here so a carousel slide is sampled at the
+        // moment it is drawn rather than at the top of the tick.
+        let ctx = Ctx {
+            now_ms: now_ms(),
+            state: &APP_STATE,
+        };
+        changed |= router.tick(&ctx);
+
+        // Everything is Slint now: publish state, then let it decide what
+        // actually changed. `draw_if_needed` is cheap when nothing did, so
+        // this runs unconditionally rather than being gated on `dirty`.
+        ui::set_now_ms(ctx.now_ms);
+        // The host publishes the active view id and never learns which app
+        // it belongs to — that is the whole point of `Manifest::view`.
+        slint_ui.shell().set_view(i32::from(router.view_id().0));
+        match router.view() {
+            View::Launcher => slint_ui
+                .shell()
+                .set_selected(i32::try_from(router.selected()).unwrap_or(0)),
+            // Only republish when the app says something changed: setting a
+            // struct property unconditionally would dirty Slint every tick
+            // and repaint at full loop speed.
+            View::App(_) => {
+                if changed {
+                    router.sync_app();
+                }
+            }
+        }
+
+        // Apps cannot reach the radio either; a chord becomes a press and
+        // release report, dropped if the queue is full rather than blocking
+        // the UI loop for a host that may not even be paired.
+        if let Some(chord) = router.take_keys() {
+            radio::send_chord(chord.modifiers, chord.usage);
+        }
+
+        // Apps cannot reach the buzzer; the router collects their requests.
+        if let Some(feedback) = router.take_feedback() {
+            buzzer::signal(match feedback {
+                launcher::Feedback::Beep => Feedback::Beep,
+                launcher::Feedback::Haptic => Feedback::Haptic,
+            });
+        }
+
+        let started = Instant::now();
+        match slint_ui.render(panel) {
+            // Nothing changed — the overwhelmingly common case.
+            Ok(None) => {}
+            Ok(Some(rect)) => {
+                frames = frames.saturating_add(1);
+                if frames <= FRAME_LOG_FIRST || frames.checked_rem(FRAME_LOG_EVERY) == Some(0) {
+                    let us = started.elapsed().as_micros();
+                    let (w, h, x, y) = (rect.w, rect.h, rect.x, rect.y);
+                    log::info!("slint: frame {frames} {w}x{h}+{x},{y} {us}us");
+                }
+            }
+            Err(e) => log::error!("display: {e}"),
+        }
     }
 }
