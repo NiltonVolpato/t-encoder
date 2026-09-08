@@ -4,7 +4,7 @@
 use enc_state::AppState;
 
 use crate::{
-    AppFactory, Ctx, Gesture, Input, Recognizer, Router, TouchPhase, TouchSample, View,
+    AppFactory, Ctx, Gesture, Input, Recognizer, Router, TouchEvent, TouchSample, View,
     default_carousel,
 };
 
@@ -31,8 +31,8 @@ fn a_stroke_that_does_not_move_is_a_tap() {
 #[test]
 fn a_tap_reports_where_the_finger_landed() {
     let stroke = [
-        sample(TouchPhase::Down, 100, 100, 0),
-        sample(TouchPhase::Up, 106, 104, 60),
+        sample(TouchEvent::Down, 100, 100, 0),
+        sample(TouchEvent::Up, 106, 104, 60),
     ];
     assert_eq!(recognise(&stroke), Some(Gesture::Tap { x: 100, y: 100 }));
 }
@@ -73,9 +73,9 @@ fn a_diagonal_drag_is_not_a_swipe() {
 #[test]
 fn a_stroke_that_wanders_and_returns_is_not_a_tap() {
     let stroke = [
-        sample(TouchPhase::Down, 195, 195, 0),
-        sample(TouchPhase::Move, 195, 100, 40),
-        sample(TouchPhase::Up, 195, 195, 80),
+        sample(TouchEvent::Down, 195, 195, 0),
+        sample(TouchEvent::Move, 195, 100, 40),
+        sample(TouchEvent::Up, 195, 195, 80),
     ];
     assert_eq!(recognise(&stroke), None);
 }
@@ -84,7 +84,7 @@ fn a_stroke_that_wanders_and_returns_is_not_a_tap() {
 /// looking; there is nothing to measure it against.
 #[test]
 fn a_lift_without_a_landing_recognises_nothing() {
-    assert_eq!(recognise(&[sample(TouchPhase::Up, 195, 195, 0)]), None);
+    assert_eq!(recognise(&[sample(TouchEvent::Up, 195, 195, 0)]), None);
 }
 
 /// Observed on device: the first poll after reset returned `501,3784`, which
@@ -93,8 +93,8 @@ fn a_lift_without_a_landing_recognises_nothing() {
 #[test]
 fn an_off_panel_reading_cannot_start_a_swipe() {
     let stroke = [
-        sample(TouchPhase::Down, 501, 3784, 0),
-        sample(TouchPhase::Up, 204, 193, 60),
+        sample(TouchEvent::Down, 501, 3784, 0),
+        sample(TouchEvent::Up, 204, 193, 60),
     ];
     assert_eq!(recognise(&stroke), None);
 }
@@ -104,10 +104,10 @@ fn an_off_panel_reading_cannot_start_a_swipe() {
 #[test]
 fn an_off_panel_reading_mid_stroke_is_ignored() {
     let stroke = [
-        sample(TouchPhase::Down, 340, 195, 0),
-        sample(TouchPhase::Move, 4000, 4000, 20),
-        sample(TouchPhase::Move, 190, 195, 40),
-        sample(TouchPhase::Up, 40, 195, 80),
+        sample(TouchEvent::Down, 340, 195, 0),
+        sample(TouchEvent::Move, 4000, 4000, 20),
+        sample(TouchEvent::Move, 190, 195, 40),
+        sample(TouchEvent::Up, 40, 195, 80),
     ];
     assert_eq!(recognise(&stroke), Some(Gesture::SwipeLeft));
 }
@@ -117,16 +117,16 @@ fn an_off_panel_reading_mid_stroke_is_ignored() {
 #[test]
 fn a_spiral_that_ends_at_the_far_edge_is_not_a_swipe() {
     let mut stroke = alloc::vec::Vec::new();
-    stroke.push(sample(TouchPhase::Down, 340, 195, 0));
+    stroke.push(sample(TouchEvent::Down, 340, 195, 0));
     // Four laps around the middle, then out to the left rim.
     for lap in 0..4 {
         let at = 20 + lap * 80;
-        stroke.push(sample(TouchPhase::Move, 260, 120, at));
-        stroke.push(sample(TouchPhase::Move, 190, 195, at + 20));
-        stroke.push(sample(TouchPhase::Move, 260, 270, at + 40));
-        stroke.push(sample(TouchPhase::Move, 330, 195, at + 60));
+        stroke.push(sample(TouchEvent::Move, 260, 120, at));
+        stroke.push(sample(TouchEvent::Move, 190, 195, at + 20));
+        stroke.push(sample(TouchEvent::Move, 260, 270, at + 40));
+        stroke.push(sample(TouchEvent::Move, 330, 195, at + 60));
     }
-    stroke.push(sample(TouchPhase::Up, 40, 195, 400));
+    stroke.push(sample(TouchEvent::Up, 40, 195, 400));
     assert_eq!(recognise(&stroke), None);
 }
 
@@ -134,9 +134,9 @@ fn a_spiral_that_ends_at_the_far_edge_is_not_a_swipe() {
 #[test]
 fn a_v_is_not_a_swipe() {
     let stroke = [
-        sample(TouchPhase::Down, 380, 190, 0),
-        sample(TouchPhase::Move, 200, 350, 60),
-        sample(TouchPhase::Up, 30, 190, 120),
+        sample(TouchEvent::Down, 380, 190, 0),
+        sample(TouchEvent::Move, 200, 350, 60),
+        sample(TouchEvent::Up, 30, 190, 120),
     ];
     assert_eq!(recognise(&stroke), None);
 }
@@ -146,9 +146,9 @@ fn a_v_is_not_a_swipe() {
 #[test]
 fn a_slow_drag_across_the_panel_is_not_a_swipe() {
     let stroke = [
-        sample(TouchPhase::Down, 340, 195, 0),
-        sample(TouchPhase::Move, 190, 195, 30_000),
-        sample(TouchPhase::Up, 40, 195, 60_000),
+        sample(TouchEvent::Down, 340, 195, 0),
+        sample(TouchEvent::Move, 190, 195, 30_000),
+        sample(TouchEvent::Up, 40, 195, 60_000),
     ];
     assert_eq!(recognise(&stroke), None);
 }
@@ -160,18 +160,18 @@ fn a_slow_drag_across_the_panel_is_not_a_swipe() {
 #[test]
 fn a_dense_jittery_but_straight_swipe_still_counts() {
     let mut stroke = alloc::vec::Vec::new();
-    stroke.push(sample(TouchPhase::Down, 340, 195, 0));
+    stroke.push(sample(TouchEvent::Down, 340, 195, 0));
     for step in 1..60 {
         let x = 340 - step * 5;
         let y = 195 + if step % 2 == 0 { 4 } else { -4 };
         stroke.push(sample(
-            TouchPhase::Move,
+            TouchEvent::Move,
             x,
             y,
             u64::try_from(step).unwrap_or(0) * 10,
         ));
     }
-    stroke.push(sample(TouchPhase::Up, 40, 195, 600));
+    stroke.push(sample(TouchEvent::Up, 40, 195, 600));
     assert_eq!(recognise(&stroke), Some(Gesture::SwipeLeft));
 }
 
@@ -180,17 +180,17 @@ fn a_dense_jittery_but_straight_swipe_still_counts() {
 #[test]
 fn the_sample_rate_does_not_change_the_verdict() {
     let mut sparse = alloc::vec::Vec::new();
-    sparse.push(sample(TouchPhase::Down, 340, 195, 0));
+    sparse.push(sample(TouchEvent::Down, 340, 195, 0));
     for step in 1..6 {
         let x = 340 - step * 50;
         sparse.push(sample(
-            TouchPhase::Move,
+            TouchEvent::Move,
             x,
             195,
             u64::try_from(step).unwrap_or(0) * 100,
         ));
     }
-    sparse.push(sample(TouchPhase::Up, 40, 195, 600));
+    sparse.push(sample(TouchEvent::Up, 40, 195, 600));
     assert_eq!(recognise(&sparse), Some(Gesture::SwipeLeft));
 }
 
@@ -261,9 +261,9 @@ fn tapping_outside_the_cards_does_nothing() {
 fn a_card_launches_on_the_lift_not_the_landing() {
     with_router(|router, ctx| {
         let x = router.carousel().card_centre_x(0, 0);
-        assert!(!(router.handle(Input::Touch(sample(TouchPhase::Down, x, 195, 0)), ctx)));
+        assert!(!(router.handle(Input::Touch(sample(TouchEvent::Down, x, 195, 0)), ctx)));
         assert_eq!(router.view(), View::Launcher);
-        router.handle(Input::Touch(sample(TouchPhase::Up, x, 195, 0)), ctx);
+        router.handle(Input::Touch(sample(TouchEvent::Up, x, 195, 0)), ctx);
         assert_eq!(router.view(), View::App(0));
     });
 }
@@ -405,9 +405,9 @@ fn touch_works_again_once_the_phantom_window_passes() {
 fn a_press_part_way_through_a_stroke_condemns_it() {
     with_router(|router, ctx| {
         let x = router.carousel().card_centre_x(0, 0);
-        router.handle(Input::Touch(sample(TouchPhase::Down, x, 195, 1_000)), ctx);
+        router.handle(Input::Touch(sample(TouchEvent::Down, x, 195, 1_000)), ctx);
         router.set_button(true, 1_005);
-        router.handle(Input::Touch(sample(TouchPhase::Up, x, 195, 1_040)), ctx);
+        router.handle(Input::Touch(sample(TouchEvent::Up, x, 195, 1_040)), ctx);
         assert_eq!(router.view(), View::Launcher);
     });
 }

@@ -9,17 +9,7 @@
 //! host and only the sampling loop has to be trusted on device.
 
 use crate::geometry;
-
-/// Where a sample sits in a stroke.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TouchPhase {
-    /// A finger arrived.
-    Down,
-    /// A finger moved while still on the panel.
-    Move,
-    /// A finger left the panel; the sample carries its last known position.
-    Up,
-}
+use enc_touch::{TouchEvent, TouchPoint};
 
 /// One reading from the touch panel, in panel coordinates.
 ///
@@ -27,12 +17,8 @@ pub enum TouchPhase {
 /// has a negative `dy`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TouchSample {
-    /// Where this sample sits in the stroke.
-    pub phase: TouchPhase,
-    /// X position in panel pixels.
-    pub x: i32,
-    /// Y position in panel pixels.
-    pub y: i32,
+    /// Position and event type reported by the touch controller.
+    pub point: TouchPoint,
     /// Monotonic milliseconds, from the same clock as [`crate::Ctx::now_ms`].
     pub at_ms: u64,
 }
@@ -106,8 +92,8 @@ const PHANTOM_GRACE_MS: u64 = 250;
 /// this unit. A garbage endpoint is indistinguishable from an enormous swipe
 /// (that one measures as 3591 px upward), and panel bounds are the one thing
 /// we can check it against.
-fn on_panel(x: i32, y: i32) -> bool {
-    (0..i32::from(geometry::WIDTH)).contains(&x) && (0..i32::from(geometry::HEIGHT)).contains(&y)
+fn on_panel(x: u16, y: u16) -> bool {
+    x < geometry::WIDTH && y < geometry::HEIGHT
 }
 
 /// A stroke in progress.
@@ -133,12 +119,14 @@ struct Stroke {
 impl Stroke {
     /// Starts a stroke at `sample`.
     fn landed(sample: TouchSample, suppressed: bool) -> Stroke {
+        let x = i32::from(sample.point.x);
+        let y = i32::from(sample.point.y);
         Stroke {
-            start_x: sample.x,
-            start_y: sample.y,
+            start_x: x,
+            start_y: y,
             start_ms: sample.at_ms,
-            anchor_x: sample.x,
-            anchor_y: sample.y,
+            anchor_x: x,
+            anchor_y: y,
             path: 0,
             wander: 0,
             suppressed,
@@ -208,31 +196,38 @@ impl Recognizer {
         // An off-panel reading is the controller talking nonsense, not a
         // finger. Drop it whole rather than let it start, extend or end a
         // stroke: a stroke built on a garbage endpoint measures as a swipe.
-        if !on_panel(sample.x, sample.y) {
+        if !on_panel(sample.point.x, sample.point.y) {
             return None;
         }
-        match sample.phase {
-            TouchPhase::Down => {
+        let x = i32::from(sample.point.x);
+        let y = i32::from(sample.point.y);
+        match sample.point.event {
+            TouchEvent::Down => {
                 self.stroke = Some(Stroke::landed(sample, self.is_phantom(sample.at_ms)));
                 None
             }
-            TouchPhase::Move => {
+            TouchEvent::Move => {
                 if let Some(stroke) = self.stroke.as_mut() {
-                    stroke.reached(sample.x, sample.y);
+                    stroke.reached(x, y);
                 }
                 None
             }
-            TouchPhase::Up => {
+            TouchEvent::Up => {
                 // Take it either way: an `Up` always ends the stroke, even a
                 // suppressed one, so the next press starts clean.
                 let mut stroke = self.stroke.take()?;
-                stroke.reached(sample.x, sample.y);
-                stroke.closed(sample.x, sample.y);
+                stroke.reached(x, y);
+                stroke.closed(x, y);
                 if stroke.suppressed {
                     return None;
                 }
-                classify(&stroke, sample.x, sample.y, sample.at_ms)
+                let gesture = classify(&stroke, x, y, sample.at_ms);
+                if let Some(ref g) = gesture {
+                    log::debug!("gesture: recognized {g:?}");
+                }
+                gesture
             }
+            TouchEvent::Unknown(_) => None,
         }
     }
 

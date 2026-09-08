@@ -4,50 +4,37 @@
 
 //! CHSC5816 touch bring-up, and the stroke stream it feeds the router.
 //!
-//! [`task`] polls the point register and derives the stroke edges itself: the
-//! first report of a contact is a [`TouchPhase::Down`], later ones are `Move`s,
-//! and the report going empty is an `Up` at the last known position. The
-//! recogniser in `launcher` wants edges, not levels, and it is the only thing
-//! that reads them — this file recognises nothing.
+//! [`task`] listens for falling edges on the INT line (GPIO9) and reads
+//! touch reports. It forwards them to the launcher gesture recogniser.
 //!
-//! **This loop is pure polling — the INT line is not listened to at all.** The
-//! timer *is* the poll interval; there is no interrupt in the picture. GPIO9 is
-//! wired, constructed, and handed to `Chsc5816`, which stores it and offers
-//! `wait_for_touch()` — and nothing calls that. `read_point()` is I2C only.
-//!
-//! Switching to the edge is a live option and better supported than the code
-//! suggests. Per `CHSC5816-ApplicationDoc_US_V04` §Report data, INT is a real
-//! falling-edge data-ready line, and the report's per-point `touch event` byte
-//! distinguishes press (0), touching (8) and *release* (4) — so a lift is a
-//! reported event, not something the host has to infer from a poll coming back
-//! empty. This driver reads that byte and discards it (`_id_event`), and
-//! derives the phases instead. See the plan before changing either.
+//! When idle, the task sleeps on `wait_for_interrupt()` with zero I2C bus traffic.
+//! During an active stroke, it waits for subsequent falling edges with a 35 ms
+//! watchdog timeout to ensure lifts are never stranded if a release edge is missed.
 //!
 //! Touch is the board's only I2C device — I2C1 is entirely free.
 
+use embassy_futures::select::{Either, select};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
 use embassy_time::{Delay, Duration, Instant, Timer};
-use enc_touch::Chsc5816;
+use enc_touch::{Chsc5816, TouchEvent, TouchPoint};
 use esp_hal::Async;
 use esp_hal::gpio::{Input, InputConfig, Level, Output, OutputConfig, Pull};
 use esp_hal::i2c::master::{Config, I2c};
 use esp_hal::peripherals::{GPIO5, GPIO6, GPIO8, GPIO9, I2C0};
-use launcher::{TouchPhase, TouchSample};
+use launcher::TouchSample;
 
 /// I2C address of the touch controller on this board. Upstream's docs claim a
 /// CST816 at 0x15; this unit is a CHSC5816 at 0x2E, confirmed by observation.
 const ADDRESS: u8 = 0x2E;
 
-/// Delay between polls. Not the poll *period*: a point read is two I2C
-/// transactions at 100 kHz (the chip rejects repeated-start, so the register
-/// address and the 8-byte report cannot share one), which measured 12.5 ms end
-/// to end for 500 polls — about 80 Hz. That is ~16 samples across a 200 ms
-/// swipe, far more than the recogniser needs.
-const POLL: Duration = Duration::from_millis(10);
+/// Maximum duration to wait between touch reports during an active stroke
+/// before assuming the finger has lifted. The controller reports at ~80–100 Hz
+/// (~10–12 ms) while a finger is down.
+const STROKE_TIMEOUT: Duration = Duration::from_millis(35);
 
-/// Queue depth. The UI loop drains it every tick and a poll only arrives every
-/// 12.5 ms, so this sits at one or two; it is sized for the case where a
+/// Queue depth. The UI loop drains it every tick and touch reports arrive at
+/// ~80 Hz, so this sits at one or two; it is sized for the case where a
 /// full-frame render and flush (~55 ms) blocks the loop outright.
 const QUEUE: usize = 16;
 
@@ -65,8 +52,7 @@ pub struct TouchPins {
     pub sda: GPIO5<'static>,
     /// I2C clock line.
     pub scl: GPIO6<'static>,
-    /// Interrupt line. Wired and handed to the driver, never waited on — this
-    /// loop polls. See the module docs.
+    /// Falling-edge interrupt line.
     pub int: GPIO9<'static>,
     /// Active-low reset.
     pub rst: GPIO8<'static>,
@@ -94,63 +80,113 @@ pub async fn init(pins: TouchPins) -> Option<Touch> {
     Some(touch)
 }
 
-/// Polls the controller and publishes one [`TouchSample`] per state change.
-///
-/// Each completed stroke is logged with its travel. The recogniser's swipe
-/// threshold cannot be tuned from the host — it is a question about fingers on
-/// a 35 mm round panel — and this one line is what makes it answerable.
+/// Emits a touch lift ([`TouchEvent::Up`]) sample and logs stroke travel.
+fn emit_up(contact: &mut Option<(u16, u16)>, landed: &mut Option<(u16, u16, u64)>, points: u32) {
+    if let Some((x, y)) = contact.take() {
+        let at_ms = Instant::now().as_millis();
+        log::trace!("touch: emit Up {x},{y}");
+        if let Some((x0, y0, t0)) = landed.take() {
+            let ms = at_ms.saturating_sub(t0);
+            log::info!("touch: {x0},{y0} -> {x},{y} {ms}ms {points}p");
+        }
+        send(TouchSample {
+            point: TouchPoint {
+                x,
+                y,
+                event: TouchEvent::Up,
+            },
+            at_ms,
+        });
+    }
+}
+
+/// Waits for hardware touch interrupts and publishes [`TouchSample`] events.
 #[embassy_executor::task]
 pub async fn task(mut touch: Touch) {
     // Where the finger was last seen, and therefore whether one is down.
-    let mut contact: Option<(i32, i32)> = None;
+    let mut contact: Option<(u16, u16)> = None;
     // Where and when the current stroke started, and how many samples it has
     // taken — all three only for the travel log.
-    let mut landed: Option<(i32, i32, u64)> = None;
+    let mut landed: Option<(u16, u16, u64)> = None;
     let mut points: u32 = 0;
+
     loop {
-        Timer::after(POLL).await;
-        // The clock is read per *sample*, not per poll: an empty report is the
-        // overwhelmingly common case and there is nothing there to timestamp.
-        // `Instant::now().as_millis()` measured 1.21us on device (10k calls in
-        // 12.08ms) — ~290 cycles at 240MHz, which is not the free counter read
-        // it looks like.
-        match touch.read_point().await {
-            Ok(Some(point)) => {
-                let at_ms = Instant::now().as_millis();
-                let x = i32::from(point.x);
-                let y = i32::from(point.y);
-                let phase = if contact.is_some() {
-                    points = points.saturating_add(1);
-                    TouchPhase::Move
-                } else {
-                    landed = Some((x, y, at_ms));
-                    points = 1;
-                    TouchPhase::Down
-                };
-                contact = Some((x, y));
-                send(TouchSample { phase, x, y, at_ms });
+        let is_touching = contact.is_some();
+        if !is_touching {
+            // Idle: sleep indefinitely on hardware falling edge with zero I2C traffic.
+            if let Err(e) = touch.wait_for_interrupt().await {
+                log::error!("touch: interrupt wait error: {e:?}");
+                Timer::after(Duration::from_millis(50)).await;
+                continue;
             }
-            Ok(None) => {
-                // The lift carries the last position: the controller reports
-                // nothing at all once the finger is gone, and a swipe is
-                // measured between where it landed and where it left.
-                if let Some((x, y)) = contact.take() {
-                    let at_ms = Instant::now().as_millis();
-                    if let Some((x0, y0, t0)) = landed.take() {
-                        // Short on purpose: a line past the 64-byte
-                        // USB-Serial/JTAG FIFO blocks until the host drains it.
-                        let ms = at_ms.saturating_sub(t0);
-                        log::info!("touch: {x0},{y0} -> {x},{y} {ms}ms {points}p");
-                    }
-                    send(TouchSample {
-                        phase: TouchPhase::Up,
-                        x,
-                        y,
-                        at_ms,
-                    });
+        } else {
+            // Active stroke: wait for next report edge with watchdog timeout.
+            match select(touch.wait_for_interrupt(), Timer::after(STROKE_TIMEOUT)).await {
+                Either::First(Ok(())) => {}
+                Either::First(Err(e)) => {
+                    log::error!("touch: interrupt wait error: {e:?}");
+                }
+                Either::Second(()) => {
+                    // Watchdog fired: no edge for STROKE_TIMEOUT -> finger has lifted.
+                    log::trace!("touch: watchdog timeout (Up)");
+                    emit_up(&mut contact, &mut landed, points);
+                    continue;
                 }
             }
-            Err(_) => log::error!("touch: read failed"),
+        }
+
+        match touch.read_point().await {
+            Ok(Some(mut point)) => {
+                let at_ms = Instant::now().as_millis();
+                let x = point.x;
+                let y = point.y;
+
+                match point.event {
+                    TouchEvent::Up => {
+                        emit_up(&mut contact, &mut landed, points);
+                    }
+                    TouchEvent::Down => {
+                        if contact.is_none() {
+                            log::trace!("touch: Down {x},{y}");
+                            landed = Some((x, y, at_ms));
+                            points = 1;
+                            contact = Some((x, y));
+                            send(TouchSample { point, at_ms });
+                        } else {
+                            points = points.saturating_add(1);
+                            log::trace!("touch: Move {x},{y}");
+                            contact = Some((x, y));
+                            point.event = TouchEvent::Move;
+                            send(TouchSample { point, at_ms });
+                        }
+                    }
+                    TouchEvent::Move | TouchEvent::Unknown(_) => {
+                        if contact.is_some() {
+                            points = points.saturating_add(1);
+                            log::trace!("touch: Move {x},{y}");
+                            point.event = TouchEvent::Move;
+                        } else {
+                            log::trace!("touch: Down {x},{y}");
+                            landed = Some((x, y, at_ms));
+                            points = 1;
+                            point.event = TouchEvent::Down;
+                        };
+                        contact = Some((x, y));
+                        send(TouchSample { point, at_ms });
+                    }
+                }
+            }
+            Ok(None) => {
+                if contact.is_some() {
+                    emit_up(&mut contact, &mut landed, points);
+                }
+            }
+            Err(_) => {
+                log::error!("touch: read failed");
+                if contact.is_some() {
+                    emit_up(&mut contact, &mut landed, points);
+                }
+            }
         }
     }
 }

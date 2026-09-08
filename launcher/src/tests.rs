@@ -11,19 +11,27 @@ use core::cell::Cell;
 
 use crate::{
     Action, App, AppFactory, Ctx, Feedback, IconId, Input, InputEvent, KeyChord, Manifest, Outcome,
-    Router, TouchAccess, TouchPhase, TouchSample, View, ViewId, default_carousel, geometry,
+    Router, TouchAccess, TouchEvent, TouchPoint, TouchSample, View, ViewId, default_carousel,
+    geometry,
 };
 
 /// A sample at `(x, y)`, `at_ms` after boot.
-fn sample(phase: TouchPhase, x: i32, y: i32, at_ms: u64) -> TouchSample {
-    TouchSample { phase, x, y, at_ms }
+fn sample(event: TouchEvent, x: i32, y: i32, at_ms: u64) -> TouchSample {
+    TouchSample {
+        point: TouchPoint {
+            x: u16::try_from(x).unwrap_or(u16::MAX),
+            y: u16::try_from(y).unwrap_or(u16::MAX),
+            event,
+        },
+        at_ms,
+    }
 }
 
 /// A tap landing at `at_ms`: down and up in the same place.
 fn tap_at(x: i32, y: i32, at_ms: u64) -> [TouchSample; 2] {
     [
-        sample(TouchPhase::Down, x, y, at_ms),
-        sample(TouchPhase::Up, x, y, at_ms.saturating_add(40)),
+        sample(TouchEvent::Down, x, y, at_ms),
+        sample(TouchEvent::Up, x, y, at_ms.saturating_add(40)),
     ]
 }
 
@@ -35,14 +43,14 @@ fn tap(x: i32, y: i32) -> [TouchSample; 2] {
 /// A stroke from `(x0, y0)` to `(x1, y1)`, with one midpoint move.
 fn swipe(x0: i32, y0: i32, x1: i32, y1: i32) -> [TouchSample; 3] {
     [
-        sample(TouchPhase::Down, x0, y0, 0),
+        sample(TouchEvent::Down, x0, y0, 0),
         sample(
-            TouchPhase::Move,
+            TouchEvent::Move,
             i32::midpoint(x0, x1),
             i32::midpoint(y0, y1),
             40,
         ),
-        sample(TouchPhase::Up, x1, y1, 80),
+        sample(TouchEvent::Up, x1, y1, 80),
     ]
 }
 

@@ -23,7 +23,8 @@ pub use app::{
     TouchAccess, ViewId,
 };
 pub use carousel::Carousel;
-pub use gesture::{Gesture, Recognizer, TouchPhase, TouchSample};
+pub use enc_touch::{TouchEvent, TouchPoint};
+pub use gesture::{Gesture, Recognizer, TouchSample};
 pub use router::{Input, Router, View};
 
 /// Panel geometry the launcher lays out against. Mirrors `enc_config::display`,

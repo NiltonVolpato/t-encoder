@@ -93,7 +93,7 @@ QEMU_RUSTFLAGS := "-C target-feature=-fp -C link-arg=-nostartfiles -C link-arg=-
 # resuming from the monitor leaves gdb convinced the target is still halted.
 QEMU_ARGS := "-machine esp32s3 -nographic -monitor none " + QEMU_PSRAM + " " + QEMU_EFUSE_ARGS + " " + QEMU_QUIRKS + " -drive file=" + QEMU_IMAGE + ",format=raw,if=mtd"
 
-export ESP_LOG := "info"
+export ESP_LOG := env('ESP_LOG', "info")
 
 # Cargo's per-crate compile chatter is suppressed by default. When a build is
 # misbehaving and the progress lines matter, put it back for one invocation:
