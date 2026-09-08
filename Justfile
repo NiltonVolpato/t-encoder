@@ -404,6 +404,12 @@ size COUNT='25':
 monitor:
     espflash monitor --port {{FLASH_PORT}}
 
+# Attach to a running device with tio without resetting it (exit: Ctrl-T q).
+[doc("Attach to the running device with tio (no reset, exit with Ctrl-T q).")]
+[group("deploy")]
+attach *ARGS:
+    tio {{ARGS}} {{FLASH_PORT}}
+
 # Everything but `firmware`, which is device-only. `ui` and `apps` are in scope
 # here — they build natively once the device env vars are unset, which is what
 # RESET_ENV is for. A multi-line comment would become the recipe's `just --list`
