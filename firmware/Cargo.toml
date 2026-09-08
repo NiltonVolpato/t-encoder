@@ -33,6 +33,7 @@ embedded-graphics = { workspace = true }
 embassy-sync = "0.7"
 embassy-futures = { workspace = true }
 embassy-net = { workspace = true }
+embedded-io-async = { workspace = true }
 esp-hal = { workspace = true }
 esp-rtos = { workspace = true }
 esp-println = { workspace = true }
@@ -46,6 +47,9 @@ trouble-host = { workspace = true, optional = true }
 embassy-executor = { workspace = true }
 embassy-time = { workspace = true }
 log = { workspace = true }
+embedded-cli = { workspace = true }
+embedded-io = { workspace = true }
+ufmt = { workspace = true }
 
 [features]
 default = ["radio", "float-save-restore"]

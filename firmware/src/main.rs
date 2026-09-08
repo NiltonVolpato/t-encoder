@@ -23,6 +23,7 @@ mod heap;
 mod input;
 mod radio;
 mod settings;
+mod shell;
 mod touch;
 
 use buzzer::Feedback;
@@ -219,6 +220,15 @@ async fn main(spawner: Spawner) -> ! {
     match buzzer::task(peripherals.LEDC, peripherals.GPIO17) {
         Ok(token) => spawner.spawn(token),
         Err(_) => log::error!("boot: failed to spawn buzzer task"),
+    }
+
+    // Serial shell over native USB-Serial/JTAG.
+    let usb_serial =
+        esp_hal::usb_serial_jtag::UsbSerialJtag::new(peripherals.USB_DEVICE).into_async();
+    let (rx, tx) = usb_serial.split();
+    match shell::task(rx, tx, &APP_STATE) {
+        Ok(token) => spawner.spawn(token),
+        Err(_) => log::error!("boot: failed to spawn shell task"),
     }
 
     // Bring up the CO5300 display.
