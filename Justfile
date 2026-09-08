@@ -42,6 +42,57 @@ FLASH_PORT := env('FLASH_PORT', "/dev/cu.usbmodem101")
 FIRMWARE_PATH := justfile_directory() + "/target/xtensa-esp32s3-none-elf/release/firmware"
 FLASH_ARGS := "--chip esp32s3 --port " + FLASH_PORT + " --partition-table firmware/partitions.csv --after hard-reset " + FIRMWARE_PATH
 
+# QEMU-related variables. Espressif's fork ships inside the esp-idf tool tree;
+# glob for it so a tool upgrade needs no edit here, same as the xtensa toolchain
+# above. No `size=` on the drive: `save-image --merge` already emits a full
+# 16 MiB chip, so pinning the size again just duplicated a fact that can drift.
+QEMU_BIN := `ls -d ~/.espressif/tools/qemu-xtensa/*/qemu/bin/qemu-system-xtensa 2>/dev/null | head -1`
+QEMU_ELF := justfile_directory() + "/target/qemu-firmware.elf"
+QEMU_IMAGE := justfile_directory() + "/target/qemu-flash.bin"
+QEMU_EFUSE := justfile_directory() + "/target/qemu-efuse.bin"
+
+# The argument set below mirrors what `idf.py qemu` passes
+# (esp-idf/tools/idf_py_actions/qemu_ext.py), which is the only configuration
+# Espressif actually tests this machine in. One deliberate divergence: IDF hard-
+# codes `-m 32M` and lets the app size PSRAM from its own sdkconfig, but 32 MiB
+# makes esp-hal's mapping give up — `cache_dbus_mmu_set failed`, psram/esp32s3.rs
+# — so we pass the 8 MiB the ESP32-S3-R8 actually has. `is_octal` to match it.
+QEMU_PSRAM := "-m 8M -global driver=ssi_psram,property=is_octal,value=true"
+
+# Backing store for the eFuse block. Without it every eFuse read returns zero:
+# the boot log says "chip revision: v0.0" and qemu complains "[Efuse] Out of
+# range key block specified: 0". It matters because esp-hal reads eFuses on the
+# clock path — `pvt_supported()` takes `block_version()`, `dig_dbias_v1()` takes
+# K_DIG_LDO and V_DIG_DBIAS20 — so with no eFuses it calibrates against zeroes.
+# With the image, the log reads "chip revision: v0.3". (It does not fix the BBPLL
+# wait; that patch is still required.)
+QEMU_EFUSE_ARGS := "-drive file=" + QEMU_EFUSE + ",if=none,format=raw,id=efuse -global driver=nvram.esp32s3.efuse,property=drive,value=efuse"
+
+# Two more that IDF passes unconditionally. `wdt_disable` turns off the timer
+# group watchdog — no observed effect on our boot, but Espressif disables it on
+# every QEMU run and it costs nothing to match. `open_eth` is the virtual NIC;
+# also inert here, since the QEMU build has no networking.
+QEMU_QUIRKS := "-global driver=timer.esp32s3.timg,property=wdt_disable,value=true -nic user,model=open_eth"
+
+# Soft float for the QEMU build. The S3 has a real single-precision FPU
+# (`rustc --print cfg` lists target_feature="fp"); QEMU's core model does not,
+# and meets one by taking the whole emulator down. Dropping `float-save-restore`
+# is enough for the boot path, but Slint's renderer is float-heavy, so the app
+# would hit the same wall the moment it drew anything. `-fp` lowers all of it to
+# compiler-builtins calls: `add.s`/`mul.s`/`lsi` go from ~4750 to zero (what
+# objdump still shows is literal pools decoded as instructions).
+#
+# The two link args are repeated here on purpose: RUSTFLAGS *replaces*
+# `.cargo/config.toml`'s `target.*.rustflags` rather than appending, so leaving
+# them out silently drops `-nostartfiles`. `-C target-feature` is unstable, so
+# rustc prints a warning about `fp` on every build; that is expected.
+QEMU_RUSTFLAGS := "-C target-feature=-fp -C link-arg=-nostartfiles -C link-arg=-Wl,--no-warn-rwx-segments"
+
+# `-monitor none` is ours, not IDF's (they multiplex it onto stdio with
+# `mon:stdio`). Keep it: a (qemu) prompt next to a gdb session is a trap, since
+# resuming from the monitor leaves gdb convinced the target is still halted.
+QEMU_ARGS := "-machine esp32s3 -nographic -monitor none " + QEMU_PSRAM + " " + QEMU_EFUSE_ARGS + " " + QEMU_QUIRKS + " -drive file=" + QEMU_IMAGE + ",format=raw,if=mtd"
+
 export ESP_LOG := "info"
 
 # Cargo's per-crate compile chatter is suppressed by default. When a build is
@@ -146,6 +197,157 @@ flash-log MARKER='boot: ready' TIMEOUT='20' TAIL='3': (build)
             exit 1
         }
     }
+
+# Boots the flash image under Espressif's qemu-xtensa. It gets through the ROM
+# and the IDF second-stage bootloader, then runs the app as far as the first
+# peripheral QEMU does not model. Today that is:
+#
+#   enc-app v0.1.0 boot OK
+#   settings: loaded toggles=0x0000 alarm=None
+#   psram: 8192 KiB mapped at 0x3c0a0000
+#   psram: smoke test OK (octal mode confirmed)
+#   radio: built without the `radio` feature — no Wi-Fi, no BLE
+#   heap: internal free=204816 used=0 | psram free=8080312 used=0
+#   PANIC: Exception occurred on ProCpu 'InstrProhibited' ... PC: 0
+#
+# That is the interrupt matrix, not a driver. `esp_rtos::start` binds
+# TG0_T0_LEVEL (source 50) to CPU interrupt 1, the tick fires, and the CPU takes
+# it correctly — but when esp-hal asks the matrix *which* source it was, all four
+# `core_0_intr_status` words read 0x00000006, the same value they hold at reset
+# before any guest code. Source 50's bit is not among them. So
+# `handle_interrupts::<1>` settles on source 33 — not even a named interrupt on
+# this chip — and calls `__INTERRUPTS[33]._handler`, which is null. PC := 0.
+#
+# CPU-*internal* interrupts use a hardcoded match and work fine (Software0 is
+# handled twice first); it is the first *peripheral* interrupt that is fatal.
+# Everything before it is real: the buzzer task is spawned and parked in its
+# channel receive (verified under gdb), and `display::init` is never reached.
+#
+# Getting that far needs three things, and none of them is optional:
+#
+#  1. **No radio.** `--no-default-features` drops firmware's `radio` feature.
+#     QEMU emulates neither Wi-Fi nor BT, and esp-radio would also drag in
+#     `xtensa-lx-rt/float-save-restore` — see (2).
+#  2. **No FPU, anywhere.** QEMU's esp32s3 core has none, and `rur.fcr` in
+#     xtensa-lx-rt's `save_context` takes qemu-system-xtensa down with it on the
+#     first exception (segfault, exit 139). `--no-default-features` drops
+#     `float-save-restore`, and QEMU_RUSTFLAGS soft-floats the rest so the app's
+#     own float code cannot hit the same wall later.
+#  3. **The BBPLL calibration wait patched out of the ELF** — see
+#     `firmware/qemu-patch.py`. QEMU models no I2C_ANA_MST, so esp-hal's
+#     `enable_pll_clk_impl` waits forever for a calibration bit that never sets.
+#     No `esp_hal::Config` avoids it; every CpuClock preset uses the PLL.
+#
+# So the binary under QEMU is NOT the binary that ships — `just qemu` builds its
+# own and patches it. It is a boot/PSRAM/settings smoke test, not the app: the
+# display (QSPI), touch (I2C), encoder (PCNT) and buzzer (LEDC) are all
+# unmodelled, and so is the FPU that Slint's software renderer needs.
+#
+# PSRAM *is* modelled, opt-in: `-m 8M` sizes it and the ssi_psram global selects
+# octal, matching the ESP32-S3-R8. Without both, the smoke test fails.
+#
+# UART0 is the right console even though the device uses USB-Serial/JTAG: QEMU
+# has no esp32s3 USB-Serial/JTAG device, and esp-println's default `auto` printer
+# probes for one, reads 0, and falls back to UART0. It is written as
+# `file:/dev/stdout`, not `stdio`, because qemu's stdio chardev wants a terminal
+# — headless it emits nothing at all, silently (same trap as espflash's monitor).
+[doc("Boot a radio-less, QEMU-patched build under QEMU. TIMEOUT seconds, then quit.")]
+[group("debug")]
+qemu TIMEOUT='15':
+    #!/usr/bin/env bash
+    set -euo pipefail
+    just _qemu-build
+    set +e
+    # The timeout is the expected exit path, and qemu announces the SIGTERM on
+    # stderr; drop that one line rather than let it read as a failure. `-k` is
+    # not belt-and-braces: a guest wedged on an unmodelled peripheral has been
+    # seen to stop servicing SIGTERM entirely, and only SIGKILL ends it.
+    timeout -f -k 5s {{TIMEOUT}}s "{{QEMU_BIN}}" {{QEMU_ARGS}} -serial file:/dev/stdout 2>&1 \
+        | grep -v 'terminating on signal 15'
+    exit 0
+
+# Same image, frozen at the first instruction with the gdb stub listening.
+# Attach from another shell:
+#
+#   just qemu-gdb                      # terminal 1, waits for gdb
+#   just gdb                           # terminal 2
+#
+# Then, in gdb:
+#
+#   hbreak firmware_panic_stop    # every panic comes to rest here
+#   continue                      # <- IN GDB. see below
+#
+# Three things that will otherwise waste an afternoon:
+#
+#  - **`continue` belongs in gdb, never in a qemu monitor.** Resuming from the
+#    monitor leaves gdb believing the target is still halted, and it then
+#    ignores everything the guest does. That is why this recipe passes
+#    `-monitor none`: there is no (qemu) prompt to be tempted by.
+#  - **`hbreak`, not `break`.** The code is in flash-mapped `.text`, which QEMU
+#    will not let gdb write, so software breakpoints silently never fire. Two
+#    hardware breakpoints are reliable; three have hung the stub here.
+#  - **`interrupt` / Ctrl-C does not stop this stub.** Everything has to be
+#    breakpoint-driven, which is what `-S` is for.
+#
+# `0x40000400 in ?? ()` on connect is not a fault — that is the ROM reset
+# vector, before any of our code, so `bt` having one frame and no symbols is
+# correct. Serial output lands in target/qemu-serial.log.
+[doc("Boot under QEMU frozen at reset with the gdb stub on PORT.")]
+[group("debug")]
+qemu-gdb PORT='3333':
+    #!/usr/bin/env bash
+    set -euo pipefail
+    just _qemu-build
+    echo "gdb stub on :{{PORT}} — attach with: just gdb {{PORT}}"
+    "{{QEMU_BIN}}" {{QEMU_ARGS}} -serial file:target/qemu-serial.log -S -gdb tcp::{{PORT}}
+
+[doc("Attach the xtensa gdb to a running `just qemu-gdb`.")]
+[group("debug")]
+gdb PORT='3333':
+    #!/usr/bin/env bash
+    set -euo pipefail
+    gdb=$(ls -d ~/.espressif/tools/xtensa-esp-elf-gdb/*/xtensa-esp-elf-gdb/bin/xtensa-esp32s3-elf-gdb | head -1)
+    exec "$gdb" -q -ex "target remote :{{PORT}}" {{QEMU_ELF}}
+
+# The QEMU build: radio-less, unstripped (so `just gdb` has names), patched, and
+# merged into one raw 16 MB chip for `if=mtd`. `--merge` because QEMU boots the
+# whole flash rather than an app partition, so the bootloader and the partition
+# table have to sit in the same file at their own offsets.
+#
+# Built into its own target dir: the feature set differs from `just build`, and
+# sharing one would make the two recipes rebuild each other's work every time.
+# The ELF is copied before patching so the patch never lands on a cargo output
+# that a later build would reuse without rebuilding.
+#
+# Still espflash rather than IDF's `esptool merge-bin --pad-to-size`: both were
+# tried against the same ELF and the emulator behaved identically, so the second
+# tool would only add a step that splits espflash's output back into bootloader,
+# partition table and app just to re-merge them.
+_qemu-build: _qemu-efuse
+    #!/usr/bin/env bash
+    set -euo pipefail
+    CARGO_PROFILE_RELEASE_STRIP=none RUSTFLAGS="{{QEMU_RUSTFLAGS}}" \
+        cargo build -p firmware --release --no-default-features --target-dir target/qemu
+    cp target/qemu/xtensa-esp32s3-none-elf/release/firmware {{QEMU_ELF}}
+    python3 firmware/qemu-patch.py xtensa-esp32s3-elf-objdump {{QEMU_ELF}}
+    espflash save-image --chip esp32s3 --partition-table firmware/partitions.csv \
+        --flash-size 16mb --merge {{QEMU_ELF}} {{QEMU_IMAGE}}
+
+# IDF's default esp32s3 eFuse image, reproduced rather than vendored as a blob:
+# 1 KiB of zeroes with byte 38 = 0x0c, which is WAFER_VERSION_MINOR = 3, i.e.
+# chip revision v0.3. Taken from QEMU_TARGETS['esp32s3'].default_efuse in
+# esp-idf/tools/idf_py_actions/qemu_ext.py; that file also documents how to
+# regenerate it with esptool/espefuse if the defaults ever move.
+#
+# QEMU writes back to this file, so it is left alone once created — delete it to
+# get factory defaults again.
+_qemu-efuse:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ ! -f "{{QEMU_EFUSE}}" ]]; then
+        python3 -c "import pathlib, sys; b = bytearray(1024); b[38] = 0x0C; pathlib.Path(sys.argv[1]).write_bytes(bytes(b))" "{{QEMU_EFUSE}}"
+        echo "wrote {{QEMU_EFUSE}} (chip revision v0.3)"
+    fi
 
 # What the firmware is made of. `bloaty` reads the section table fine but
 # refuses anything symbol-level on this target ("Unknown ELF machine value: 94"

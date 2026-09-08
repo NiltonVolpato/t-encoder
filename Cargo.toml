@@ -36,8 +36,15 @@ static_cell = "2"
 log = "0.4"
 
 # --- ESP / Embassy device stack ------------------------------------------
-esp-hal = { version = "1.1.1", features = ["esp32s3", "unstable"] }
-esp-rtos = { version = "0.3.0", features = ["embassy", "esp32s3", "esp-alloc", "esp-radio"] }
+# `float-save-restore` is a *default* feature, dropped here and re-added by
+# firmware's own feature of the same name, so `just qemu` can build without it:
+# QEMU's esp32s3 core has no FPU and the `rur.fcr` in xtensa-lx-rt's
+# `save_context` takes qemu-system-xtensa down with it. Real builds keep it —
+# enc-net asks for esp-hal's defaults anyway, so a radio build has it twice over.
+esp-hal = { version = "1.1.1", default-features = false, features = ["esp32s3", "unstable", "rt", "exception-handler"] }
+# `esp-radio` is deliberately NOT listed here — firmware's `radio` feature adds
+# it, so `just qemu` can build a firmware with esp-radio out of the graph.
+esp-rtos = { version = "0.3.0", features = ["embassy", "esp32s3", "esp-alloc"] }
 esp-println = { version = "0.17.0", features = ["esp32s3", "log-04"] }
 esp-bootloader-esp-idf = { version = "0.5.0", features = ["esp32s3"] }
 embassy-executor = { version = "0.10.0", features = [] }

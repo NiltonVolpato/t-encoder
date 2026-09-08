@@ -21,7 +21,7 @@ enc-co5300 = { workspace = true }
 enc-input = { workspace = true }
 enc-touch = { workspace = true }
 enc-state = { workspace = true }
-enc-net = { workspace = true }
+enc-net = { workspace = true, optional = true }
 
 embedded-hal = { workspace = true }
 embedded-graphics = { workspace = true }
@@ -40,16 +40,36 @@ esp-bootloader-esp-idf = { workspace = true }
 esp-storage = { workspace = true }
 embedded-storage = { workspace = true }
 esp-alloc = { workspace = true }
-esp-radio = { workspace = true }
-bt-hci = { workspace = true }
-trouble-host = { workspace = true }
+esp-radio = { workspace = true, optional = true }
+bt-hci = { workspace = true, optional = true }
+trouble-host = { workspace = true, optional = true }
 embassy-executor = { workspace = true }
 embassy-time = { workspace = true }
 log = { workspace = true }
 
 [features]
+default = ["radio", "float-save-restore"]
+
+# esp-hal's own default, put back. Only `just qemu` leaves it out — see the
+# esp-hal entry in the root Cargo.toml for why.
+float-save-restore = ["esp-hal/float-save-restore"]
+
+# Wi-Fi STA and the BLE HID keyboard. On for every real build; `just qemu`
+# turns it off. QEMU emulates neither radio, and — the reason this is a cargo
+# feature rather than a runtime branch — merely *depending* on esp-radio
+# force-enables `xtensa-lx-rt/float-save-restore`, whose FPU context save
+# crashes qemu-system-xtensa itself. `esp-rtos/esp-radio` is carried here
+# rather than in the workspace dependency for the same reason.
+radio = [
+    "dep:enc-net",
+    "dep:esp-radio",
+    "dep:bt-hci",
+    "dep:trouble-host",
+    "esp-rtos/esp-radio",
+]
+
 # Lab-only: expose HTTP write endpoints (GET /toggle?i=N). Off by default.
-http-write = ["enc-net/http-write"]
+http-write = ["radio", "enc-net/http-write"]
 
 [lints]
 workspace = true

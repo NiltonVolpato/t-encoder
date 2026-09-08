@@ -15,11 +15,13 @@
 
 extern crate alloc;
 
+#[cfg(feature = "radio")]
 mod ble;
 mod buzzer;
 mod display;
 mod heap;
 mod input;
+mod radio;
 mod settings;
 mod touch;
 
@@ -32,7 +34,6 @@ use esp_hal::clock::CpuClock;
 use esp_hal::gpio::{Input, InputConfig, Pull};
 use esp_hal::interrupt::software::SoftwareInterruptControl;
 use esp_hal::psram;
-use esp_hal::rng::Rng;
 use esp_hal::timer::timg::TimerGroup;
 // `Input` is aliased to `UiInput`: esp-hal's GPIO `Input` already owns that name.
 use launcher::{AppFactory, Ctx, Input as UiInput, Router, View};
@@ -113,9 +114,26 @@ fn rgb565_to_slint(color: embedded_graphics::pixelcolor::Rgb565) -> slint::Color
 /// `panic = "abort"`: switching to `immediate-abort` compiles `panic!` straight
 /// to an abort and deletes this message from the binary entirely, which is the
 /// trade documented in the root `Cargo.toml`.
+///
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
     esp_println::println!("PANIC: {info}");
+    firmware_panic_stop()
+}
+
+/// Where a panic comes to rest, split out only to carry a fixed symbol name, so
+/// a debugger has somewhere to stop: under QEMU, `hbreak firmware_panic_stop`
+/// catches every panic without needing an address. Three things that do not
+/// work in its place — `#[panic_handler]` ignores `export_name`, Rust's own
+/// `rust_begin_unwind` carries a per-build hash and so cannot be named, and a
+/// `break` instruction never reaches the gdb stub because esp-hal's exception
+/// handler catches the debug exception itself and panics "Breakpoint on
+/// `ProCpu`".
+/// `inline(never)` is what makes the symbol survive LTO. On device this is only
+/// a name in a symbol table the release profile then strips.
+#[unsafe(no_mangle)]
+#[inline(never)]
+extern "C" fn firmware_panic_stop() -> ! {
     loop {
         core::hint::spin_loop();
     }
@@ -176,16 +194,19 @@ async fn main(spawner: Spawner) -> ! {
         log::error!("psram: smoke test FAILED — check PSRAM mode (octal vs quad)");
     }
 
-    // Wi-Fi STA + embassy-net (Phase 6b). A random seed salts DHCP/ports; the
-    // tasks own association, the UI loop polls the lease for the IP.
-    let rng = Rng::new();
-    let [a0, a1, a2, a3] = rng.random().to_be_bytes();
-    let [b0, b1, b2, b3] = rng.random().to_be_bytes();
-    let seed = u64::from_be_bytes([a0, a1, a2, a3, b0, b1, b2, b3]);
-    let stack = enc_net::start(&spawner, peripherals.WIFI, seed, &APP_STATE);
-    if stack.is_none() {
-        log::error!("net: Wi-Fi stack unavailable");
-    }
+    // Wi-Fi STA + embassy-net and the BLE HID keyboard (Phase 6b). Both live
+    // behind the `radio` feature; see `radio.rs` for why that is a feature and
+    // not a runtime branch. `_radio` is an RAII guard over the BLE TRNG.
+    let (stack, _radio) = radio::start(
+        spawner,
+        radio::Parts {
+            wifi: peripherals.WIFI,
+            bt: peripherals.BT,
+            rng: peripherals.RNG,
+            adc1: peripherals.ADC1,
+        },
+        &APP_STATE,
+    );
     log::info!(
         "heap: internal free={} used={} | psram free={} used={}",
         esp_alloc::HEAP.free(),
@@ -198,17 +219,6 @@ async fn main(spawner: Spawner) -> ! {
     match buzzer::task(peripherals.LEDC, peripherals.GPIO17) {
         Ok(token) => spawner.spawn(token),
         Err(_) => log::error!("boot: failed to spawn buzzer task"),
-    }
-
-    // Entropy source for the BLE security manager. It is an RAII guard: the
-    // TRNG is only available while this is alive, and `main` never returns, so
-    // binding it here keeps it up for the life of the program.
-    let _trng_source = esp_hal::rng::TrngSource::new(peripherals.RNG, peripherals.ADC1);
-
-    // BLE HID keyboard for the macropad app.
-    match ble::task(peripherals.BT, &APP_STATE) {
-        Ok(token) => spawner.spawn(token),
-        Err(_) => log::error!("boot: failed to spawn ble task"),
     }
 
     // Bring up the CO5300 display.
@@ -464,7 +474,7 @@ async fn main(spawner: Spawner) -> ! {
             // release report, dropped if the queue is full rather than blocking
             // the UI loop for a host that may not even be paired.
             if let Some(chord) = router.take_keys() {
-                ble::send_chord(chord.modifiers, chord.usage);
+                radio::send_chord(chord.modifiers, chord.usage);
             }
 
             // Apps cannot reach the buzzer; the router collects their requests.

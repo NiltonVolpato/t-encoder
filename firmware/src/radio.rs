@@ -1,0 +1,97 @@
+//! Wi-Fi and BLE bring-up, behind the `radio` feature (on by default).
+//!
+//! The feature exists for `just qemu`. QEMU emulates neither radio, so nothing
+//! here could work there anyway — but the reason it has to be a *cargo feature*
+//! rather than an `if` in `main` is sharper than that: merely depending on
+//! `esp-radio` force-enables `xtensa-lx-rt/float-save-restore`, and the FPU
+//! context save that pulls in (`rur.fcr`) segfaults qemu-system-xtensa itself
+//! on the first exception. The dependency has to leave the graph, not just the
+//! call path.
+//!
+//! Both builds hand `main` the same shape, so the UI loop needs no `cfg`.
+
+use embassy_executor::Spawner;
+use embassy_net::Stack;
+use enc_state::AppState;
+use esp_hal::peripherals::{ADC1, BT, RNG, WIFI};
+
+/// Everything the radios own, moved across in one go so `main` gives them up
+/// exactly once whether or not the feature is on.
+pub struct Parts {
+    pub wifi: WIFI<'static>,
+    pub bt: BT<'static>,
+    pub rng: RNG<'static>,
+    pub adc1: ADC1<'static>,
+}
+
+/// Keeps the TRNG that backs the BLE security manager alive: the generator only
+/// exists while this guard does. `main` never returns, so binding it there
+/// keeps entropy available for the life of the program.
+pub struct Guard {
+    #[cfg(feature = "radio")]
+    _trng: esp_hal::rng::TrngSource<'static>,
+}
+
+/// Starts Wi-Fi STA (with embassy-net) and the BLE HID keyboard task.
+///
+/// The returned stack is `None` when Wi-Fi could not start — including when the
+/// SSID was never set at build time, which is not an error.
+#[cfg(feature = "radio")]
+pub fn start(
+    spawner: Spawner,
+    parts: Parts,
+    state: &'static AppState,
+) -> (Option<Stack<'static>>, Guard) {
+    // A random seed salts DHCP transaction IDs and ephemeral ports; the tasks
+    // own association, and the UI loop polls the lease for the IP.
+    let rng = esp_hal::rng::Rng::new();
+    let [a0, a1, a2, a3] = rng.random().to_be_bytes();
+    let [b0, b1, b2, b3] = rng.random().to_be_bytes();
+    let seed = u64::from_be_bytes([a0, a1, a2, a3, b0, b1, b2, b3]);
+    let stack = enc_net::start(&spawner, parts.wifi, seed, state);
+    if stack.is_none() {
+        log::error!("net: Wi-Fi stack unavailable");
+    }
+
+    let guard = Guard {
+        _trng: esp_hal::rng::TrngSource::new(parts.rng, parts.adc1),
+    };
+    match crate::ble::task(parts.bt, state) {
+        Ok(token) => spawner.spawn(token),
+        Err(_) => log::error!("boot: failed to spawn ble task"),
+    }
+
+    (stack, guard)
+}
+
+/// No-radio build: consumes the peripherals and reports the absence once, so a
+/// QEMU log makes clear the silence is deliberate rather than a failure.
+#[cfg(not(feature = "radio"))]
+pub fn start(
+    _spawner: Spawner,
+    parts: Parts,
+    _state: &'static AppState,
+) -> (Option<Stack<'static>>, Guard) {
+    // Destructured rather than dropped whole: it releases WIFI/BT/RNG/ADC1 back
+    // just the same, and it keeps the fields "read" so the no-radio build stays
+    // warning-clean without an `allow`.
+    let Parts {
+        wifi,
+        bt,
+        rng,
+        adc1,
+    } = parts;
+    let _ = (wifi, bt, rng, adc1);
+    log::info!("radio: built without the `radio` feature — no Wi-Fi, no BLE");
+    (None, Guard {})
+}
+
+/// Queues one HID chord for the BLE task. A no-op without the feature; the
+/// caller still drains the router either way, so nothing accumulates.
+#[cfg(feature = "radio")]
+pub fn send_chord(modifiers: u8, usage: u8) {
+    crate::ble::send_chord(modifiers, usage);
+}
+
+#[cfg(not(feature = "radio"))]
+pub fn send_chord(_modifiers: u8, _usage: u8) {}
