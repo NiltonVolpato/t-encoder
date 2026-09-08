@@ -15,11 +15,12 @@ fn main() {
     let descr = time::macros::format_description!(
         "[year]-[month]-[day] [hour]:[minute]:[second] [offset_hour sign:mandatory]:[offset_minute]"
     );
-    let date = now.format(&descr).unwrap();
-    println!("cargo:rustc-env=BUILD_DATE={}", date);
-    println!("cargo:rustc-env=BUILD_USER={}", env!("USER"));
+    let date = now.format(&descr).unwrap_or_default();
+    println!("cargo:rustc-env=BUILD_DATE={date}");
+    let user = env!("USER");
+    println!("cargo:rustc-env=BUILD_USER={user}");
     match std::net::hostname() {
-        Ok(s) => println!("cargo:rustc-env=BUILD_HOST={}", &s.to_string_lossy()),
+        Ok(s) => println!("cargo:rustc-env=BUILD_HOST={}", s.to_string_lossy()),
         Err(_) => println!("cargo:rustc-env=BUILD_HOST=unknown"),
     }
 }
