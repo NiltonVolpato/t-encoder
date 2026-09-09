@@ -7,10 +7,8 @@
 //! struct plus a registry entry — never an edit to an enum and every match arm
 //! over it.
 
-use embedded_graphics::pixelcolor::Rgb565;
-use enc_state::AppState;
-
 use crate::gesture::TouchSample;
+use embedded_graphics::pixelcolor::Rgb565;
 
 /// Normalized input, after the router has taken navigation out of the stream.
 ///
@@ -75,14 +73,15 @@ pub struct Manifest {
 }
 
 /// Per-frame context handed to every app.
-pub struct Ctx<'a> {
+#[derive(Clone, Copy, Debug)]
+pub struct Ctx {
     /// Monotonic milliseconds since boot.
     ///
     /// Supplied by the host rather than read from `embassy_time` so this crate
     /// stays hardware-free and testable with a plain counter.
     pub now_ms: u64,
-    /// Lock-free shared state bridging apps, UI and networking.
-    pub state: &'a AppState,
+    /// Whether BLE keyboard link is active.
+    pub ble_linked: bool,
 }
 
 /// What an app wants the router to do after handling an event.
@@ -222,20 +221,20 @@ pub trait App {
     fn on_exit(&mut self) {}
 
     /// Handles one input event.
-    fn handle(&mut self, event: InputEvent, ctx: &Ctx<'_>) -> Outcome;
+    fn handle(&mut self, event: InputEvent, ctx: &Ctx) -> Outcome;
 
     /// Handles one raw touch sample.
     ///
     /// Only ever called for an app whose [`Manifest::touch`] is
     /// [`TouchAccess::Raw`]. By default the panel belongs to the router, which
     /// turns strokes into navigation, so this stays a no-op.
-    fn touch(&mut self, sample: TouchSample, ctx: &Ctx<'_>) -> Outcome {
+    fn touch(&mut self, sample: TouchSample, ctx: &Ctx) -> Outcome {
         let _ = (sample, ctx);
         Outcome::NONE
     }
 
     /// Periodic update — countdowns, adopting external state changes.
-    fn tick(&mut self, ctx: &Ctx<'_>) -> Outcome {
+    fn tick(&mut self, ctx: &Ctx) -> Outcome {
         let _ = ctx;
         Outcome::NONE
     }

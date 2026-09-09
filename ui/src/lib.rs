@@ -42,10 +42,12 @@ pub const HEIGHT: u32 = 390;
 /// animation straddling the wrap would glitch once, which is acceptable.
 static NOW_MS: AtomicU32 = AtomicU32::new(0);
 
-/// Publishes the current time to Slint. Call once per frame, before rendering.
+/// Publishes the current time to Slint and advances animation clocks.
+/// Call once per frame, before updating properties or rendering.
 pub fn set_now_ms(now_ms: u64) {
     let wrapped = u32::try_from(now_ms % u64::from(u32::MAX)).unwrap_or(0);
     NOW_MS.store(wrapped, Ordering::Relaxed);
+    slint::platform::update_timers_and_animations();
 }
 
 /// RGB565 stored in the CO5300's byte order (big-endian).

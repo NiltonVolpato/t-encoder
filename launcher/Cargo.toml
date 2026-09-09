@@ -10,8 +10,6 @@ description = "Pure app-launcher core: App trait, router, layout. No hardware."
 [dependencies]
 embedded-graphics = { workspace = true }
 enc-touch = { workspace = true }
-# Shared atomic state, bridging apps, UI and networking.
-enc-state = { workspace = true }
 log = { workspace = true }
 
 [lints]

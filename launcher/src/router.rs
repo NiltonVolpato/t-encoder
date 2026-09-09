@@ -112,7 +112,7 @@ impl<'a> Router<'a> {
     }
 
     /// Handles one raw input, returning whether anything changed.
-    pub fn handle(&mut self, input: Input, ctx: &Ctx<'_>) -> bool {
+    pub fn handle(&mut self, input: Input, ctx: &Ctx) -> bool {
         match input {
             // Touch is the system's: it becomes navigation, unless the app on
             // screen asked for the raw panel.
@@ -149,7 +149,7 @@ impl<'a> Router<'a> {
     /// Only the running app ticks. There is no background execution: leaving an
     /// app drops it, so a timer left behind is gone. Background work needs its
     /// own design rather than keeping every app alive forever.
-    pub fn tick(&mut self, ctx: &Ctx<'_>) -> bool {
+    pub fn tick(&mut self, ctx: &Ctx) -> bool {
         // Slint drives its own animation clock, so the launcher has nothing of
         // its own to advance on a tick.
         let Some(app) = self.active.as_mut() else {
@@ -192,7 +192,7 @@ impl<'a> Router<'a> {
     }
 
     /// Forwards a normalized event to the running app.
-    fn deliver(&mut self, event: InputEvent, ctx: &Ctx<'_>) -> bool {
+    fn deliver(&mut self, event: InputEvent, ctx: &Ctx) -> bool {
         let Some(app) = self.active.as_mut() else {
             return self.go_home();
         };
@@ -202,7 +202,7 @@ impl<'a> Router<'a> {
 
     /// Routes one touch sample: to the app if it owns the panel, otherwise
     /// through the recogniser and on to navigation.
-    fn handle_touch(&mut self, sample: TouchSample, ctx: &Ctx<'_>) -> bool {
+    fn handle_touch(&mut self, sample: TouchSample, ctx: &Ctx) -> bool {
         if self.app_owns_touch() {
             let Some(app) = self.active.as_mut() else {
                 return self.go_home();
@@ -213,6 +213,11 @@ impl<'a> Router<'a> {
         let Some(gesture) = self.gestures.push(sample) else {
             return false;
         };
+        self.handle_gesture(gesture, ctx)
+    }
+
+    /// Routes a completed gesture to navigation.
+    pub fn handle_gesture(&mut self, gesture: Gesture, ctx: &Ctx) -> bool {
         match self.view {
             View::Launcher => self.handle_launcher_gesture(gesture, ctx),
             // Swipe up is the primary way out of an app; swipe left is "back",
@@ -226,7 +231,7 @@ impl<'a> Router<'a> {
     }
 
     /// The launcher's own view of touch: a tap picks a card.
-    fn handle_launcher_gesture(&mut self, gesture: Gesture, ctx: &Ctx<'_>) -> bool {
+    fn handle_launcher_gesture(&mut self, gesture: Gesture, ctx: &Ctx) -> bool {
         // Already home, so a swipe has nowhere to go.
         let Gesture::Tap { x, y } = gesture else {
             return false;
@@ -269,7 +274,7 @@ impl<'a> Router<'a> {
     }
 
     /// Constructs a fresh instance of app `index` and shows it.
-    fn launch(&mut self, index: usize, ctx: &Ctx<'_>) -> bool {
+    fn launch(&mut self, index: usize, ctx: &Ctx) -> bool {
         let _ = ctx;
         let Some(factory) = self.factories.get(index) else {
             return false;

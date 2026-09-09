@@ -5,7 +5,6 @@ use embassy_time::Instant;
 use embedded_cli::Command;
 use embedded_cli::cli::{CliBuilder, CliHandle};
 use embedded_io::{ErrorType, Write};
-use enc_state::{AppState, ConnState};
 use esp_hal::usb_serial_jtag::{UsbSerialJtagRx, UsbSerialJtagTx};
 use ufmt::uwriteln;
 
@@ -84,10 +83,7 @@ fn on_log(
 }
 
 /// Handles the `stats` shell command.
-fn on_stats(
-    cli: &mut CliHandle<'_, SerialWriter<'_>, Infallible>,
-    app_state: &AppState,
-) -> Result<(), Infallible> {
+fn on_stats(cli: &mut CliHandle<'_, SerialWriter<'_>, Infallible>) -> Result<(), Infallible> {
     let uptime = Instant::now().as_secs();
     uwriteln!(cli.writer(), "uptime: {}s", uptime)?;
 
@@ -109,17 +105,20 @@ fn on_stats(
         psram_used
     )?;
 
-    let conn_str = match app_state.conn() {
-        ConnState::Disconnected => "disconnected",
-        ConnState::Connecting => "connecting",
-        ConnState::Connected => "connected",
-    };
-
-    if let Some([a, b, c, d]) = app_state.ip() {
+    if let Some((ip, connected)) = crate::radio::wifi_info() {
+        let [a, b, c, d] = ip;
+        let conn_str = if connected { "connected" } else { "connecting" };
         uwriteln!(cli.writer(), "wifi: {} ({}.{}.{}.{})", conn_str, a, b, c, d)?;
     } else {
-        uwriteln!(cli.writer(), "wifi: {}", conn_str)?;
+        uwriteln!(cli.writer(), "wifi: not connected")?;
     }
+
+    let ble_str = if crate::radio::ble_linked() {
+        "linked"
+    } else {
+        "idle"
+    };
+    uwriteln!(cli.writer(), "ble: {}", ble_str)?;
 
     Ok(())
 }
@@ -133,39 +132,35 @@ const HISTORY_BUFFER_SIZE: usize = 128;
 pub async fn task(
     mut rx: UsbSerialJtagRx<'static, esp_hal::Async>,
     mut tx: UsbSerialJtagTx<'static, esp_hal::Async>,
-    app_state: &'static AppState,
 ) {
     let mut command_buffer = [0u8; COMMAND_BUFFER_SIZE];
     let mut history_buffer = [0u8; HISTORY_BUFFER_SIZE];
     let writer = SerialWriter(&mut tx);
 
-    let mut cli = match CliBuilder::default()
+    let Ok(mut cli) = CliBuilder::default()
         .prompt("> ")
         .writer(writer)
         .command_buffer(&mut command_buffer[..])
         .history_buffer(&mut history_buffer[..])
-        .build()
-    {
-        Ok(cli) => cli,
-        Err(_) => return,
-    };
+        .build();
 
     let mut read_buf = [0u8; 16];
     loop {
         match embedded_io_async::Read::read(&mut rx, &mut read_buf).await {
-            Ok(0) => {}
+            Ok(0) | Err(_) => {}
             Ok(count) => {
-                for &b in &read_buf[..count] {
-                    let _ = cli.process_byte::<ShellCommand<'_>, _>(
-                        b,
-                        &mut ShellCommand::processor(|cli, command| match command {
-                            ShellCommand::Log { level } => on_log(cli, level),
-                            ShellCommand::Stats => on_stats(cli, app_state),
-                        }),
-                    );
+                if let Some(bytes) = read_buf.get(..count) {
+                    for &b in bytes {
+                        let _ = cli.process_byte::<ShellCommand<'_>, _>(
+                            b,
+                            &mut ShellCommand::processor(|cli, command| match command {
+                                ShellCommand::Log { level } => on_log(cli, level),
+                                ShellCommand::Stats => on_stats(cli),
+                            }),
+                        );
+                    }
                 }
             }
-            Err(_) => {}
         }
     }
 }

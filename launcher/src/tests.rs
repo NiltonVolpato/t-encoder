@@ -4,7 +4,6 @@
 mod gesture;
 
 use embedded_graphics::pixelcolor::Rgb565;
-use enc_state::AppState;
 
 use alloc::boxed::Box;
 use core::cell::Cell;
@@ -56,7 +55,7 @@ fn swipe(x0: i32, y0: i32, x1: i32, y1: i32) -> [TouchSample; 3] {
 
 /// Feeds a whole stroke to the router, reporting whether any of it changed
 /// anything.
-fn feed(router: &mut Router<'_>, ctx: &Ctx<'_>, stroke: &[TouchSample]) -> bool {
+fn feed(router: &mut Router<'_>, ctx: &Ctx, stroke: &[TouchSample]) -> bool {
     stroke.iter().fold(false, |changed, &s| {
         changed | router.handle(Input::Touch(s), ctx)
     })
@@ -86,7 +85,7 @@ impl App for StubApp<'_> {
         self.log.exited.set(self.log.exited.get().saturating_add(1));
     }
 
-    fn handle(&mut self, _event: InputEvent, _ctx: &Ctx<'_>) -> Outcome {
+    fn handle(&mut self, _event: InputEvent, _ctx: &Ctx) -> Outcome {
         self.log.events.set(self.log.events.get().saturating_add(1));
         match self.action {
             Action::None => Outcome {
@@ -99,7 +98,7 @@ impl App for StubApp<'_> {
         }
     }
 
-    fn touch(&mut self, _sample: TouchSample, _ctx: &Ctx<'_>) -> Outcome {
+    fn touch(&mut self, _sample: TouchSample, _ctx: &Ctx) -> Outcome {
         self.log
             .touches
             .set(self.log.touches.get().saturating_add(1));
@@ -176,11 +175,10 @@ impl AppFactory for StubFactory<'_> {
 }
 
 /// Runs `body` with a two-app router.
-fn with_router(body: impl FnOnce(&mut Router<'_>, &Ctx<'_>)) {
-    let state = AppState::new(4);
+fn with_router(body: impl FnOnce(&mut Router<'_>, &Ctx)) {
     let ctx = Ctx {
         now_ms: 0,
-        state: &state,
+        ble_linked: false,
     };
     let log = Log::default();
     let first = StubFactory::new("First", &log).with_view(ViewId(1));
@@ -319,10 +317,9 @@ fn launcher_tick_is_never_dirty() {
 
 #[test]
 fn long_press_never_reaches_the_app() {
-    let state = AppState::new(1);
     let ctx = Ctx {
         now_ms: 0,
-        state: &state,
+        ble_linked: false,
     };
     let log = Log::default();
     let factory = StubFactory::new("First", &log);
@@ -339,10 +336,9 @@ fn long_press_never_reaches_the_app() {
 
 #[test]
 fn an_app_can_exit_itself() {
-    let state = AppState::new(1);
     let ctx = Ctx {
         now_ms: 0,
-        state: &state,
+        ble_linked: false,
     };
     let log = Log::default();
     let mut factory = StubFactory::new("First", &log);
@@ -359,10 +355,9 @@ fn an_app_can_exit_itself() {
 
 #[test]
 fn feedback_requests_reach_the_router() {
-    let state = AppState::new(1);
     let ctx = Ctx {
         now_ms: 0,
-        state: &state,
+        ble_linked: false,
     };
     let log = Log::default();
     let mut factory = StubFactory::new("First", &log);
@@ -382,10 +377,9 @@ fn feedback_requests_reach_the_router() {
 /// a genuine reset rather than resuming whatever it was doing.
 #[test]
 fn leaving_an_app_drops_it_and_reopening_builds_a_fresh_one() {
-    let state = AppState::new(1);
     let ctx = Ctx {
         now_ms: 0,
-        state: &state,
+        ble_linked: false,
     };
     let log = Log::default();
     let factory = StubFactory::new("First", &log);

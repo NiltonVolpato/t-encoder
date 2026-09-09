@@ -138,7 +138,7 @@ impl Macropad {
 }
 
 impl App for Macropad {
-    fn handle(&mut self, event: InputEvent, _ctx: &Ctx<'_>) -> Outcome {
+    fn handle(&mut self, event: InputEvent, _ctx: &Ctx) -> Outcome {
         match event {
             InputEvent::Rotate(delta) => {
                 let last = MACROS.len().saturating_sub(1);
@@ -161,10 +161,10 @@ impl App for Macropad {
         }
     }
 
-    fn tick(&mut self, ctx: &Ctx<'_>) -> Outcome {
+    fn tick(&mut self, ctx: &Ctx) -> Outcome {
         // Adopt the radio's view of the world. Repaint only on a change, so a
         // paired macropad sitting idle costs nothing.
-        let linked = ctx.state.ble_linked();
+        let linked = ctx.ble_linked;
         if linked == self.linked {
             return Outcome::NONE;
         }

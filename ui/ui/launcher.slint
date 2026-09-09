@@ -33,21 +33,21 @@ component Card inherits Rectangle {
     in property <CardData> data;
     in property <bool> focused;
 
-    width: Layout.card-w;
-    height: Layout.card-h;
+    width: focused ? Layout.card-w : 140px;
+    height: focused ? Layout.card-h : 160px;
+    y: (Layout.card-h - self.height) / 2;
     border-radius: 24px;
     background: data.accent.darker(0.88);
     border-width: focused ? 3px : 1px;
     border-color: focused ? data.accent : data.accent.darker(0.55);
 
-    // Unfocused cards recede rather than vanish, so the strip reads as a row
-    // of things rather than one card floating alone.
-    opacity: focused ? 1.0 : 0.45;
-    animate opacity, border-color { duration: 250ms; easing: ease-out; }
+    // Unfocused cards recede and shrink, giving a circular wheel depth illusion.
+    opacity: focused ? 1.0 : 0.40;
+    animate opacity, border-color, width, height { duration: 250ms; easing: ease-out; }
 
     VerticalLayout {
-        padding: 26px;
-        spacing: 14px;
+        padding: focused ? 26px : 18px;
+        spacing: focused ? 14px : 10px;
         alignment: center;
 
         // The icon needs its own HorizontalLayout: a fixed-width child of a
@@ -56,17 +56,18 @@ component Card inherits Rectangle {
         HorizontalLayout {
             alignment: center;
             Image {
-                width: 88px;
-                height: 88px;
+                width: focused ? 88px : 68px;
+                height: focused ? 88px : 68px;
                 source: Icons.all[data.icon];
                 image-fit: contain;
+                animate width, height { duration: 250ms; easing: ease-out; }
             }
         }
 
         Text {
             text: data.name;
             color: white;
-            font-size: 22px;
+            font-size: focused ? 22px : 17px;
             horizontal-alignment: center;
         }
     }
@@ -84,10 +85,10 @@ export component Launcher inherits Rectangle {
         y: (parent.height - Layout.card-h) / 2;
         height: Layout.card-h;
         x: (parent.width - Layout.card-w) / 2 - selected * Layout.pitch;
-        animate x { duration: 250ms; easing: ease-out-quart; }
+        animate x { duration: 250ms; easing: ease-out; }
 
         for card[i] in cards: Card {
-            x: i * Layout.pitch;
+            x: i * Layout.pitch + (Layout.card-w - self.width) / 2;
             data: card;
             focused: i == selected;
         }

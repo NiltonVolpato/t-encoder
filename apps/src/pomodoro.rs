@@ -145,7 +145,7 @@ impl Pomodoro {
 }
 
 impl App for Pomodoro {
-    fn handle(&mut self, event: InputEvent, ctx: &Ctx<'_>) -> Outcome {
+    fn handle(&mut self, event: InputEvent, ctx: &Ctx) -> Outcome {
         match event {
             InputEvent::Rotate(delta) => {
                 // Rotation works in every phase, including while running: the
@@ -191,7 +191,7 @@ impl App for Pomodoro {
         }
     }
 
-    fn tick(&mut self, ctx: &Ctx<'_>) -> Outcome {
+    fn tick(&mut self, ctx: &Ctx) -> Outcome {
         if self.phase != Phase::Running || !self.recompute(ctx.now_ms) {
             return Outcome::NONE;
         }

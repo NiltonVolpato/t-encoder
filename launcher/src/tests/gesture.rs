@@ -1,8 +1,6 @@
 //! Host tests for touch: what the recogniser makes of a stroke, and what the
 //! router then does with it.
 
-use enc_state::AppState;
-
 use crate::{
     AppFactory, Ctx, Gesture, Input, Recognizer, Router, TouchEvent, TouchSample, View,
     default_carousel,
@@ -312,10 +310,9 @@ fn swiping_down_or_right_stays_in_the_app() {
 /// neither the taps nor the swipes that pass over it.
 #[test]
 fn an_app_never_sees_touch_by_default() {
-    let state = AppState::new(1);
     let ctx = Ctx {
         now_ms: 0,
-        state: &state,
+        ble_linked: false,
     };
     let log = Log::default();
     let factory = StubFactory::new("First", &log);
@@ -335,10 +332,9 @@ fn an_app_never_sees_touch_by_default() {
 /// would otherwise navigate, so a canvas can draw right across the screen.
 #[test]
 fn a_raw_touch_app_receives_every_sample_and_keeps_the_swipes() {
-    let state = AppState::new(1);
     let ctx = Ctx {
         now_ms: 0,
-        state: &state,
+        ble_linked: false,
     };
     let log = Log::default();
     let factory = StubFactory::new("Canvas", &log).with_raw_touch();
