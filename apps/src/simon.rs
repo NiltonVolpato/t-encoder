@@ -19,7 +19,7 @@ pub const CENTER: i32 = 195;
 pub const HUB_RADIUS: i32 = 70;
 
 /// Radius of the outer circular playfield in pixels.
-pub const OUTER_RADIUS: i32 = 190;
+pub const OUTER_RADIUS: i32 = 195;
 
 /// Maximum sequence length before winning (a perfect 1978 game is 31 signals).
 pub const WIN_SEQUENCE: usize = 31;
