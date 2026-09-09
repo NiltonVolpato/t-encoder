@@ -20,6 +20,27 @@ enum ShellCommand<'a> {
     Stats,
     /// Capture and stream raw 304,200 byte RGB565 framebuffer
     Screenshot,
+    /// Rotate dial by delta detents (+1 CW, -1 CCW)
+    Rotate {
+        /// Detent count
+        delta: i32,
+    },
+    /// Dial button short press
+    Press,
+    /// Dial button long press
+    LongPress,
+    /// Tap panel at coordinates (x, y)
+    Tap {
+        /// X coordinate (0..390)
+        x: i32,
+        /// Y coordinate (0..390)
+        y: i32,
+    },
+    /// Swipe panel in direction (left, right, up, down)
+    Swipe {
+        /// Direction
+        direction: &'a str,
+    },
 }
 
 /// Output writer wrapping [`UsbSerialJtagTx`].
@@ -165,6 +186,64 @@ fn on_screenshot(cli: &mut CliHandle<'_, SerialWriter<'_>, Infallible>) -> Resul
     Ok(())
 }
 
+fn on_rotate(
+    cli: &mut CliHandle<'_, SerialWriter<'_>, Infallible>,
+    delta: i32,
+) -> Result<(), Infallible> {
+    crate::event::send(crate::event::Event::Rotate(delta));
+    uwriteln!(cli.writer(), "ok: rotate {}", delta)?;
+    Ok(())
+}
+
+fn on_press(cli: &mut CliHandle<'_, SerialWriter<'_>, Infallible>) -> Result<(), Infallible> {
+    crate::event::send(crate::event::Event::ShortPress);
+    cli.writer().write_str("ok: press\r\n")?;
+    Ok(())
+}
+
+fn on_long_press(cli: &mut CliHandle<'_, SerialWriter<'_>, Infallible>) -> Result<(), Infallible> {
+    crate::event::send(crate::event::Event::LongPress);
+    cli.writer().write_str("ok: long-press\r\n")?;
+    Ok(())
+}
+
+fn on_tap(
+    cli: &mut CliHandle<'_, SerialWriter<'_>, Infallible>,
+    x: i32,
+    y: i32,
+) -> Result<(), Infallible> {
+    crate::event::send(crate::event::Event::Gesture(launcher::Gesture::Tap {
+        x,
+        y,
+    }));
+    uwriteln!(cli.writer(), "ok: tap {} {}", x, y)?;
+    Ok(())
+}
+
+fn on_swipe(
+    cli: &mut CliHandle<'_, SerialWriter<'_>, Infallible>,
+    direction: &str,
+) -> Result<(), Infallible> {
+    let gesture = match direction {
+        "left" | "LEFT" => Some(launcher::Gesture::SwipeLeft),
+        "right" | "RIGHT" => Some(launcher::Gesture::SwipeRight),
+        "up" | "UP" => Some(launcher::Gesture::SwipeUp),
+        "down" | "DOWN" => Some(launcher::Gesture::SwipeDown),
+        _ => None,
+    };
+    match gesture {
+        Some(g) => {
+            crate::event::send(crate::event::Event::Gesture(g));
+            uwriteln!(cli.writer(), "ok: swipe {}", direction)?;
+        }
+        None => {
+            cli.writer()
+                .write_str("error: unknown direction. Valid: left, right, up, down\r\n")?;
+        }
+    }
+    Ok(())
+}
+
 /// Static buffer sizes for command line and history.
 const COMMAND_BUFFER_SIZE: usize = 64;
 const HISTORY_BUFFER_SIZE: usize = 128;
@@ -213,6 +292,11 @@ pub async fn task(
                                 ShellCommand::Log { level } => on_log(cli, level),
                                 ShellCommand::Stats => on_stats(cli),
                                 ShellCommand::Screenshot => on_screenshot(cli),
+                                ShellCommand::Rotate { delta } => on_rotate(cli, delta),
+                                ShellCommand::Press => on_press(cli),
+                                ShellCommand::LongPress => on_long_press(cli),
+                                ShellCommand::Tap { x, y } => on_tap(cli, x, y),
+                                ShellCommand::Swipe { direction } => on_swipe(cli, direction),
                             }),
                         );
                     }

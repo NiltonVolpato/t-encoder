@@ -27,7 +27,7 @@ The entire API and MCP tool interface is built around movie set terminology:
 | **"Take"** | `director.take()` / `take { filename? }` | Captures a live screenshot of the round AMOLED display and saves the shot to disk. Errors if not in action. |
 | **Shot** | `Shot` | The captured frame ($390\times390$), holding raw RGB565-BE bytes with helpers to save `.raw` or `.png`. |
 | **"Cut!"** | `director.cut()` / `cut {}` | Ends the shoot, cleanly closes the serial connection, and frees the hardware port for flashing or terminal monitoring. |
-| *(Future)* **Cue** | `director.action(Cue)` | Directs the stage with input events (`Cue::Tap { x, y }`, `Cue::Rotate(delta)`, `Cue::Select`, `Cue::LongPress`, `Cue::Swipe`). |
+| **"Cue"** | `director.cue(Cue)` / `cue { ... }` | Directs the stage with input events (`Cue::Tap { x, y }`, `Cue::Rotate(delta)`, `Cue::ShortPress`, `Cue::LongPress`, `Cue::Swipe`). |
 
 ---
 
@@ -77,5 +77,6 @@ cargo run -p espielberg
 
 Tools exposed:
 - `action { port: string }`: Connects to device serial port.
+- `cue { rotate?, press?, long_press?, tap?, swipe? }`: Injects dial, button, or touch events.
 - `take { filename?: string }`: Captures screen and saves image to disk.
 - `cut {}`: Disconnects and releases serial port.

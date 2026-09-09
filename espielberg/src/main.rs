@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use espielberg::Director;
+use espielberg::{Director, SwipeDirection};
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::*;
@@ -30,6 +30,60 @@ pub struct TakeArgs {
     /// Optional file path to save the screenshot to.
     /// Defaults to ".espielberg/take-<timestamp>.png".
     pub filename: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, JsonSchema)]
+pub struct RotateCueArgs {
+    /// Number of detents to rotate (+1 clockwise, -1 counter-clockwise).
+    pub delta: i32,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, JsonSchema)]
+pub struct TapCueArgs {
+    /// X coordinate on the 390x390 screen (0..390).
+    pub x: i32,
+    /// Y coordinate on the 390x390 screen (0..390).
+    pub y: i32,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, JsonSchema)]
+pub struct SwipeCueArgs {
+    /// Swipe direction ("left", "right", "up", "down").
+    pub direction: SwipeDirection,
+}
+
+#[derive(Debug, Clone, Copy, serde::Deserialize, JsonSchema)]
+pub struct EmptyObject {}
+
+#[derive(Debug, Clone, Copy, serde::Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum ActionTrigger {
+    Bool(bool),
+    Empty(EmptyObject),
+}
+
+impl ActionTrigger {
+    #[must_use]
+    pub const fn is_active(&self) -> bool {
+        match self {
+            Self::Bool(b) => *b,
+            Self::Empty(_) => true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Deserialize, JsonSchema)]
+pub struct CueArgs {
+    /// Rotate the rotary dial by delta detents (+1 CW, -1 CCW).
+    pub rotate: Option<RotateCueArgs>,
+    /// Short press the dial button (e.g. `true` or `{}`).
+    pub press: Option<ActionTrigger>,
+    /// Long press the dial button (e.g. `true` or `{}`).
+    pub long_press: Option<ActionTrigger>,
+    /// Tap the touch panel at (x, y) coordinates.
+    pub tap: Option<TapCueArgs>,
+    /// Swipe across the panel.
+    pub swipe: Option<SwipeCueArgs>,
 }
 
 #[derive(Clone)]
@@ -170,6 +224,68 @@ impl EspielbergMcp {
             )),
         }
     }
+
+    #[tool(
+        description = "Cue! Injects an input event (dial rotation, button press, tap, or swipe) on the device set."
+    )]
+    async fn cue(&self, Parameters(args): Parameters<CueArgs>) -> Result<CallToolResult, McpError> {
+        let mut director_lock = self.director.lock().await;
+        let Some(director) = director_lock.as_mut() else {
+            return Err(McpError::invalid_request(
+                "The set is quiet. Call 'action { port: \"...\" }' before calling 'cue'.",
+                None,
+            ));
+        };
+
+        let mut cued_descriptions = Vec::new();
+
+        if let Some(rotate) = args.rotate {
+            director.rotate(rotate.delta).map_err(|e| {
+                McpError::internal_error(format!("Failed to cue rotate: {e}"), None)
+            })?;
+            cued_descriptions.push(format!("rotate({})", rotate.delta));
+        }
+
+        if args.press.is_some_and(|p| p.is_active()) {
+            director
+                .press()
+                .map_err(|e| McpError::internal_error(format!("Failed to cue press: {e}"), None))?;
+            cued_descriptions.push("press".to_string());
+        }
+
+        if args.long_press.is_some_and(|p| p.is_active()) {
+            director.long_press().map_err(|e| {
+                McpError::internal_error(format!("Failed to cue long_press: {e}"), None)
+            })?;
+            cued_descriptions.push("long_press".to_string());
+        }
+
+        if let Some(tap) = args.tap {
+            director
+                .tap(tap.x, tap.y)
+                .map_err(|e| McpError::internal_error(format!("Failed to cue tap: {e}"), None))?;
+            cued_descriptions.push(format!("tap({}, {})", tap.x, tap.y));
+        }
+
+        if let Some(swipe) = args.swipe {
+            director
+                .swipe(swipe.direction)
+                .map_err(|e| McpError::internal_error(format!("Failed to cue swipe: {e}"), None))?;
+            cued_descriptions.push(format!("swipe({})", swipe.direction.as_str()));
+        }
+
+        if cued_descriptions.is_empty() {
+            return Err(McpError::invalid_request(
+                "No cue specified! Provide at least one cue: rotate, press, long_press, tap, or swipe.",
+                None,
+            ));
+        }
+
+        Ok(CallToolResult::success(vec![ContentBlock::text(format!(
+            "Cue delivered to set: {}",
+            cued_descriptions.join(", ")
+        ))]))
+    }
 }
 
 #[tool_handler]
@@ -179,7 +295,7 @@ impl ServerHandler for EspielbergMcp {
             .with_server_info(Implementation::new("espielberg", env!("CARGO_PKG_VERSION")))
             .with_protocol_version(ProtocolVersion::V_2024_11_05)
             .with_instructions(
-                "espielberg directs the T-Encoder-Pro hardware set. Tools: 'action' opens the serial connection, 'take' captures a screenshot to disk, 'cut' cleanly closes the connection.",
+                "espielberg directs the T-Encoder-Pro hardware set. Tools: 'action' opens the serial connection, 'cue' injects an input event, 'take' captures a screenshot to disk, 'cut' cleanly closes the connection.",
             )
     }
 }
@@ -201,4 +317,54 @@ async fn main() -> anyhow::Result<()> {
     let service = server.serve(stdio()).await?;
     service.waiting().await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rmcp::serde_json;
+
+    #[test]
+    fn test_cue_args_deserialization() {
+        // Rotate
+        let json = serde_json::json!({ "rotate": { "delta": -3 } });
+        let args: CueArgs = serde_json::from_value(json).unwrap();
+        assert_eq!(args.rotate.unwrap().delta, -3);
+
+        // Press with boolean
+        let json = serde_json::json!({ "press": true });
+        let args: CueArgs = serde_json::from_value(json).unwrap();
+        assert!(args.press.unwrap().is_active());
+
+        // Press with empty object
+        let json = serde_json::json!({ "press": {} });
+        let args: CueArgs = serde_json::from_value(json).unwrap();
+        assert!(args.press.unwrap().is_active());
+
+        // Long press with boolean
+        let json = serde_json::json!({ "long_press": true });
+        let args: CueArgs = serde_json::from_value(json).unwrap();
+        assert!(args.long_press.unwrap().is_active());
+
+        // Tap
+        let json = serde_json::json!({ "tap": { "x": 120, "y": 240 } });
+        let args: CueArgs = serde_json::from_value(json).unwrap();
+        let tap = args.tap.unwrap();
+        assert_eq!(tap.x, 120);
+        assert_eq!(tap.y, 240);
+
+        // Swipe
+        let json = serde_json::json!({ "swipe": { "direction": "left" } });
+        let args: CueArgs = serde_json::from_value(json).unwrap();
+        assert_eq!(args.swipe.unwrap().direction, SwipeDirection::Left);
+    }
+
+    #[tokio::test]
+    async fn test_tool_router_has_all_movie_tools() {
+        let router = EspielbergMcp::tool_router();
+        assert!(router.has_route("action"));
+        assert!(router.has_route("cue"));
+        assert!(router.has_route("take"));
+        assert!(router.has_route("cut"));
+    }
 }

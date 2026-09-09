@@ -12,6 +12,8 @@ use std::path::Path;
 use std::time::Duration;
 
 use image::{ImageBuffer, Rgb};
+use rmcp::schemars;
+use rmcp::schemars::JsonSchema;
 use serialport::SerialPort;
 use thiserror::Error;
 
@@ -133,6 +135,48 @@ impl Shot {
     }
 }
 
+/// Swipe direction for touch gesture cues.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SwipeDirection {
+    /// Swipe right-to-left across the panel (back).
+    Left,
+    /// Swipe left-to-right across the panel.
+    Right,
+    /// Swipe bottom-to-top across the panel (exit).
+    Up,
+    /// Swipe top-to-bottom across the panel.
+    Down,
+}
+
+impl SwipeDirection {
+    /// Returns the lowercase string identifier for the direction.
+    #[must_use]
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Left => "left",
+            Self::Right => "right",
+            Self::Up => "up",
+            Self::Down => "down",
+        }
+    }
+}
+
+/// A cue given by the director to the device set (event injection).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Cue {
+    /// Rotate dial by delta detents (+1 CW, -1 CCW).
+    Rotate(i32),
+    /// Dial button short press.
+    ShortPress,
+    /// Dial button long press.
+    LongPress,
+    /// Touch tap at screen coordinates (x, y).
+    Tap { x: i32, y: i32 },
+    /// Touch swipe across the panel.
+    Swipe(SwipeDirection),
+}
+
 /// The director holding the active session on the device set.
 pub struct Director {
     port: Box<dyn SerialPort>,
@@ -214,6 +258,65 @@ impl Director {
         reader.read_exact(&mut raw_bytes)?;
 
         Ok(Shot::new(width, height, raw_bytes))
+    }
+
+    /// Delivers a cue to the stage (event injection).
+    ///
+    /// # Errors
+    /// Returns an error if writing to the serial port fails.
+    pub fn cue(&mut self, cue: Cue) -> Result<(), EspielbergError> {
+        let cmd = match cue {
+            Cue::Rotate(delta) => format!("rotate {delta}\r\n"),
+            Cue::ShortPress => "press\r\n".to_string(),
+            Cue::LongPress => "long-press\r\n".to_string(),
+            Cue::Tap { x, y } => format!("tap {x} {y}\r\n"),
+            Cue::Swipe(dir) => format!("swipe {}\r\n", dir.as_str()),
+        };
+
+        self.port.write_all(cmd.as_bytes())?;
+        self.port.flush()?;
+        std::thread::sleep(Duration::from_millis(50));
+        Ok(())
+    }
+
+    /// Convenience helper to cue a rotary dial turn.
+    ///
+    /// # Errors
+    /// Returns an error if writing to the serial port fails.
+    pub fn rotate(&mut self, delta: i32) -> Result<(), EspielbergError> {
+        self.cue(Cue::Rotate(delta))
+    }
+
+    /// Convenience helper to cue a button short press.
+    ///
+    /// # Errors
+    /// Returns an error if writing to the serial port fails.
+    pub fn press(&mut self) -> Result<(), EspielbergError> {
+        self.cue(Cue::ShortPress)
+    }
+
+    /// Convenience helper to cue a button long press.
+    ///
+    /// # Errors
+    /// Returns an error if writing to the serial port fails.
+    pub fn long_press(&mut self) -> Result<(), EspielbergError> {
+        self.cue(Cue::LongPress)
+    }
+
+    /// Convenience helper to cue a touch tap.
+    ///
+    /// # Errors
+    /// Returns an error if writing to the serial port fails.
+    pub fn tap(&mut self, x: i32, y: i32) -> Result<(), EspielbergError> {
+        self.cue(Cue::Tap { x, y })
+    }
+
+    /// Convenience helper to cue a touch swipe.
+    ///
+    /// # Errors
+    /// Returns an error if writing to the serial port fails.
+    pub fn swipe(&mut self, direction: SwipeDirection) -> Result<(), EspielbergError> {
+        self.cue(Cue::Swipe(direction))
     }
 
     /// "Cut!" — ends the shoot, closing the serial connection and freeing the port.
