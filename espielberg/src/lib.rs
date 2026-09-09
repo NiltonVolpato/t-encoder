@@ -64,17 +64,46 @@ pub struct Shot {
     width: u32,
     height: u32,
     raw_rgb565: Vec<u8>,
+    compressed_bytes: usize,
+    wire_bytes: usize,
 }
 
 impl Shot {
     /// Creates a new shot with given dimensions and raw RGB565 bytes.
     #[must_use]
     pub fn new(width: u32, height: u32, raw_rgb565: Vec<u8>) -> Self {
+        let raw_len = raw_rgb565.len();
         Self {
             width,
             height,
             raw_rgb565,
+            compressed_bytes: raw_len,
+            wire_bytes: raw_len,
         }
+    }
+
+    /// Sets the compressed byte count and wire byte count for telemetry and benchmarks.
+    #[must_use]
+    pub const fn with_compressed_meta(
+        mut self,
+        compressed_bytes: usize,
+        wire_bytes: usize,
+    ) -> Self {
+        self.compressed_bytes = compressed_bytes;
+        self.wire_bytes = wire_bytes;
+        self
+    }
+
+    /// Compressed binary payload size in bytes (if compressed).
+    #[must_use]
+    pub const fn compressed_bytes(&self) -> usize {
+        self.compressed_bytes
+    }
+
+    /// Wire payload size in bytes or Base64 characters.
+    #[must_use]
+    pub const fn wire_bytes(&self) -> usize {
+        self.wire_bytes
     }
 
     /// Frame width in pixels.
@@ -374,13 +403,17 @@ impl Director {
         loop {
             match self.read_message()? {
                 DeviceMessage::Screenshot(shot_msg) => {
+                    let wire_bytes = shot_msg.data.len();
                     let compressed = BASE64_STANDARD.decode(&shot_msg.data)?;
+                    let compressed_bytes = compressed.len();
                     let expected_bytes = usize::try_from(shot_msg.width)
                         .unwrap_or(0)
                         .saturating_mul(usize::try_from(shot_msg.height).unwrap_or(0))
                         .saturating_mul(2);
                     let raw_bytes = decompress_tga_rle(&compressed, expected_bytes)?;
-                    return Ok(Shot::new(shot_msg.width, shot_msg.height, raw_bytes));
+                    let shot = Shot::new(shot_msg.width, shot_msg.height, raw_bytes)
+                        .with_compressed_meta(compressed_bytes, wire_bytes);
+                    return Ok(shot);
                 }
                 DeviceMessage::Response(resp) if !resp.ok => {
                     return Err(EspielbergError::CommandFailed(

@@ -21,6 +21,9 @@ fn main() {
 
     println!("Taking {count} consecutive screenshots on live screen...");
     let mut durations = Vec::with_capacity(count);
+    let mut last_raw = 0;
+    let mut last_compressed = 0;
+    let mut last_wire = 0;
 
     for i in 1..=count {
         let t0 = Instant::now();
@@ -34,10 +37,25 @@ fn main() {
         };
         let elapsed = t0.elapsed();
         let bytes = shot.raw().len();
+        let compressed = shot.compressed_bytes();
+        let wire = shot.wire_bytes();
+        last_raw = bytes;
+        last_compressed = compressed;
+        last_wire = wire;
+
         let secs = elapsed.as_secs_f64();
         let mb_per_sec = if secs > 0.0 { 0.3042 / secs } else { 0.0 };
+        let raw_f64 = f64::from(u32::try_from(bytes).unwrap_or(0));
+        let wire_f64 = f64::from(u32::try_from(wire).unwrap_or(0));
+        let pct = if raw_f64 > 0.0 {
+            (wire_f64 / raw_f64) * 100.0
+        } else {
+            0.0
+        };
 
-        println!("Shot #{i}: {bytes} bytes in {elapsed:?} ({mb_per_sec:.2} MB/s effective)");
+        println!(
+            "Shot #{i}: {bytes} bytes raw -> {compressed} bytes RLE ({wire} b64 chars, {pct:.1}% of raw) in {elapsed:?} ({mb_per_sec:.2} MB/s)"
+        );
         durations.push(elapsed);
         std::thread::sleep(Duration::from_millis(50));
     }
@@ -58,11 +76,23 @@ fn main() {
         0.0
     };
 
+    let raw_f64 = f64::from(u32::try_from(last_raw).unwrap_or(0));
+    let wire_f64 = f64::from(u32::try_from(last_wire).unwrap_or(0));
+    let ratio = if raw_f64 > 0.0 {
+        (wire_f64 / raw_f64) * 100.0
+    } else {
+        0.0
+    };
+    let reduction = 100.0 - ratio;
+
     println!("\n=== SCREENSHOT BENCHMARK RESULTS ===");
-    println!("Samples:        {count}");
-    println!("Average time:   {avg:?}");
-    println!("Min time:       {min:?}");
-    println!("Max time:       {max:?}");
-    println!("Jitter:         {:?}", max.saturating_sub(min));
-    println!("Throughput:     {avg_mb_per_sec:.2} MB/s uncompressed equivalent");
+    println!("Samples:         {count}");
+    println!("Raw size:        {last_raw} bytes");
+    println!("Compressed size: {last_compressed} bytes RLE ({last_wire} b64 chars)");
+    println!("Wire ratio:      {ratio:.1}% of raw ({reduction:.1}% reduction)");
+    println!("Average time:    {avg:?}");
+    println!("Min time:        {min:?}");
+    println!("Max time:        {max:?}");
+    println!("Jitter:          {:?}", max.saturating_sub(min));
+    println!("Throughput:      {avg_mb_per_sec:.2} MB/s uncompressed equivalent");
 }
