@@ -127,6 +127,17 @@ fn on_stats(cli: &mut CliHandle<'_, SerialWriter<'_>, Infallible>) -> Result<(),
 const COMMAND_BUFFER_SIZE: usize = 64;
 const HISTORY_BUFFER_SIZE: usize = 128;
 
+/// Waits for the host to send an initial byte before bringing up the CLI.
+///
+/// `CliBuilder::build()` immediately flushes the prompt to TX; if no USB host
+/// terminal is attached, synchronous USB-Serial-JTAG writes block indefinitely at boot.
+/// Waiting for an initial keystroke ensures a terminal is connected before writing to TX.
+async fn wait_for_connection(rx: &mut UsbSerialJtagRx<'static, esp_hal::Async>) {
+    log::info!("Console ready. Press Enter to connect");
+    let mut byte = [0u8; 1];
+    let _ = embedded_io_async::Read::read(rx, &mut byte).await;
+}
+
 /// Asynchronous Embassy task driving the serial CLI.
 #[embassy_executor::task]
 pub async fn task(
@@ -136,6 +147,8 @@ pub async fn task(
     let mut command_buffer = [0u8; COMMAND_BUFFER_SIZE];
     let mut history_buffer = [0u8; HISTORY_BUFFER_SIZE];
     let writer = SerialWriter(&mut tx);
+
+    wait_for_connection(&mut rx).await;
 
     let Ok(mut cli) = CliBuilder::default()
         .prompt("> ")
