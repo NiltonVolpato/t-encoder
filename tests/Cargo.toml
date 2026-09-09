@@ -25,3 +25,8 @@ name = "events"
 path = "events.rs"
 test = false
 
+[[bin]]
+name = "benchshot"
+path = "benchshot.rs"
+
+
