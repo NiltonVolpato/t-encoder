@@ -1,0 +1,21 @@
+[package]
+name = "tests"
+version = "0.0.0"
+edition.workspace = true
+publish = false
+
+[dependencies]
+espielberg = { path = "../espielberg" }
+insta = "1"
+
+[lints]
+workspace = true
+
+[[test]]
+name = "tautology"
+path = "tautology.rs"
+
+[[test]]
+name = "screenshot"
+path = "screenshot.rs"
+test = false
