@@ -179,10 +179,21 @@ pub enum Cue {
 
 /// The director holding the active session on the device set.
 pub struct Director {
-    port: Box<dyn SerialPort>,
+    port_name: String,
+    port: Option<Box<dyn SerialPort>>,
 }
 
 impl Director {
+    fn port_mut(&mut self) -> Result<&mut (dyn SerialPort + 'static), EspielbergError> {
+        match self.port.as_deref_mut() {
+            Some(p) => Ok(p),
+            None => Err(EspielbergError::Serial(serialport::Error::new(
+                serialport::ErrorKind::NoDevice,
+                "serial port is closed",
+            ))),
+        }
+    }
+
     /// "Lights, camera, action!" — opens connection to the set on `port_name`.
     ///
     /// # Errors
@@ -197,7 +208,10 @@ impl Director {
         let _ = port.flush();
         std::thread::sleep(Duration::from_millis(100));
 
-        Ok(Self { port })
+        Ok(Self {
+            port_name: port_name.to_string(),
+            port: Some(port),
+        })
     }
 
     /// Captures a live frame from the set ("Take!").
@@ -205,19 +219,20 @@ impl Director {
     /// # Errors
     /// Returns an error if communication fails, the header is invalid, or the payload is incomplete.
     pub fn take(&mut self) -> Result<Shot, EspielbergError> {
+        let port = self.port_mut()?;
         // Clear any stale buffered bytes
         let mut discard = [0u8; 1024];
-        while let Ok(n) = self.port.read(&mut discard) {
+        while let Ok(n) = port.read(&mut discard) {
             if n == 0 {
                 break;
             }
         }
 
         // Send screenshot command
-        self.port.write_all(b"screenshot\r\n")?;
-        self.port.flush()?;
+        port.write_all(b"screenshot\r\n")?;
+        port.flush()?;
 
-        let mut reader = BufReader::new(&mut self.port);
+        let mut reader = BufReader::new(port);
         let mut header_line = String::new();
 
         // Read until we find the "SCREENSHOT <width> <height> <len>" header
@@ -273,8 +288,9 @@ impl Director {
             Cue::Swipe(dir) => format!("swipe {}\r\n", dir.as_str()),
         };
 
-        self.port.write_all(cmd.as_bytes())?;
-        self.port.flush()?;
+        let port = self.port_mut()?;
+        port.write_all(cmd.as_bytes())?;
+        port.flush()?;
         std::thread::sleep(Duration::from_millis(50));
         Ok(())
     }
@@ -319,13 +335,52 @@ impl Director {
         self.cue(Cue::Swipe(direction))
     }
 
+    /// Reboots the device set via software reset, waits for reboot, and reconnects.
+    ///
+    /// # Errors
+    /// Returns an error if writing to or reopening the serial port fails.
+    pub fn reset(&mut self) -> Result<(), EspielbergError> {
+        if let Some(mut p) = self.port.take() {
+            let _ = p.write_all(b"reset\r\n");
+            let _ = p.flush();
+            drop(p);
+        }
+
+        // Wait for device to reboot and USB-Serial-JTAG to re-enumerate
+        let start = std::time::Instant::now();
+        let timeout = Duration::from_secs(5);
+        std::thread::sleep(Duration::from_millis(500));
+
+        let mut new_port = loop {
+            match serialport::new(&self.port_name, 115_200)
+                .timeout(Duration::from_millis(4000))
+                .open()
+            {
+                Ok(p) => break p,
+                Err(_e) if start.elapsed() < timeout => {
+                    std::thread::sleep(Duration::from_millis(150));
+                }
+                Err(e) => return Err(e.into()),
+            }
+        };
+
+        let _ = new_port.write_all(b"\r\n");
+        let _ = new_port.flush();
+        std::thread::sleep(Duration::from_millis(200));
+
+        self.port = Some(new_port);
+        Ok(())
+    }
+
     /// "Cut!" — ends the shoot, closing the serial connection and freeing the port.
     ///
     /// # Errors
     /// Returns an error if flushing fails.
     pub fn cut(mut self) -> Result<(), EspielbergError> {
-        let _ = self.port.flush();
-        drop(self.port);
+        if let Some(mut p) = self.port.take() {
+            let _ = p.flush();
+            drop(p);
+        }
         Ok(())
     }
 }

@@ -286,6 +286,29 @@ impl EspielbergMcp {
             cued_descriptions.join(", ")
         ))]))
     }
+
+    #[tool(
+        description = "Reset! Reboots the device set back to initial boot state, waits for reboot, and reconnects."
+    )]
+    async fn reset(&self) -> Result<CallToolResult, McpError> {
+        let mut director_lock = self.director.lock().await;
+        let Some(director) = director_lock.as_mut() else {
+            return Err(McpError::invalid_request(
+                "The set is quiet. Call 'action { port: \"...\" }' before calling 'reset'.",
+                None,
+            ));
+        };
+
+        match director.reset() {
+            Ok(()) => Ok(CallToolResult::success(vec![ContentBlock::text(
+                "Reset successful! Device rebooted and reconnected to launcher.",
+            )])),
+            Err(err) => Err(McpError::internal_error(
+                format!("Failed to reset device: {err}"),
+                None,
+            )),
+        }
+    }
 }
 
 #[tool_handler]
@@ -295,7 +318,7 @@ impl ServerHandler for EspielbergMcp {
             .with_server_info(Implementation::new("espielberg", env!("CARGO_PKG_VERSION")))
             .with_protocol_version(ProtocolVersion::V_2024_11_05)
             .with_instructions(
-                "espielberg directs the T-Encoder-Pro hardware set. Tools: 'action' opens the serial connection, 'cue' injects an input event, 'take' captures a screenshot to disk, 'cut' cleanly closes the connection.",
+                "espielberg directs the T-Encoder-Pro hardware set. Tools: 'action' opens the serial connection, 'cue' injects an input event, 'take' captures a screenshot to disk, 'reset' reboots the device, 'cut' cleanly closes the connection.",
             )
     }
 }
@@ -365,6 +388,7 @@ mod tests {
         assert!(router.has_route("action"));
         assert!(router.has_route("cue"));
         assert!(router.has_route("take"));
+        assert!(router.has_route("reset"));
         assert!(router.has_route("cut"));
     }
 }

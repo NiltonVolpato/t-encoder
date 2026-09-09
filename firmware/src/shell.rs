@@ -41,6 +41,8 @@ enum ShellCommand<'a> {
         /// Direction
         direction: &'a str,
     },
+    /// Reboot the device via software reset
+    Reset,
 }
 
 /// Output writer wrapping [`UsbSerialJtagTx`].
@@ -244,6 +246,16 @@ fn on_swipe(
     Ok(())
 }
 
+fn on_reset(cli: &mut CliHandle<'_, SerialWriter<'_>, Infallible>) -> Result<(), Infallible> {
+    cli.writer().write_str("ok: rebooting...\r\n")?;
+    let ptr = TX_PTR.load(core::sync::atomic::Ordering::Acquire);
+    if let Some(tx) = unsafe { ptr.as_mut() } {
+        let _ = embedded_io::Write::flush(tx);
+    }
+    esp_hal::delay::Delay::new().delay_millis(50);
+    esp_hal::system::software_reset();
+}
+
 /// Static buffer sizes for command line and history.
 const COMMAND_BUFFER_SIZE: usize = 64;
 const HISTORY_BUFFER_SIZE: usize = 128;
@@ -297,6 +309,7 @@ pub async fn task(
                                 ShellCommand::LongPress => on_long_press(cli),
                                 ShellCommand::Tap { x, y } => on_tap(cli, x, y),
                                 ShellCommand::Swipe { direction } => on_swipe(cli, direction),
+                                ShellCommand::Reset => on_reset(cli),
                             }),
                         );
                     }

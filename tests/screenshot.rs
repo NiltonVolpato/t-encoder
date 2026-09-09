@@ -5,6 +5,7 @@ use std::env;
 fn launcher_screenshot_snapshot() {
     let port = env::var("FLASH_PORT").unwrap_or_else(|_| "/dev/cu.usbmodem101".to_string());
     let mut director = Director::action(&port).expect("connect to device");
+    director.reset().expect("reset device to initial state");
     let shot = director.take().expect("capture screenshot");
     director.cut().expect("disconnect cleanly");
 
