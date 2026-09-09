@@ -204,7 +204,7 @@ impl Director {
             .open()?;
 
         // Send a wake-up newline to trigger wait_for_connection if needed
-        let _ = port.write_all(b"\r\n");
+        let _ = port.write_all(b"\n");
         let _ = port.flush();
         std::thread::sleep(Duration::from_millis(100));
 
@@ -229,7 +229,7 @@ impl Director {
         }
 
         // Send screenshot command
-        port.write_all(b"screenshot\r\n")?;
+        port.write_all(b"screenshot\n")?;
         port.flush()?;
 
         let mut reader = BufReader::new(port);
@@ -281,11 +281,11 @@ impl Director {
     /// Returns an error if writing to the serial port fails.
     pub fn cue(&mut self, cue: Cue) -> Result<(), EspielbergError> {
         let cmd = match cue {
-            Cue::Rotate(delta) => format!("rotate {delta}\r\n"),
-            Cue::ShortPress => "press\r\n".to_string(),
-            Cue::LongPress => "long-press\r\n".to_string(),
-            Cue::Tap { x, y } => format!("tap {x} {y}\r\n"),
-            Cue::Swipe(dir) => format!("swipe {}\r\n", dir.as_str()),
+            Cue::Rotate(delta) => format!("rotate {delta}\n"),
+            Cue::ShortPress => "press\n".to_string(),
+            Cue::LongPress => "long-press\n".to_string(),
+            Cue::Tap { x, y } => format!("tap {x} {y}\n"),
+            Cue::Swipe(dir) => format!("swipe {}\n", dir.as_str()),
         };
 
         let port = self.port_mut()?;
@@ -341,7 +341,7 @@ impl Director {
     /// Returns an error if writing to or reopening the serial port fails.
     pub fn reset(&mut self) -> Result<(), EspielbergError> {
         if let Some(mut p) = self.port.take() {
-            let _ = p.write_all(b"reset\r\n");
+            let _ = p.write_all(b"reset\n");
             let _ = p.flush();
             drop(p);
         }
@@ -353,7 +353,7 @@ impl Director {
 
         let mut new_port = loop {
             match serialport::new(&self.port_name, 115_200)
-                .timeout(Duration::from_millis(4000))
+                .timeout(Duration::from_millis(200))
                 .open()
             {
                 Ok(p) => break p,
@@ -364,9 +364,45 @@ impl Director {
             }
         };
 
-        let _ = new_port.write_all(b"\r\n");
-        let _ = new_port.flush();
-        std::thread::sleep(Duration::from_millis(200));
+        // Handshake: send '\n' periodically until the firmware CLI responds with prompt '> '
+        let handshake_timeout = Duration::from_secs(6);
+        let handshake_start = std::time::Instant::now();
+        let mut buf = [0u8; 128];
+        let mut accumulated = Vec::new();
+
+        while handshake_start.elapsed() < handshake_timeout {
+            let _ = new_port.write_all(b"\n");
+            let _ = new_port.flush();
+
+            std::thread::sleep(Duration::from_millis(100));
+            while let Ok(n) = new_port.read(&mut buf) {
+                if n == 0 {
+                    break;
+                }
+                accumulated.extend_from_slice(&buf[..n]);
+                if accumulated.windows(2).any(|w| w == b"> ") {
+                    break;
+                }
+            }
+
+            if accumulated.windows(2).any(|w| w == b"> ") {
+                break;
+            }
+        }
+
+        // Settling delay: wait for Slint UI first paint to complete
+        std::thread::sleep(Duration::from_millis(500));
+
+        // Drain any remaining bytes in RX buffer
+        let mut discard = [0u8; 1024];
+        while let Ok(n) = new_port.read(&mut discard) {
+            if n == 0 {
+                break;
+            }
+        }
+
+        // Restore default command timeout
+        let _ = new_port.set_timeout(Duration::from_millis(4000));
 
         self.port = Some(new_port);
         Ok(())
