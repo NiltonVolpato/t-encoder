@@ -16,7 +16,7 @@ use ui::{Shell, SimonState};
 pub const CENTER: i32 = 195;
 
 /// Radius of the center status hub in pixels.
-pub const HUB_RADIUS: i32 = 70;
+pub const HUB_RADIUS: i32 = 75;
 
 /// Radius of the outer circular playfield in pixels.
 pub const OUTER_RADIUS: i32 = 195;
