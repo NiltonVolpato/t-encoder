@@ -22,8 +22,9 @@ mod display;
 mod event;
 mod heap;
 mod input;
+mod logger;
 mod radio;
-mod shell;
+mod serial;
 mod touch;
 
 use buzzer::Feedback;
@@ -133,7 +134,7 @@ impl Device {
         let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
         let peripherals = esp_hal::init(config);
 
-        esp_println::logger::init_logger_from_env();
+        logger::init();
 
         // Internal-only global heap (esp_alloc::HEAP) — serves esp-radio + DMA.
         esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: heap::INTERNAL_HEAP_RECLAIMED);
@@ -196,13 +197,17 @@ impl Device {
             Err(_) => log::error!("boot: failed to spawn buzzer task"),
         }
 
-        // Serial shell over native USB-Serial/JTAG.
+        // Serial NDJSON tasks over native USB-Serial/JTAG.
         let usb_serial =
             esp_hal::usb_serial_jtag::UsbSerialJtag::new(peripherals.USB_DEVICE).into_async();
         let (rx, tx) = usb_serial.split();
-        match shell::task(rx, tx) {
+        match serial::tx_task(tx) {
             Ok(token) => spawner.spawn(token),
-            Err(_) => log::error!("boot: failed to spawn shell task"),
+            Err(_) => log::error!("boot: failed to spawn serial tx task"),
+        }
+        match serial::rx_task(rx) {
+            Ok(token) => spawner.spawn(token),
+            Err(_) => log::error!("boot: failed to spawn serial rx task"),
         }
 
         // Bring up the CO5300 display.
@@ -329,8 +334,9 @@ impl Device {
             Err(e) => log::error!("slint: first frame failed: {e}"),
         }
 
-        // Terminal boot marker.
+        // Terminal boot marker and event.
         log::info!("boot: ready");
+        serial::broadcast_event(protocol::DeviceEvent::Boot { ready: true });
 
         device
     }
@@ -407,6 +413,25 @@ impl Device {
                     self.router.sync_app();
                 }
             }
+        }
+
+        if changed {
+            let (screen, card, app) = match self.router.view() {
+                View::Launcher => (
+                    alloc::string::ToString::to_string("launcher"),
+                    Some(self.router.selected()),
+                    None,
+                ),
+                View::App(idx) => (
+                    alloc::string::ToString::to_string("app"),
+                    None,
+                    self.router
+                        .factories()
+                        .get(idx)
+                        .map(|f| alloc::string::ToString::to_string(f.manifest().name)),
+                ),
+            };
+            serial::broadcast_event(protocol::DeviceEvent::ViewChanged { screen, card, app });
         }
 
         if let Some(chord) = self.router.take_keys() {

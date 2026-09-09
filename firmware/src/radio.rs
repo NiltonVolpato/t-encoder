@@ -125,6 +125,7 @@ pub fn ble_linked() -> bool {
 }
 
 /// Returns Wi-Fi IP and connected status, if available.
+#[expect(dead_code)]
 pub fn wifi_info() -> Option<([u8; 4], bool)> {
     #[cfg(feature = "radio")]
     {

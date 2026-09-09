@@ -12,6 +12,7 @@ description = "T-Encoder-Pro app launcher — device firmware (xtensa-esp32s3 on
 launcher = { path = "../launcher" }
 apps = { path = "../apps" }
 ui = { path = "../ui" }
+protocol = { path = "../protocol" }
 # For the card model + colours only; the renderer lives in `ui`.
 slint = { version = "1.17.1", default-features = false, features = ["compat-1-2", "unsafe-single-threaded", "libm", "renderer-software"] }
 
@@ -47,9 +48,10 @@ trouble-host = { workspace = true, optional = true }
 embassy-executor = { workspace = true }
 embassy-time = { workspace = true }
 log = { workspace = true }
-embedded-cli = { workspace = true }
 embedded-io = { workspace = true }
-ufmt = { workspace = true }
+heapless = { workspace = true }
+serde = { version = "1.0", default-features = false, features = ["derive"] }
+serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 
 [build-dependencies]
 time = { version = "0.3.55", default-features = false, features = ["local-offset", "macros", "formatting"] }

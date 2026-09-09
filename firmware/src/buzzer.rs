@@ -135,13 +135,33 @@ pub async fn task(ledc_periph: LEDC<'static>, pin: GPIO17<'static>) {
 
     // Boot beep, then serve feedback requests.
     pulse!(&beep_timer, 50, 80);
+    crate::serial::broadcast_event(protocol::DeviceEvent::Buzzer {
+        freq_hz: enc_config::buzzer::FREQUENCY_HZ,
+        duration_ms: 80,
+    });
     loop {
         match FEEDBACK.receive().await {
-            Feedback::Beep => pulse!(&beep_timer, 50, 35),
-            Feedback::Haptic => pulse!(&haptic_timer, 70, 250),
+            Feedback::Beep => {
+                pulse!(&beep_timer, 50, 35);
+                crate::serial::broadcast_event(protocol::DeviceEvent::Buzzer {
+                    freq_hz: enc_config::buzzer::FREQUENCY_HZ,
+                    duration_ms: 35,
+                });
+            }
+            Feedback::Haptic => {
+                pulse!(&haptic_timer, 70, 250);
+                crate::serial::broadcast_event(protocol::DeviceEvent::Buzzer {
+                    freq_hz: enc_config::buzzer::HAPTIC_FREQUENCY_HZ,
+                    duration_ms: 250,
+                });
+            }
             Feedback::Tone { hz, ms } => {
                 tone_timer.set_frequency(hz);
                 pulse!(&tone_timer, 50, u64::from(ms));
+                crate::serial::broadcast_event(protocol::DeviceEvent::Buzzer {
+                    freq_hz: hz,
+                    duration_ms: ms,
+                });
             }
         }
     }

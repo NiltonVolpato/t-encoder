@@ -7,11 +7,16 @@
 //! - [`Director::cut`]: "Cut!" — closes connection and releases serial port.
 //! - [`Shot`]: The captured frame ($390\times390$ RGB565), with helpers to save raw or PNG.
 
-use std::io::{BufRead, BufReader, Read, Write};
+use std::collections::VecDeque;
+use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 use std::time::Duration;
 
+use base64::prelude::*;
 use image::{ImageBuffer, Rgb};
+pub use protocol::{
+    CommandResponse, CueCommand, DeviceEvent, DeviceMessage, IncomingCommand, LogRecord,
+};
 use rmcp::schemars;
 use rmcp::schemars::JsonSchema;
 use serialport::SerialPort;
@@ -28,17 +33,25 @@ pub enum EspielbergError {
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 
+    /// JSON serialization or deserialization error.
+    #[error("json error: {0}")]
+    Json(#[from] serde_json::Error),
+
+    /// Base64 decoding error.
+    #[error("base64 decode error: {0}")]
+    Base64(#[from] base64::DecodeError),
+
     /// Image encoding or processing error.
     #[error("image error: {0}")]
     Image(#[from] image::ImageError),
 
-    /// Device returned an unexpected or malformed header.
-    #[error("invalid header from device: {0}")]
-    InvalidHeader(String),
+    /// Command execution failure returned by device.
+    #[error("command failed: {0}")]
+    CommandFailed(String),
 
-    /// Incomplete payload received from device.
-    #[error("incomplete frame: expected {expected} bytes, received {actual} bytes")]
-    IncompletePayload { expected: usize, actual: usize },
+    /// Operation timed out.
+    #[error("timed out: {0}")]
+    TimedOut(String),
 }
 
 /// A captured frame from the T-Encoder-Pro screen.
@@ -177,20 +190,99 @@ pub enum Cue {
     Swipe(SwipeDirection),
 }
 
+impl From<Cue> for CueCommand {
+    fn from(cue: Cue) -> Self {
+        match cue {
+            Cue::Rotate(delta) => CueCommand::Rotate { delta },
+            Cue::ShortPress => CueCommand::Press,
+            Cue::LongPress => CueCommand::LongPress,
+            Cue::Tap { x, y } => CueCommand::Tap { x, y },
+            Cue::Swipe(direction) => CueCommand::Swipe {
+                direction: match direction {
+                    SwipeDirection::Left => protocol::SwipeDirection::Left,
+                    SwipeDirection::Right => protocol::SwipeDirection::Right,
+                    SwipeDirection::Up => protocol::SwipeDirection::Up,
+                    SwipeDirection::Down => protocol::SwipeDirection::Down,
+                },
+            },
+        }
+    }
+}
+
+impl From<SwipeDirection> for protocol::SwipeDirection {
+    fn from(d: SwipeDirection) -> Self {
+        match d {
+            SwipeDirection::Left => protocol::SwipeDirection::Left,
+            SwipeDirection::Right => protocol::SwipeDirection::Right,
+            SwipeDirection::Up => protocol::SwipeDirection::Up,
+            SwipeDirection::Down => protocol::SwipeDirection::Down,
+        }
+    }
+}
+
+impl From<protocol::SwipeDirection> for SwipeDirection {
+    fn from(d: protocol::SwipeDirection) -> Self {
+        match d {
+            protocol::SwipeDirection::Left => SwipeDirection::Left,
+            protocol::SwipeDirection::Right => SwipeDirection::Right,
+            protocol::SwipeDirection::Up => SwipeDirection::Up,
+            protocol::SwipeDirection::Down => SwipeDirection::Down,
+        }
+    }
+}
+
 /// The director holding the active session on the device set.
 pub struct Director {
     port_name: String,
-    port: Option<Box<dyn SerialPort>>,
+    writer: Option<Box<dyn SerialPort>>,
+    reader: Option<BufReader<Box<dyn SerialPort>>>,
+    buffered_events: VecDeque<DeviceEvent>,
 }
 
 impl Director {
-    fn port_mut(&mut self) -> Result<&mut (dyn SerialPort + 'static), EspielbergError> {
-        match self.port.as_deref_mut() {
-            Some(p) => Ok(p),
+    fn writer_mut(&mut self) -> Result<&mut (dyn SerialPort + 'static), EspielbergError> {
+        match self.writer.as_deref_mut() {
+            Some(w) => Ok(w),
             None => Err(EspielbergError::Serial(serialport::Error::new(
                 serialport::ErrorKind::NoDevice,
                 "serial port is closed",
             ))),
+        }
+    }
+
+    /// Reads the next NDJSON message from the device, transparently logging any LogRecord.
+    fn read_message(&mut self) -> Result<DeviceMessage, EspielbergError> {
+        let reader = self.reader.as_mut().ok_or_else(|| {
+            EspielbergError::Serial(serialport::Error::new(
+                serialport::ErrorKind::NoDevice,
+                "serial port is closed",
+            ))
+        })?;
+
+        let mut line = String::new();
+        loop {
+            line.clear();
+            let bytes_read = reader.read_line(&mut line)?;
+            if bytes_read == 0 {
+                return Err(EspielbergError::TimedOut(
+                    "EOF reading serial stream".to_string(),
+                ));
+            }
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            match serde_json::from_str::<DeviceMessage>(trimmed) {
+                Ok(DeviceMessage::Log(log)) => {
+                    tracing::info!(target: "device", "[{}] {}: {}", log.level, log.target, log.msg);
+                    continue;
+                }
+                Ok(msg) => return Ok(msg),
+                Err(err) => {
+                    tracing::debug!("ignoring non-json line: '{trimmed}' ({err})");
+                    continue;
+                }
+            }
         }
     }
 
@@ -199,80 +291,50 @@ impl Director {
     /// # Errors
     /// Returns an error if the serial port cannot be opened.
     pub fn action(port_name: &str) -> Result<Self, EspielbergError> {
-        let mut port = serialport::new(port_name, 115_200)
+        let port = serialport::new(port_name, 115_200)
             .timeout(Duration::from_millis(4000))
             .open()?;
 
-        // Send a wake-up newline to trigger wait_for_connection if needed
-        let _ = port.write_all(b"\n");
-        let _ = port.flush();
-        std::thread::sleep(Duration::from_millis(100));
-
+        let reader_port = port.try_clone()?;
         Ok(Self {
             port_name: port_name.to_string(),
-            port: Some(port),
+            writer: Some(port),
+            reader: Some(BufReader::new(reader_port)),
+            buffered_events: VecDeque::new(),
         })
     }
 
     /// Captures a live frame from the set ("Take!").
     ///
     /// # Errors
-    /// Returns an error if communication fails, the header is invalid, or the payload is incomplete.
+    /// Returns an error if communication fails or decoding fails.
     pub fn take(&mut self) -> Result<Shot, EspielbergError> {
-        let port = self.port_mut()?;
-        // Clear any stale buffered bytes
-        let mut discard = [0u8; 1024];
-        while let Ok(n) = port.read(&mut discard) {
-            if n == 0 {
-                break;
-            }
-        }
+        let cmd = IncomingCommand::Screenshot;
+        let mut line = serde_json::to_string(&cmd)?;
+        line.push('\n');
 
-        // Send screenshot command
-        port.write_all(b"screenshot\n")?;
-        port.flush()?;
+        let writer = self.writer_mut()?;
+        writer.write_all(line.as_bytes())?;
+        writer.flush()?;
 
-        let mut reader = BufReader::new(port);
-        let mut header_line = String::new();
-
-        // Read until we find the "SCREENSHOT <width> <height> <len>" header
         loop {
-            header_line.clear();
-            let bytes_read = reader.read_line(&mut header_line)?;
-            if bytes_read == 0 {
-                return Err(EspielbergError::InvalidHeader(
-                    "EOF reached while waiting for SCREENSHOT header".to_string(),
-                ));
-            }
-            let trimmed = header_line.trim();
-            if trimmed.starts_with("SCREENSHOT") {
-                break;
+            match self.read_message()? {
+                DeviceMessage::Screenshot(shot_msg) => {
+                    let raw_bytes = BASE64_STANDARD.decode(&shot_msg.data)?;
+                    return Ok(Shot::new(shot_msg.width, shot_msg.height, raw_bytes));
+                }
+                DeviceMessage::Response(resp) if !resp.ok => {
+                    return Err(EspielbergError::CommandFailed(
+                        resp.error
+                            .unwrap_or_else(|| "screenshot failed".to_string()),
+                    ));
+                }
+                DeviceMessage::Event(ev) => {
+                    self.buffered_events.push_back(ev);
+                }
+                _ => {}
             }
         }
-
-        // Parse header fields: "SCREENSHOT 390 390 304200"
-        let parts: Vec<&str> = header_line.split_whitespace().collect();
-        if parts.len() < 4 {
-            return Err(EspielbergError::InvalidHeader(format!(
-                "malformed header: '{header_line}'"
-            )));
-        }
-
-        let width: u32 = parts[1].parse().map_err(|_| {
-            EspielbergError::InvalidHeader(format!("invalid width: '{}'", parts[1]))
-        })?;
-        let height: u32 = parts[2].parse().map_err(|_| {
-            EspielbergError::InvalidHeader(format!("invalid height: '{}'", parts[2]))
-        })?;
-        let expected_bytes: usize = parts[3].parse().map_err(|_| {
-            EspielbergError::InvalidHeader(format!("invalid length: '{}'", parts[3]))
-        })?;
-
-        // Read exact payload bytes
-        let mut raw_bytes = vec![0u8; expected_bytes];
-        reader.read_exact(&mut raw_bytes)?;
-
-        Ok(Shot::new(width, height, raw_bytes))
     }
 
     /// Delivers a cue to the stage (event injection).
@@ -280,19 +342,50 @@ impl Director {
     /// # Errors
     /// Returns an error if writing to the serial port fails.
     pub fn cue(&mut self, cue: Cue) -> Result<(), EspielbergError> {
-        let cmd = match cue {
-            Cue::Rotate(delta) => format!("rotate {delta}\n"),
-            Cue::ShortPress => "press\n".to_string(),
-            Cue::LongPress => "long-press\n".to_string(),
-            Cue::Tap { x, y } => format!("tap {x} {y}\n"),
-            Cue::Swipe(dir) => format!("swipe {}\n", dir.as_str()),
-        };
+        let cmd = IncomingCommand::Cue { cue: cue.into() };
+        let mut line = serde_json::to_string(&cmd)?;
+        line.push('\n');
 
-        let port = self.port_mut()?;
-        port.write_all(cmd.as_bytes())?;
-        port.flush()?;
-        std::thread::sleep(Duration::from_millis(50));
-        Ok(())
+        let writer = self.writer_mut()?;
+        writer.write_all(line.as_bytes())?;
+        writer.flush()?;
+
+        loop {
+            match self.read_message()? {
+                DeviceMessage::Response(resp) => {
+                    if resp.ok {
+                        return Ok(());
+                    }
+                    return Err(EspielbergError::CommandFailed(
+                        resp.error.unwrap_or_else(|| "command failed".to_string()),
+                    ));
+                }
+                DeviceMessage::Event(ev) => {
+                    self.buffered_events.push_back(ev);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// Waits for an event emitted by the device set within `timeout`.
+    ///
+    /// # Errors
+    /// Returns an error if the timeout elapses or serial I/O fails.
+    pub fn wait_for_event(&mut self, timeout: Duration) -> Result<DeviceEvent, EspielbergError> {
+        if let Some(ev) = self.buffered_events.pop_front() {
+            return Ok(ev);
+        }
+
+        let start = std::time::Instant::now();
+        while start.elapsed() < timeout {
+            if let DeviceMessage::Event(ev) = self.read_message()? {
+                return Ok(ev);
+            }
+        }
+        Err(EspielbergError::TimedOut(
+            "timed out waiting for event".to_string(),
+        ))
     }
 
     /// Convenience helper to cue a rotary dial turn.
@@ -340,20 +433,25 @@ impl Director {
     /// # Errors
     /// Returns an error if writing to or reopening the serial port fails.
     pub fn reset(&mut self) -> Result<(), EspielbergError> {
-        if let Some(mut p) = self.port.take() {
-            let _ = p.write_all(b"reset\n");
-            let _ = p.flush();
-            drop(p);
+        if let Some(mut w) = self.writer.take() {
+            let cmd = IncomingCommand::Reset;
+            let mut line = serde_json::to_string(&cmd).unwrap_or_default();
+            line.push('\n');
+            let _ = w.write_all(line.as_bytes());
+            let _ = w.flush();
+            drop(w);
         }
+        self.reader.take();
+        self.buffered_events.clear();
 
         // Wait for device to reboot and USB-Serial-JTAG to re-enumerate
         let start = std::time::Instant::now();
         let timeout = Duration::from_secs(5);
         std::thread::sleep(Duration::from_millis(500));
 
-        let mut new_port = loop {
+        let port = loop {
             match serialport::new(&self.port_name, 115_200)
-                .timeout(Duration::from_millis(200))
+                .timeout(Duration::from_millis(4000))
                 .open()
             {
                 Ok(p) => break p,
@@ -364,47 +462,21 @@ impl Director {
             }
         };
 
-        // Handshake: send '\n' periodically until the firmware CLI responds with prompt '> '
-        let handshake_timeout = Duration::from_secs(6);
-        let handshake_start = std::time::Instant::now();
-        let mut buf = [0u8; 128];
-        let mut accumulated = Vec::new();
+        let reader_port = port.try_clone()?;
+        self.writer = Some(port);
+        self.reader = Some(BufReader::new(reader_port));
 
-        while handshake_start.elapsed() < handshake_timeout {
-            let _ = new_port.write_all(b"\n");
-            let _ = new_port.flush();
-
-            std::thread::sleep(Duration::from_millis(100));
-            while let Ok(n) = new_port.read(&mut buf) {
-                if n == 0 {
-                    break;
-                }
-                accumulated.extend_from_slice(&buf[..n]);
-                if accumulated.windows(2).any(|w| w == b"> ") {
-                    break;
-                }
-            }
-
-            if accumulated.windows(2).any(|w| w == b"> ") {
-                break;
+        // Wait for Boot ready event
+        let boot_timeout = Duration::from_secs(6);
+        let boot_start = std::time::Instant::now();
+        while boot_start.elapsed() < boot_timeout {
+            if let Ok(DeviceEvent::Boot { ready: true }) =
+                self.wait_for_event(Duration::from_millis(500))
+            {
+                return Ok(());
             }
         }
 
-        // Settling delay: wait for Slint UI first paint to complete
-        std::thread::sleep(Duration::from_millis(500));
-
-        // Drain any remaining bytes in RX buffer
-        let mut discard = [0u8; 1024];
-        while let Ok(n) = new_port.read(&mut discard) {
-            if n == 0 {
-                break;
-            }
-        }
-
-        // Restore default command timeout
-        let _ = new_port.set_timeout(Duration::from_millis(4000));
-
-        self.port = Some(new_port);
         Ok(())
     }
 
@@ -413,10 +485,11 @@ impl Director {
     /// # Errors
     /// Returns an error if flushing fails.
     pub fn cut(mut self) -> Result<(), EspielbergError> {
-        if let Some(mut p) = self.port.take() {
-            let _ = p.flush();
-            drop(p);
+        if let Some(mut w) = self.writer.take() {
+            let _ = w.flush();
         }
+        self.reader.take();
+        self.buffered_events.clear();
         Ok(())
     }
 }

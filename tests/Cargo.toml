@@ -19,3 +19,9 @@ path = "tautology.rs"
 name = "screenshot"
 path = "screenshot.rs"
 test = false
+
+[[test]]
+name = "events"
+path = "events.rs"
+test = false
+
