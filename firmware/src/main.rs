@@ -309,8 +309,11 @@ impl Device {
         let simon: &'static dyn AppFactory = alloc::boxed::Box::leak(alloc::boxed::Box::new(
             apps::SimonFactory::new(slint_ui.shell().as_weak()),
         ));
+        let magic8: &'static dyn AppFactory = alloc::boxed::Box::leak(alloc::boxed::Box::new(
+            apps::Magic8Factory::new(slint_ui.shell().as_weak()),
+        ));
         let registry: &'static [&'static dyn AppFactory] =
-            alloc::boxed::Box::leak(alloc::boxed::Box::new([pomodoro, macropad, simon]));
+            alloc::boxed::Box::leak(alloc::boxed::Box::new([pomodoro, macropad, simon, magic8]));
         let router = Router::new(registry, launcher::default_carousel(0));
 
         slint_ui.shell().set_cards(app_cards(router.factories()));

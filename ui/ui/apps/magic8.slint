@@ -1,0 +1,151 @@
+// Magic 8 Ball app component.
+//
+// Designed for the round 390x390 AMOLED:
+// - Outer ball: deep dark charcoal sphere with theme accent ring.
+// - Resting state: classic white circular "8" crest on load screen.
+// - Mode transition: white window flashing theme title for 1.0 second on dial rotation.
+// - Revealed state: themed colored fluid viewport displaying word-wrapped oracle answer.
+
+export struct Magic8State {
+    mode-name: string,
+    mode-index: int,
+    mode-total: int,
+    theme-bg: color,
+    theme-accent: color,
+    text-color: color,
+    answer-text: string,
+    is-banner: bool,
+    is-shaken: bool,
+}
+
+export component Magic8 inherits Rectangle {
+    in property <Magic8State> state;
+
+    width: 390px;
+    height: 390px;
+    background: #000000;
+
+    // Outer spherical ball body.
+    Rectangle {
+        width: 380px;
+        height: 380px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        border-radius: 190px;
+        background: #0a0a0f;
+        border-width: 2px;
+        border-color: state.theme-accent.darker(0.6);
+        animate border-color { duration: 250ms; }
+    }
+
+    // Concentric rim accent ring.
+    Rectangle {
+        width: 280px;
+        height: 280px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        border-radius: 140px;
+        background: transparent;
+        border-width: 1px;
+        border-color: state.theme-accent.darker(0.4);
+        animate border-color { duration: 250ms; }
+    }
+
+    // Central circular viewport (240px diameter).
+    Rectangle {
+        width: 240px;
+        height: 240px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        border-radius: 120px;
+        background: state.is-banner ? #ffffff : (state.is-shaken ? state.theme-bg : #050508);
+        border-width: state.is-banner ? 4px : 3px;
+        border-color: state.is-banner ? #ffffff : (state.is-shaken ? state.theme-accent : #202028);
+        animate background, border-color { duration: 200ms; }
+
+        // --- Banner overlay: shows mode name in bold black for 1 second after rotation ---
+        if state.is-banner: VerticalLayout {
+            alignment: center;
+            spacing: 6px;
+            padding: 20px;
+
+            Text {
+                text: state.mode-name;
+                color: #000000;
+                font-size: 24px;
+                font-weight: 900;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+
+            Text {
+                text: "THEME \{state.mode-index} / \{state.mode-total}";
+                color: #555555;
+                font-size: 14px;
+                font-weight: 700;
+                horizontal-alignment: center;
+            }
+        }
+
+        // --- Load screen: White "8" crest on initial launch before shaking ---
+        if !state.is-banner && !state.is-shaken: Rectangle {
+            width: 160px;
+            height: 160px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            border-radius: 80px;
+            background: #ffffff;
+
+            Text {
+                text: "8";
+                color: #0c0c12;
+                font-size: 100px;
+                font-weight: 900;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+
+        // --- Revealed answer: multi-line wrapped oracle prophecy ---
+        if !state.is-banner && state.is-shaken: VerticalLayout {
+            alignment: center;
+            padding-left: 20px;
+            padding-right: 20px;
+            padding-top: 15px;
+            padding-bottom: 15px;
+
+            Text {
+                text: state.answer-text;
+                color: state.text-color;
+                font-size: 23px;
+                font-weight: 800;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                wrap: word-wrap;
+            }
+        }
+    }
+
+    // Bottom subtle hint / mode label.
+    VerticalLayout {
+        y: 335px;
+        width: 390px;
+        alignment: center;
+
+        if !state.is-banner && !state.is-shaken: Text {
+            text: "PRESS TO SHAKE";
+            color: #777788;
+            font-size: 14px;
+            font-weight: 700;
+            horizontal-alignment: center;
+        }
+
+        if !state.is-banner && state.is-shaken: Text {
+            text: state.mode-name;
+            color: state.theme-accent;
+            font-size: 13px;
+            font-weight: 800;
+            horizontal-alignment: center;
+        }
+    }
+}

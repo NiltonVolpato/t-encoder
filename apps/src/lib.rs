@@ -9,9 +9,11 @@
 extern crate alloc;
 
 mod macropad;
+mod magic8;
 mod pomodoro;
 mod simon;
 
 pub use macropad::{Macropad, MacropadFactory};
+pub use magic8::{Magic8, Magic8Factory};
 pub use pomodoro::{Pomodoro, PomodoroFactory};
 pub use simon::{Simon, SimonFactory};
