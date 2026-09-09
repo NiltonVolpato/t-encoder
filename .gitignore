@@ -4,3 +4,6 @@
 # Local secrets (WIFI_SSID / WIFI_PASSWORD are baked in at build time).
 .env
 .env.local
+
+# Default screenshot capture directory
+/.espielberg

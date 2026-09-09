@@ -18,6 +18,8 @@ enum ShellCommand<'a> {
     },
     /// Show system uptime, heap memory usage, and Wi-Fi state
     Stats,
+    /// Capture and stream raw 304,200 byte RGB565 framebuffer
+    Screenshot,
 }
 
 /// Output writer wrapping [`UsbSerialJtagTx`].
@@ -123,6 +125,46 @@ fn on_stats(cli: &mut CliHandle<'_, SerialWriter<'_>, Infallible>) -> Result<(),
     Ok(())
 }
 
+static TX_PTR: core::sync::atomic::AtomicPtr<UsbSerialJtagTx<'static, esp_hal::Async>> =
+    core::sync::atomic::AtomicPtr::new(core::ptr::null_mut());
+
+fn write_raw_bytes(tx: &mut UsbSerialJtagTx<'static, esp_hal::Async>, mut buf: &[u8]) {
+    while !buf.is_empty() {
+        match embedded_io::Write::write(tx, buf) {
+            Ok(0) => {}
+            Ok(n) => {
+                buf = buf.get(n..).unwrap_or(&[]);
+            }
+            Err(_) => break,
+        }
+    }
+    let _ = embedded_io::Write::flush(tx);
+}
+
+/// Handles the `screenshot` shell command.
+fn on_screenshot(cli: &mut CliHandle<'_, SerialWriter<'_>, Infallible>) -> Result<(), Infallible> {
+    let Some(fb) = crate::heap::framebuffer_slice() else {
+        cli.writer()
+            .write_str("error: framebuffer unavailable\r\n")?;
+        return Ok(());
+    };
+
+    let prev_filter = log::max_level();
+    log::set_max_level(log::LevelFilter::Off);
+
+    // Framebuffer header: SCREENSHOT <width> <height> <bytes>
+    uwriteln!(cli.writer(), "SCREENSHOT 390 390 {}", fb.len())?;
+
+    let ptr = TX_PTR.load(core::sync::atomic::Ordering::Acquire);
+    if let Some(tx) = unsafe { ptr.as_mut() } {
+        write_raw_bytes(tx, fb);
+    }
+
+    log::set_max_level(prev_filter);
+    cli.writer().write_str("\r\n")?;
+    Ok(())
+}
+
 /// Static buffer sizes for command line and history.
 const COMMAND_BUFFER_SIZE: usize = 64;
 const HISTORY_BUFFER_SIZE: usize = 128;
@@ -144,6 +186,7 @@ pub async fn task(
     mut rx: UsbSerialJtagRx<'static, esp_hal::Async>,
     mut tx: UsbSerialJtagTx<'static, esp_hal::Async>,
 ) {
+    TX_PTR.store(&raw mut tx, core::sync::atomic::Ordering::Release);
     let mut command_buffer = [0u8; COMMAND_BUFFER_SIZE];
     let mut history_buffer = [0u8; HISTORY_BUFFER_SIZE];
     let writer = SerialWriter(&mut tx);
@@ -169,6 +212,7 @@ pub async fn task(
                             &mut ShellCommand::processor(|cli, command| match command {
                                 ShellCommand::Log { level } => on_log(cli, level),
                                 ShellCommand::Stats => on_stats(cli),
+                                ShellCommand::Screenshot => on_screenshot(cli),
                             }),
                         );
                     }

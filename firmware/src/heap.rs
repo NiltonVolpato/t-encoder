@@ -102,6 +102,22 @@ pub fn smoke_test(start: *mut u8, size: usize) -> bool {
     true
 }
 
+static FRAMEBUFFER_PTR: core::sync::atomic::AtomicPtr<u8> =
+    core::sync::atomic::AtomicPtr::new(core::ptr::null_mut());
+static FRAMEBUFFER_LEN: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
+
+/// Returns a shared slice to the PSRAM framebuffer if initialized.
+#[must_use]
+pub fn framebuffer_slice() -> Option<&'static [u8]> {
+    let ptr = FRAMEBUFFER_PTR.load(Ordering::Acquire);
+    let len = FRAMEBUFFER_LEN.load(Ordering::Acquire);
+    if ptr.is_null() || len == 0 {
+        None
+    } else {
+        Some(unsafe { core::slice::from_raw_parts(ptr, len) })
+    }
+}
+
 /// Builds the PSRAM-backed framebuffer, or `None` if PSRAM is unavailable or
 /// smaller than a full frame. Gating here keeps `from_raw_parts_mut` from ever
 /// running on an invalid (e.g. `0..0`) range.
@@ -117,6 +133,8 @@ pub fn framebuffer(
     if !ok || start.is_null() || size < bytes {
         return None;
     }
+    FRAMEBUFFER_PTR.store(start, Ordering::Release);
+    FRAMEBUFFER_LEN.store(bytes, Ordering::Release);
     // SAFETY: `start`/`size` come from a successful `Psram` init; the region is
     // mapped for the whole program lifetime and is at least `bytes` long. The
     // framebuffer sits at the PSRAM base and never overlaps the smoke-test probe
