@@ -45,33 +45,199 @@ const BASE64_TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrst
 #[inline(always)]
 fn encode_triplet(in_3: &[u8; 3], out_4: &mut [u8; 4]) {
     let n = ((u32::from(in_3[0])) << 16) | ((u32::from(in_3[1])) << 8) | (u32::from(in_3[2]));
-    out_4[0] = BASE64_TABLE[((n >> 18) & 0x3F) as usize];
-    out_4[1] = BASE64_TABLE[((n >> 12) & 0x3F) as usize];
-    out_4[2] = BASE64_TABLE[((n >> 6) & 0x3F) as usize];
-    out_4[3] = BASE64_TABLE[(n & 0x3F) as usize];
+    let idx0 = usize::try_from((n >> 18) & 0x3F).unwrap_or(0);
+    let idx1 = usize::try_from((n >> 12) & 0x3F).unwrap_or(0);
+    let idx2 = usize::try_from((n >> 6) & 0x3F).unwrap_or(0);
+    let idx3 = usize::try_from(n & 0x3F).unwrap_or(0);
+    out_4[0] = BASE64_TABLE.get(idx0).copied().unwrap_or(b'A');
+    out_4[1] = BASE64_TABLE.get(idx1).copied().unwrap_or(b'A');
+    out_4[2] = BASE64_TABLE.get(idx2).copied().unwrap_or(b'A');
+    out_4[3] = BASE64_TABLE.get(idx3).copied().unwrap_or(b'A');
 }
 
-/// Streams framebuffer bytes directly to USB TX as base64 within a single JSON line.
+struct Base64StreamWriter<'a> {
+    tx: &'a mut UsbSerialJtagTx<'static, esp_hal::Async>,
+    buf: [u8; 48],
+    buf_len: usize,
+}
+
+impl<'a> Base64StreamWriter<'a> {
+    fn new(tx: &'a mut UsbSerialJtagTx<'static, esp_hal::Async>) -> Self {
+        Self {
+            tx,
+            buf: [0u8; 48],
+            buf_len: 0,
+        }
+    }
+
+    #[inline(always)]
+    fn push_byte(&mut self, b: u8) {
+        if let Some(slot) = self.buf.get_mut(self.buf_len) {
+            *slot = b;
+        }
+        self.buf_len = self.buf_len.saturating_add(1);
+        if self.buf_len == 48 {
+            self.flush_48();
+        }
+    }
+
+    #[inline(always)]
+    fn push_slice(&mut self, slice: &[u8]) {
+        for &b in slice {
+            self.push_byte(b);
+        }
+    }
+
+    fn flush_48(&mut self) {
+        use embedded_io::Write;
+        let mut out = [0u8; 64];
+        for i in 0usize..16 {
+            let in_start = i.saturating_mul(3);
+            let in_3 = [
+                self.buf.get(in_start).copied().unwrap_or(0),
+                self.buf
+                    .get(in_start.saturating_add(1))
+                    .copied()
+                    .unwrap_or(0),
+                self.buf
+                    .get(in_start.saturating_add(2))
+                    .copied()
+                    .unwrap_or(0),
+            ];
+            let mut out_4 = [0u8; 4];
+            encode_triplet(&in_3, &mut out_4);
+            let out_start = i.saturating_mul(4);
+            let out_end = out_start.saturating_add(4);
+            if let Some(dst) = out.get_mut(out_start..out_end) {
+                dst.copy_from_slice(&out_4);
+            }
+        }
+        let _ = self.tx.write_all(&out);
+        self.buf_len = 0;
+    }
+
+    fn finish(&mut self) {
+        use embedded_io::Write;
+        let full_triplets = self.buf_len / 3;
+        let mut out = [0u8; 64];
+        for i in 0..full_triplets {
+            let in_start = i.saturating_mul(3);
+            let in_3 = [
+                self.buf.get(in_start).copied().unwrap_or(0),
+                self.buf
+                    .get(in_start.saturating_add(1))
+                    .copied()
+                    .unwrap_or(0),
+                self.buf
+                    .get(in_start.saturating_add(2))
+                    .copied()
+                    .unwrap_or(0),
+            ];
+            let mut out_4 = [0u8; 4];
+            encode_triplet(&in_3, &mut out_4);
+            let out_start = i.saturating_mul(4);
+            let out_end = out_start.saturating_add(4);
+            if let Some(dst) = out.get_mut(out_start..out_end) {
+                dst.copy_from_slice(&out_4);
+            }
+        }
+        let full_bytes = full_triplets.saturating_mul(4);
+        if full_bytes > 0 {
+            if let Some(slice) = out.get(..full_bytes) {
+                let _ = self.tx.write_all(slice);
+            }
+        }
+
+        let remainder = self.buf_len % 3;
+        let rem_start = full_triplets.saturating_mul(3);
+        if remainder == 1 {
+            let b0 = self.buf.get(rem_start).copied().unwrap_or(0);
+            let n = (u32::from(b0)) << 16;
+            let idx0 = usize::try_from((n >> 18) & 0x3F).unwrap_or(0);
+            let idx1 = usize::try_from((n >> 12) & 0x3F).unwrap_or(0);
+            let out_4 = [
+                BASE64_TABLE.get(idx0).copied().unwrap_or(b'A'),
+                BASE64_TABLE.get(idx1).copied().unwrap_or(b'A'),
+                b'=',
+                b'=',
+            ];
+            let _ = self.tx.write_all(&out_4);
+        } else if remainder == 2 {
+            let b0 = self.buf.get(rem_start).copied().unwrap_or(0);
+            let b1 = self
+                .buf
+                .get(rem_start.saturating_add(1))
+                .copied()
+                .unwrap_or(0);
+            let n = ((u32::from(b0)) << 16) | ((u32::from(b1)) << 8);
+            let idx0 = usize::try_from((n >> 18) & 0x3F).unwrap_or(0);
+            let idx1 = usize::try_from((n >> 12) & 0x3F).unwrap_or(0);
+            let idx2 = usize::try_from((n >> 6) & 0x3F).unwrap_or(0);
+            let out_4 = [
+                BASE64_TABLE.get(idx0).copied().unwrap_or(b'A'),
+                BASE64_TABLE.get(idx1).copied().unwrap_or(b'A'),
+                BASE64_TABLE.get(idx2).copied().unwrap_or(b'A'),
+                b'=',
+            ];
+            let _ = self.tx.write_all(&out_4);
+        }
+        self.buf_len = 0;
+    }
+}
+
+#[inline(always)]
+fn get_pixel(fb: &[u8], idx: usize) -> [u8; 2] {
+    let offset = idx.saturating_mul(2);
+    [
+        fb.get(offset).copied().unwrap_or(0),
+        fb.get(offset.saturating_add(1)).copied().unwrap_or(0),
+    ]
+}
+
+/// Streams framebuffer bytes to USB TX as TGA-RLE compressed base64 within a single JSON line.
 fn stream_screenshot_base64(tx: &mut UsbSerialJtagTx<'static, esp_hal::Async>, fb: &[u8]) {
     use embedded_io::Write;
     let _ = tx.write_all(b"{\"type\":\"screenshot\",\"width\":390,\"height\":390,\"data\":\"");
 
-    // 304,200 is exactly divisible by 30 (10,140 chunks of 30 bytes -> 40 chars)
-    let mut chunk_out = [0u8; 40];
-    for chunk_30 in fb.chunks_exact(30) {
-        for (i, in_3) in chunk_30.chunks_exact(3).enumerate() {
-            if let Ok(triplet) = in_3.try_into() {
-                let mut out_4 = [0u8; 4];
-                encode_triplet(triplet, &mut out_4);
-                let start = i.saturating_mul(4);
-                let end = start.saturating_add(4);
-                if let Some(dst) = chunk_out.get_mut(start..end) {
-                    dst.copy_from_slice(&out_4);
-                }
+    let total_pixels = fb.len() / 2;
+    let mut writer = Base64StreamWriter::new(tx);
+    let mut i = 0;
+
+    while i < total_pixels {
+        let px = get_pixel(fb, i);
+        if i.saturating_add(1) < total_pixels && get_pixel(fb, i.saturating_add(1)) == px {
+            let mut run_len = 2;
+            while i.saturating_add(run_len) < total_pixels
+                && run_len < 128
+                && get_pixel(fb, i.saturating_add(run_len)) == px
+            {
+                run_len = run_len.saturating_add(1);
             }
+            let header = 0x80 | u8::try_from(run_len.saturating_sub(1)).unwrap_or(0);
+            writer.push_byte(header);
+            writer.push_slice(&px);
+            i = i.saturating_add(run_len);
+        } else {
+            let mut lit_len = 1;
+            while i.saturating_add(lit_len) < total_pixels && lit_len < 128 {
+                let next_idx = i.saturating_add(lit_len);
+                let after_idx = next_idx.saturating_add(1);
+                if after_idx < total_pixels && get_pixel(fb, next_idx) == get_pixel(fb, after_idx) {
+                    break;
+                }
+                lit_len = lit_len.saturating_add(1);
+            }
+            let header = u8::try_from(lit_len.saturating_sub(1)).unwrap_or(0);
+            writer.push_byte(header);
+            let start_byte = i.saturating_mul(2);
+            let end_byte = start_byte.saturating_add(lit_len.saturating_mul(2));
+            if let Some(slice) = fb.get(start_byte..end_byte) {
+                writer.push_slice(slice);
+            }
+            i = i.saturating_add(lit_len);
         }
-        let _ = tx.write_all(&chunk_out);
     }
+    writer.finish();
 
     let _ = tx.write_all(b"\"}\n");
     let _ = tx.flush();

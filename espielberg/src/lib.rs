@@ -52,6 +52,10 @@ pub enum EspielbergError {
     /// Operation timed out.
     #[error("timed out: {0}")]
     TimedOut(String),
+
+    /// Invalid screenshot or compressed data payload.
+    #[error("invalid payload: {0}")]
+    InvalidPayload(String),
 }
 
 /// A captured frame from the T-Encoder-Pro screen.
@@ -209,6 +213,56 @@ impl From<Cue> for CueCommand {
     }
 }
 
+/// Decompresses TGA-style run-length encoded 16-bit pixels into raw bytes.
+///
+/// # Errors
+/// Returns an error if the compressed stream is truncated or the decompressed
+/// size does not match `expected_bytes`.
+pub fn decompress_tga_rle(
+    compressed: &[u8],
+    expected_bytes: usize,
+) -> Result<Vec<u8>, EspielbergError> {
+    let mut raw = Vec::with_capacity(expected_bytes);
+    let mut i = 0;
+    while i < compressed.len() {
+        let hdr = compressed.get(i).copied().unwrap_or(0);
+        i = i.saturating_add(1);
+        if hdr & 0x80 != 0 {
+            // Run packet: (hdr & 0x7F) + 1 repeats of 2-byte pixel
+            let count = usize::from(hdr & 0x7F).saturating_add(1);
+            let px_end = i.saturating_add(2);
+            let Some(px) = compressed.get(i..px_end) else {
+                return Err(EspielbergError::InvalidPayload(
+                    "truncated TGA run packet".to_string(),
+                ));
+            };
+            i = px_end;
+            for _ in 0..count {
+                raw.extend_from_slice(px);
+            }
+        } else {
+            // Literal packet: hdr + 1 uncompressed 2-byte pixels follow
+            let count = usize::from(hdr).saturating_add(1);
+            let bytes_len = count.saturating_mul(2);
+            let lit_end = i.saturating_add(bytes_len);
+            let Some(lit) = compressed.get(i..lit_end) else {
+                return Err(EspielbergError::InvalidPayload(
+                    "truncated TGA literal packet".to_string(),
+                ));
+            };
+            raw.extend_from_slice(lit);
+            i = lit_end;
+        }
+    }
+    if raw.len() != expected_bytes {
+        return Err(EspielbergError::InvalidPayload(format!(
+            "decompressed size mismatch: expected {expected_bytes}, got {}",
+            raw.len()
+        )));
+    }
+    Ok(raw)
+}
+
 impl From<SwipeDirection> for protocol::SwipeDirection {
     fn from(d: SwipeDirection) -> Self {
         match d {
@@ -320,7 +374,12 @@ impl Director {
         loop {
             match self.read_message()? {
                 DeviceMessage::Screenshot(shot_msg) => {
-                    let raw_bytes = BASE64_STANDARD.decode(&shot_msg.data)?;
+                    let compressed = BASE64_STANDARD.decode(&shot_msg.data)?;
+                    let expected_bytes = usize::try_from(shot_msg.width)
+                        .unwrap_or(0)
+                        .saturating_mul(usize::try_from(shot_msg.height).unwrap_or(0))
+                        .saturating_mul(2);
+                    let raw_bytes = decompress_tga_rle(&compressed, expected_bytes)?;
                     return Ok(Shot::new(shot_msg.width, shot_msg.height, raw_bytes));
                 }
                 DeviceMessage::Response(resp) if !resp.ok => {
@@ -556,5 +615,25 @@ mod tests {
 
         // Check PNG signature: 0x89 0x50 0x4E 0x47 0x0D 0x0A 0x1A 0x0A
         assert_eq!(&png[0..8], &[137, 80, 78, 71, 13, 10, 26, 10]);
+    }
+
+    #[test]
+    fn test_decompress_tga_rle() {
+        // Test Run packet: 3 repeats of pixel [0x12, 0x34]
+        // Header: 0x80 | (3 - 1) = 0x82
+        let compressed = [0x82, 0x12, 0x34];
+        let decomp = decompress_tga_rle(&compressed, 6).expect("decompress run");
+        assert_eq!(decomp, &[0x12, 0x34, 0x12, 0x34, 0x12, 0x34]);
+
+        // Test Literal packet: 2 uncompressed pixels [0xAA, 0xBB] and [0xCC, 0xDD]
+        // Header: (2 - 1) = 0x01
+        let compressed_lit = [0x01, 0xAA, 0xBB, 0xCC, 0xDD];
+        let decomp_lit = decompress_tga_rle(&compressed_lit, 4).expect("decompress literal");
+        assert_eq!(decomp_lit, &[0xAA, 0xBB, 0xCC, 0xDD]);
+
+        // Test Mixed packets: 2 repeats of [0x11, 0x22], then 1 literal [0x33, 0x44]
+        let mixed = [0x81, 0x11, 0x22, 0x00, 0x33, 0x44];
+        let decomp_mixed = decompress_tga_rle(&mixed, 6).expect("decompress mixed");
+        assert_eq!(decomp_mixed, &[0x11, 0x22, 0x11, 0x22, 0x33, 0x44]);
     }
 }
