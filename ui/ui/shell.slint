@@ -7,8 +7,9 @@
 import { Launcher, CardData } from "launcher.slint";
 import { Pomodoro, PomodoroState } from "apps/pomodoro.slint";
 import { Macropad, MacropadState, MacroEntry } from "apps/macropad.slint";
+import { Simon, SimonState } from "apps/simon.slint";
 
-export { CardData, PomodoroState, MacropadState, MacroEntry }
+export { CardData, PomodoroState, MacropadState, MacroEntry, SimonState }
 
 // Which screen is live: `launcher::ViewId`, published verbatim by the host.
 // 0 is the launcher; every app claims its own id in its `Manifest`. An int
@@ -19,6 +20,7 @@ export global Views {
     out property <int> launcher: 0;
     out property <int> pomodoro: 1;
     out property <int> macropad: 2;
+    out property <int> simon: 3;
 }
 
 export component Shell inherits Window {
@@ -38,6 +40,7 @@ export component Shell inherits Window {
     // an app is one property, one import and one `if` arm.
     in property <PomodoroState> pomodoro;
     in property <MacropadState> macropad;
+    in property <SimonState> simon;
 
     if view == Views.launcher: Launcher {
         width: parent.width;
@@ -56,5 +59,11 @@ export component Shell inherits Window {
         width: parent.width;
         height: parent.height;
         state: root.macropad;
+    }
+
+    if view == Views.simon: Simon {
+        width: parent.width;
+        height: parent.height;
+        state: root.simon;
     }
 }

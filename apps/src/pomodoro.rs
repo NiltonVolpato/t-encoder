@@ -188,6 +188,7 @@ impl App for Pomodoro {
                 }
                 Outcome::buzz(Feedback::Beep)
             }
+            InputEvent::Tap { .. } => Outcome::NONE,
         }
     }
 

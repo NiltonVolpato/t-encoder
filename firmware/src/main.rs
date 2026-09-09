@@ -301,8 +301,11 @@ impl Device {
         let macropad: &'static dyn AppFactory = alloc::boxed::Box::leak(alloc::boxed::Box::new(
             apps::MacropadFactory::new(slint_ui.shell().as_weak()),
         ));
+        let simon: &'static dyn AppFactory = alloc::boxed::Box::leak(alloc::boxed::Box::new(
+            apps::SimonFactory::new(slint_ui.shell().as_weak()),
+        ));
         let registry: &'static [&'static dyn AppFactory] =
-            alloc::boxed::Box::leak(alloc::boxed::Box::new([pomodoro, macropad]));
+            alloc::boxed::Box::leak(alloc::boxed::Box::new([pomodoro, macropad, simon]));
         let router = Router::new(registry, launcher::default_carousel(0));
 
         slint_ui.shell().set_cards(app_cards(router.factories()));
@@ -411,10 +414,7 @@ impl Device {
         }
 
         if let Some(feedback) = self.router.take_feedback() {
-            buzzer::signal(match feedback {
-                launcher::Feedback::Beep => Feedback::Beep,
-                launcher::Feedback::Haptic => Feedback::Haptic,
-            });
+            buzzer::signal(feedback);
         }
 
         let started = Instant::now();
@@ -425,11 +425,13 @@ impl Device {
                 let us = started.elapsed().as_micros();
                 let anim = self.slint_ui.has_active_animations();
                 let (w, h, x, y) = (rect.w, rect.h, rect.x, rect.y);
-                log::info!(
-                    "slint: frame {} @ {}ms ({us}us) anim={anim} {w}x{h}+{x},{y}",
-                    self.frames,
-                    ctx.now_ms
-                );
+                if self.frames <= 5 || self.frames.checked_rem(500) == Some(0) {
+                    log::info!(
+                        "slint: frame {} @ {}ms ({us}us) anim={anim} {w}x{h}+{x},{y}",
+                        self.frames,
+                        ctx.now_ms
+                    );
+                }
                 true
             }
             Err(e) => {

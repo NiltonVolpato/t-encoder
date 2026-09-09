@@ -70,6 +70,7 @@ struct Log {
     dropped: Cell<u32>,
     events: Cell<u32>,
     touches: Cell<u32>,
+    last_tap: Cell<Option<(i32, i32)>>,
 }
 
 /// A stub app whose whole life is recorded in a shared [`Log`].
@@ -85,8 +86,11 @@ impl App for StubApp<'_> {
         self.log.exited.set(self.log.exited.get().saturating_add(1));
     }
 
-    fn handle(&mut self, _event: InputEvent, _ctx: &Ctx) -> Outcome {
+    fn handle(&mut self, event: InputEvent, _ctx: &Ctx) -> Outcome {
         self.log.events.set(self.log.events.get().saturating_add(1));
+        if let InputEvent::Tap { x, y } = event {
+            self.log.last_tap.set(Some((x, y)));
+        }
         match self.action {
             Action::None => Outcome {
                 changed: true,
@@ -152,6 +156,12 @@ impl<'a> StubFactory<'a> {
     /// Makes this stub one of the apps that owns the panel outright.
     fn with_raw_touch(mut self) -> StubFactory<'a> {
         self.manifest.touch = TouchAccess::Raw;
+        self
+    }
+
+    /// Makes this stub receive tap gestures while preserving swipe-to-exit.
+    fn with_taps_touch(mut self) -> StubFactory<'a> {
+        self.manifest.touch = TouchAccess::Taps;
         self
     }
 }
@@ -404,4 +414,60 @@ fn nothing_ticks_while_on_the_launcher() {
         assert_eq!(router.view(), View::Launcher);
         assert!(!router.tick(ctx));
     });
+}
+
+/// An app with `TouchAccess::Taps` receives completed `Tap` gestures as `InputEvent::Tap`.
+#[test]
+fn an_app_with_taps_receives_tap_events() {
+    let ctx = Ctx {
+        now_ms: 0,
+        ble_linked: false,
+    };
+    let log = Log::default();
+    let factory = StubFactory::new("TapsApp", &log).with_taps_touch();
+    let registry: [&dyn AppFactory; 1] = [&factory];
+    let mut router = Router::new(&registry, default_carousel(0));
+
+    // Launch app
+    router.handle(Input::ShortPress, &ctx);
+    assert_eq!(log.created.get(), 1);
+
+    // Tap at (100, 150)
+    let tap_stroke = [
+        sample(TouchEvent::Down, 100, 150, 0),
+        sample(TouchEvent::Up, 100, 150, 30),
+    ];
+    let changed = feed(&mut router, &ctx, &tap_stroke);
+    assert!(changed);
+    assert_eq!(log.last_tap.get(), Some((100, 150)));
+
+    // Swipe up exits the app
+    let swipe_up = swipe(195, 300, 195, 50);
+    feed(&mut router, &ctx, &swipe_up);
+    assert_eq!(router.view(), View::Launcher, "swiping up must exit");
+}
+
+/// An app with `TouchAccess::Gestures` ignores tap events.
+#[test]
+fn an_app_with_gestures_ignores_tap_events() {
+    let ctx = Ctx {
+        now_ms: 0,
+        ble_linked: false,
+    };
+    let log = Log::default();
+    let factory = StubFactory::new("GesturesApp", &log); // default TouchAccess::Gestures
+    let registry: [&dyn AppFactory; 1] = [&factory];
+    let mut router = Router::new(&registry, default_carousel(0));
+
+    // Launch app
+    router.handle(Input::ShortPress, &ctx);
+
+    // Tap at (100, 150)
+    let tap_stroke = [
+        sample(TouchEvent::Down, 100, 150, 0),
+        sample(TouchEvent::Up, 100, 150, 30),
+    ];
+    let changed = feed(&mut router, &ctx, &tap_stroke);
+    assert!(!changed);
+    assert_eq!(log.last_tap.get(), None, "gestures app does not see taps");
 }

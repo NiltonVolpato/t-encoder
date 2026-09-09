@@ -23,6 +23,13 @@ pub enum InputEvent {
     Rotate(i32),
     /// The encoder button was pressed and released.
     Select,
+    /// A tap was completed at the given panel coordinates.
+    Tap {
+        /// X coordinate on the panel.
+        x: i32,
+        /// Y coordinate on the panel.
+        y: i32,
+    },
 }
 
 /// Identifies an app's icon. Bound to a real sprite by the asset pipeline in
@@ -50,6 +57,10 @@ pub enum TouchAccess {
     /// sample. What every encoder-driven app wants, and the default.
     #[default]
     Gestures,
+    /// The router handles navigation swipes (`SwipeUp` / `SwipeLeft` exit),
+    /// but forwards completed [`crate::gesture::Gesture::Tap`] events to the app
+    /// as [`InputEvent::Tap`].
+    Taps,
     /// The app owns it: every sample goes to [`App::touch`] and no gesture is
     /// recognised, so a canvas can draw a stroke right across the screen
     /// without quitting itself. The encoder long-press is then the only way
@@ -102,6 +113,13 @@ pub enum Feedback {
     Beep,
     /// Low-frequency buzz, felt rather than heard.
     Haptic,
+    /// Arbitrary tone at specified frequency in Hertz for `ms` milliseconds.
+    Tone {
+        /// Tone frequency in Hertz.
+        hz: u32,
+        /// Duration of the tone in milliseconds.
+        ms: u32,
+    },
 }
 
 /// A keystroke an app wants sent to whatever host is listening.
@@ -162,6 +180,17 @@ impl Outcome {
             changed: true,
             action: Action::None,
             feedback: Some(feedback),
+            keys: None,
+        }
+    }
+
+    /// State changed; play a tone at `hz` for `ms` milliseconds.
+    #[must_use]
+    pub const fn tone(hz: u32, ms: u32) -> Outcome {
+        Outcome {
+            changed: true,
+            action: Action::None,
+            feedback: Some(Feedback::Tone { hz, ms }),
             keys: None,
         }
     }

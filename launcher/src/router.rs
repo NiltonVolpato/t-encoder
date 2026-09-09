@@ -225,6 +225,9 @@ impl<'a> Router<'a> {
             // swallowed — apps do not see touch.
             View::App(_) => match gesture {
                 Gesture::SwipeUp | Gesture::SwipeLeft => self.go_home(),
+                Gesture::Tap { x, y } if self.app_wants_taps() => {
+                    self.deliver(InputEvent::Tap { x, y }, ctx)
+                }
                 Gesture::SwipeDown | Gesture::SwipeRight | Gesture::Tap { .. } => false,
             },
         }
@@ -251,6 +254,16 @@ impl<'a> Router<'a> {
             }
             None => false,
         }
+    }
+
+    /// Whether the app on screen asked for tap gestures.
+    fn app_wants_taps(&self) -> bool {
+        let View::App(index) = self.view else {
+            return false;
+        };
+        self.factories
+            .get(index)
+            .is_some_and(|factory| factory.manifest().touch == TouchAccess::Taps)
     }
 
     /// Whether the app on screen asked for the raw panel.

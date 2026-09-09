@@ -158,6 +158,7 @@ impl App for Macropad {
                 Some(entry) => Outcome::send_keys(entry.keys, Feedback::Beep),
                 None => Outcome::NONE,
             },
+            InputEvent::Tap { .. } => Outcome::NONE,
         }
     }
 

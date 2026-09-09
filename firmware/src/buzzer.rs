@@ -19,14 +19,7 @@ use esp_hal::ledc::{LSGlobalClkSource, Ledc, LowSpeed};
 use esp_hal::peripherals::{GPIO17, LEDC};
 use esp_hal::time::Rate;
 
-/// Feedback on the single GPIO17 transducer.
-#[derive(Clone, Copy)]
-pub enum Feedback {
-    /// Short audible click for input acknowledgement.
-    Beep,
-    /// Vibration buzz (e.g. an alarm firing).
-    Haptic,
-}
+pub use launcher::Feedback;
 
 /// Queued feedback requests, served by [`task`]. Depth keeps a burst of input
 /// beeps from dropping a pending alarm haptic.
@@ -37,9 +30,53 @@ pub fn signal(feedback: Feedback) {
     let _ = FEEDBACK.try_send(feedback);
 }
 
+struct DynamicTimer<'a>(core::cell::RefCell<esp_hal::ledc::timer::Timer<'a, LowSpeed>>);
+
+impl esp_hal::ledc::timer::TimerIFace<LowSpeed> for DynamicTimer<'_> {
+    fn freq(&self) -> Option<Rate> {
+        self.0.borrow().freq()
+    }
+
+    fn configure(
+        &mut self,
+        config: esp_hal::ledc::timer::config::Config<timer::LSClockSource>,
+    ) -> Result<(), esp_hal::ledc::timer::Error> {
+        self.0.borrow_mut().configure(config)
+    }
+
+    fn is_configured(&self) -> bool {
+        self.0.borrow().is_configured()
+    }
+
+    fn duty(&self) -> Option<esp_hal::ledc::timer::config::Duty> {
+        self.0.borrow().duty()
+    }
+
+    fn number(&self) -> esp_hal::ledc::timer::Number {
+        self.0.borrow().number()
+    }
+
+    fn frequency(&self) -> u32 {
+        self.0.borrow().frequency()
+    }
+}
+
+impl DynamicTimer<'_> {
+    fn set_frequency(&self, hz: u32) {
+        let _ = self
+            .0
+            .borrow_mut()
+            .configure(esp_hal::ledc::timer::config::Config {
+                duty: esp_hal::ledc::timer::config::Duty::Duty13Bit,
+                clock_source: timer::LSClockSource::APBClk,
+                frequency: Rate::from_hz(hz),
+            });
+    }
+}
+
 /// Drives the GPIO17 transducer. Two LEDC timers give the audible beep and the
-/// low-frequency vibration their distinct carriers; the single channel is
-/// rebound to the right timer per request.
+/// low-frequency vibration their distinct carriers, while a third timer allows
+/// arbitrary tones for musical/game feedback.
 #[embassy_executor::task]
 pub async fn task(ledc_periph: LEDC<'static>, pin: GPIO17<'static>) {
     let mut ledc = Ledc::new(ledc_periph);
@@ -58,7 +95,7 @@ pub async fn task(ledc_periph: LEDC<'static>, pin: GPIO17<'static>) {
             })
             .map(|()| timer)
     };
-    let (Ok(beep_timer), Ok(haptic_timer)) = (
+    let (Ok(beep_timer), Ok(haptic_timer), Ok(raw_tone_timer)) = (
         make_timer(
             &ledc,
             timer::Number::Timer0,
@@ -69,10 +106,12 @@ pub async fn task(ledc_periph: LEDC<'static>, pin: GPIO17<'static>) {
             timer::Number::Timer1,
             enc_config::buzzer::HAPTIC_FREQUENCY_HZ,
         ),
+        make_timer(&ledc, timer::Number::Timer2, 440),
     ) else {
         log::error!("buzzer: timer config failed");
         return;
     };
+    let tone_timer = DynamicTimer(core::cell::RefCell::new(raw_tone_timer));
 
     let mut chan = ledc.channel(channel::Number::Channel0, pin);
 
@@ -100,6 +139,10 @@ pub async fn task(ledc_periph: LEDC<'static>, pin: GPIO17<'static>) {
         match FEEDBACK.receive().await {
             Feedback::Beep => pulse!(&beep_timer, 50, 35),
             Feedback::Haptic => pulse!(&haptic_timer, 70, 250),
+            Feedback::Tone { hz, ms } => {
+                tone_timer.set_frequency(hz);
+                pulse!(&tone_timer, 50, u64::from(ms));
+            }
         }
     }
 }

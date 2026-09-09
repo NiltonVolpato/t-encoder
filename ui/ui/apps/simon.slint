@@ -1,0 +1,155 @@
+// Simon Says game component.
+//
+// Designed for the round 390x390 AMOLED: a 380px circular clipped container
+// divided into four quadrant pads (Yellow, Blue, Red, Green) with a 6px black
+// cross seam, overlaid with a central circular status hub.
+//
+// The outer circle's `clip: true` rounds the outer corners of the quadrants,
+// while the central hub cuts out the inner circle, producing the classic
+// annular Simon wedges with pure Rectangle geometry.
+
+export struct SimonState {
+    yellow-lit: bool,
+    blue-lit: bool,
+    red-lit: bool,
+    green-lit: bool,
+    score: int,
+    level: int,
+    status: string,
+    accent: color,
+    show-button: bool,
+    button-text: string,
+    button-subtext: string,
+    button-bg: color,
+    button-text-color: color,
+}
+
+export component Simon inherits Rectangle {
+    in property <SimonState> state;
+
+    background: #000000;
+
+    // Clipped circular playfield.
+    Rectangle {
+        width: 380px;
+        height: 380px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        border-radius: 190px;
+        clip: true;
+        background: #000000;
+
+        // Top-Left: Yellow (220 Hz)
+        Rectangle {
+            x: 0px;
+            y: 0px;
+            width: 187px;
+            height: 187px;
+            background: state.yellow-lit ? #ffff20 : #555500;
+            animate background { duration: 80ms; }
+        }
+
+        // Top-Right: Blue (165 Hz)
+        Rectangle {
+            x: 193px;
+            y: 0px;
+            width: 187px;
+            height: 187px;
+            background: state.blue-lit ? #20a0ff : #003066;
+            animate background { duration: 80ms; }
+        }
+
+        // Bottom-Left: Red (277 Hz)
+        Rectangle {
+            x: 0px;
+            y: 193px;
+            width: 187px;
+            height: 187px;
+            background: state.red-lit ? #ff2040 : #660510;
+            animate background { duration: 80ms; }
+        }
+
+        // Bottom-Right: Green (330 Hz)
+        Rectangle {
+            x: 193px;
+            y: 193px;
+            width: 187px;
+            height: 187px;
+            background: state.green-lit ? #30e050 : #0a5515;
+            animate background { duration: 80ms; }
+        }
+
+        // Center status & score hub.
+        Rectangle {
+            width: 140px;
+            height: 140px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            border-radius: 70px;
+            background: #121212;
+            border-width: 3px;
+            border-color: #262626;
+
+            VerticalLayout {
+                alignment: center;
+                spacing: 3px;
+
+                Text {
+                    text: state.status;
+                    color: #bbbbbb;
+                    font-size: 13px;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                }
+
+                Text {
+                    text: "\{state.score}";
+                    color: white;
+                    font-size: 38px;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                }
+
+                Text {
+                    text: "LVL \{state.level}";
+                    color: state.accent;
+                    font-size: 12px;
+                    horizontal-alignment: center;
+                }
+            }
+        }
+
+        // Prominent overlay button for START and GAME OVER.
+        if state.show-button: Rectangle {
+            width: 250px;
+            height: 94px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            border-radius: 47px;
+            background: state.button-bg;
+            border-width: 3px;
+            border-color: white;
+
+            VerticalLayout {
+                alignment: center;
+                spacing: 4px;
+
+                Text {
+                    text: state.button-text;
+                    color: state.button-text-color;
+                    font-size: 26px;
+                    font-weight: 900;
+                    horizontal-alignment: center;
+                }
+
+                if state.button-subtext != "": Text {
+                    text: state.button-subtext;
+                    color: state.button-text-color;
+                    font-size: 13px;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                }
+            }
+        }
+    }
+}
