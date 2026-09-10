@@ -10,7 +10,7 @@
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use base64::prelude::*;
 use image::{ImageBuffer, Rgb};
@@ -58,6 +58,39 @@ pub enum EspielbergError {
     InvalidPayload(String),
 }
 
+/// Timing telemetry for an action executed on the device set.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ActionTelemetry {
+    /// Device timestamp in microseconds since boot when the action completed.
+    pub device_timestamp_micros: u64,
+    /// Elapsed microseconds on the device since the previous action (if any).
+    pub device_delta_micros: Option<u64>,
+    /// Round-trip latency as measured from the host client.
+    pub client_latency: Duration,
+}
+
+impl ActionTelemetry {
+    /// Formats device time and delta for human-readable display (e.g. "14.521s (+350.0ms)").
+    #[must_use]
+    pub fn format_device_time(&self) -> String {
+        let seconds = (self.device_timestamp_micros as f64) / 1_000_000.0;
+        match self.device_delta_micros {
+            Some(delta_micros) => {
+                let delta_ms = (delta_micros as f64) / 1_000.0;
+                format!("{seconds:.3}s (+{delta_ms:.1}ms)")
+            }
+            None => format!("{seconds:.3}s"),
+        }
+    }
+
+    /// Formats client latency (e.g. "4.2ms").
+    #[must_use]
+    pub fn format_client_latency(&self) -> String {
+        let ms = self.client_latency.as_secs_f64() * 1000.0;
+        format!("{ms:.1}ms")
+    }
+}
+
 /// A captured frame from the T-Encoder-Pro screen.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Shot {
@@ -66,6 +99,7 @@ pub struct Shot {
     raw_rgb565: Vec<u8>,
     compressed_bytes: usize,
     wire_bytes: usize,
+    telemetry: ActionTelemetry,
 }
 
 impl Shot {
@@ -79,7 +113,21 @@ impl Shot {
             raw_rgb565,
             compressed_bytes: raw_len,
             wire_bytes: raw_len,
+            telemetry: ActionTelemetry::default(),
         }
+    }
+
+    /// Sets the telemetry metadata for this shot.
+    #[must_use]
+    pub const fn with_telemetry(mut self, telemetry: ActionTelemetry) -> Self {
+        self.telemetry = telemetry;
+        self
+    }
+
+    /// Timing telemetry for this shot capture.
+    #[must_use]
+    pub const fn telemetry(&self) -> ActionTelemetry {
+        self.telemetry
     }
 
     /// Sets the compressed byte count and wire byte count for telemetry and benchmarks.
@@ -320,6 +368,7 @@ pub struct Director {
     writer: Option<Box<dyn SerialPort>>,
     reader: Option<BufReader<Box<dyn SerialPort>>>,
     buffered_events: VecDeque<DeviceEvent>,
+    last_device_timestamp_micros: Option<u64>,
 }
 
 impl Director {
@@ -330,6 +379,23 @@ impl Director {
                 serialport::ErrorKind::NoDevice,
                 "serial port is closed",
             ))),
+        }
+    }
+
+    /// Records device timestamp and client latency, computing device delta.
+    fn record_telemetry(
+        &mut self,
+        device_timestamp_micros: u64,
+        client_latency: Duration,
+    ) -> ActionTelemetry {
+        let device_delta_micros = self
+            .last_device_timestamp_micros
+            .map(|previous| device_timestamp_micros.saturating_sub(previous));
+        self.last_device_timestamp_micros = Some(device_timestamp_micros);
+        ActionTelemetry {
+            device_timestamp_micros,
+            device_delta_micros,
+            client_latency,
         }
     }
 
@@ -384,6 +450,7 @@ impl Director {
             writer: Some(port),
             reader: Some(BufReader::new(reader_port)),
             buffered_events: VecDeque::new(),
+            last_device_timestamp_micros: None,
         })
     }
 
@@ -396,6 +463,7 @@ impl Director {
         let mut line = serde_json::to_string(&cmd)?;
         line.push('\n');
 
+        let start_time = Instant::now();
         let writer = self.writer_mut()?;
         writer.write_all(line.as_bytes())?;
         writer.flush()?;
@@ -403,6 +471,9 @@ impl Director {
         loop {
             match self.read_message()? {
                 DeviceMessage::Screenshot(shot_msg) => {
+                    let client_latency = start_time.elapsed();
+                    let telemetry = self.record_telemetry(shot_msg.ts_us, client_latency);
+
                     let wire_bytes = shot_msg.data.len();
                     let compressed = BASE64_STANDARD.decode(&shot_msg.data)?;
                     let compressed_bytes = compressed.len();
@@ -412,7 +483,8 @@ impl Director {
                         .saturating_mul(2);
                     let raw_bytes = decompress_tga_rle(&compressed, expected_bytes)?;
                     let shot = Shot::new(shot_msg.width, shot_msg.height, raw_bytes)
-                        .with_compressed_meta(compressed_bytes, wire_bytes);
+                        .with_compressed_meta(compressed_bytes, wire_bytes)
+                        .with_telemetry(telemetry);
                     return Ok(shot);
                 }
                 DeviceMessage::Response(resp) if !resp.ok => {
@@ -433,11 +505,12 @@ impl Director {
     ///
     /// # Errors
     /// Returns an error if writing to the serial port fails.
-    pub fn cue(&mut self, cue: Cue) -> Result<(), EspielbergError> {
+    pub fn cue(&mut self, cue: Cue) -> Result<ActionTelemetry, EspielbergError> {
         let cmd = IncomingCommand::Cue { cue: cue.into() };
         let mut line = serde_json::to_string(&cmd)?;
         line.push('\n');
 
+        let start_time = Instant::now();
         let writer = self.writer_mut()?;
         writer.write_all(line.as_bytes())?;
         writer.flush()?;
@@ -446,7 +519,9 @@ impl Director {
             match self.read_message()? {
                 DeviceMessage::Response(resp) => {
                     if resp.ok {
-                        return Ok(());
+                        let client_latency = start_time.elapsed();
+                        let telemetry = self.record_telemetry(resp.ts_us, client_latency);
+                        return Ok(telemetry);
                     }
                     return Err(EspielbergError::CommandFailed(
                         resp.error.unwrap_or_else(|| "command failed".to_string()),
@@ -484,7 +559,7 @@ impl Director {
     ///
     /// # Errors
     /// Returns an error if writing to the serial port fails.
-    pub fn rotate(&mut self, delta: i32) -> Result<(), EspielbergError> {
+    pub fn rotate(&mut self, delta: i32) -> Result<ActionTelemetry, EspielbergError> {
         self.cue(Cue::Rotate(delta))
     }
 
@@ -492,7 +567,7 @@ impl Director {
     ///
     /// # Errors
     /// Returns an error if writing to the serial port fails.
-    pub fn press(&mut self) -> Result<(), EspielbergError> {
+    pub fn press(&mut self) -> Result<ActionTelemetry, EspielbergError> {
         self.cue(Cue::ShortPress)
     }
 
@@ -500,7 +575,7 @@ impl Director {
     ///
     /// # Errors
     /// Returns an error if writing to the serial port fails.
-    pub fn long_press(&mut self) -> Result<(), EspielbergError> {
+    pub fn long_press(&mut self) -> Result<ActionTelemetry, EspielbergError> {
         self.cue(Cue::LongPress)
     }
 
@@ -508,7 +583,7 @@ impl Director {
     ///
     /// # Errors
     /// Returns an error if writing to the serial port fails.
-    pub fn tap(&mut self, x: i32, y: i32) -> Result<(), EspielbergError> {
+    pub fn tap(&mut self, x: i32, y: i32) -> Result<ActionTelemetry, EspielbergError> {
         self.cue(Cue::Tap { x, y })
     }
 
@@ -516,7 +591,7 @@ impl Director {
     ///
     /// # Errors
     /// Returns an error if writing to the serial port fails.
-    pub fn swipe(&mut self, direction: SwipeDirection) -> Result<(), EspielbergError> {
+    pub fn swipe(&mut self, direction: SwipeDirection) -> Result<ActionTelemetry, EspielbergError> {
         self.cue(Cue::Swipe(direction))
     }
 
@@ -524,7 +599,8 @@ impl Director {
     ///
     /// # Errors
     /// Returns an error if writing to or reopening the serial port fails.
-    pub fn reset(&mut self) -> Result<(), EspielbergError> {
+    pub fn reset(&mut self) -> Result<Duration, EspielbergError> {
+        self.last_device_timestamp_micros = None;
         if let Some(mut w) = self.writer.take() {
             let cmd = IncomingCommand::Reset;
             let mut line = serde_json::to_string(&cmd).unwrap_or_default();
@@ -565,11 +641,11 @@ impl Director {
             if let Ok(DeviceEvent::Boot { ready: true }) =
                 self.wait_for_event(Duration::from_millis(500))
             {
-                return Ok(());
+                return Ok(start.elapsed());
             }
         }
 
-        Ok(())
+        Ok(start.elapsed())
     }
 
     /// "Cut!" — ends the shoot, closing the serial connection and freeing the port.

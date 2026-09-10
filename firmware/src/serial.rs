@@ -42,17 +42,19 @@ pub fn broadcast_event(event: DeviceEvent) {
 
 const BASE64_TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
-#[inline(always)]
-fn encode_triplet(in_3: &[u8; 3], out_4: &mut [u8; 4]) {
+#[inline]
+fn encode_triplet(in_3: [u8; 3]) -> [u8; 4] {
     let n = ((u32::from(in_3[0])) << 16) | ((u32::from(in_3[1])) << 8) | (u32::from(in_3[2]));
     let idx0 = usize::try_from((n >> 18) & 0x3F).unwrap_or(0);
     let idx1 = usize::try_from((n >> 12) & 0x3F).unwrap_or(0);
     let idx2 = usize::try_from((n >> 6) & 0x3F).unwrap_or(0);
     let idx3 = usize::try_from(n & 0x3F).unwrap_or(0);
-    out_4[0] = BASE64_TABLE.get(idx0).copied().unwrap_or(b'A');
-    out_4[1] = BASE64_TABLE.get(idx1).copied().unwrap_or(b'A');
-    out_4[2] = BASE64_TABLE.get(idx2).copied().unwrap_or(b'A');
-    out_4[3] = BASE64_TABLE.get(idx3).copied().unwrap_or(b'A');
+    [
+        BASE64_TABLE.get(idx0).copied().unwrap_or(b'A'),
+        BASE64_TABLE.get(idx1).copied().unwrap_or(b'A'),
+        BASE64_TABLE.get(idx2).copied().unwrap_or(b'A'),
+        BASE64_TABLE.get(idx3).copied().unwrap_or(b'A'),
+    ]
 }
 
 struct Base64StreamWriter<'a> {
@@ -70,7 +72,7 @@ impl<'a> Base64StreamWriter<'a> {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn push_byte(&mut self, b: u8) {
         if let Some(slot) = self.buf.get_mut(self.buf_len) {
             *slot = b;
@@ -81,7 +83,7 @@ impl<'a> Base64StreamWriter<'a> {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn push_slice(&mut self, slice: &[u8]) {
         for &b in slice {
             self.push_byte(b);
@@ -104,8 +106,7 @@ impl<'a> Base64StreamWriter<'a> {
                     .copied()
                     .unwrap_or(0),
             ];
-            let mut out_4 = [0u8; 4];
-            encode_triplet(&in_3, &mut out_4);
+            let out_4 = encode_triplet(in_3);
             let out_start = i.saturating_mul(4);
             let out_end = out_start.saturating_add(4);
             if let Some(dst) = out.get_mut(out_start..out_end) {
@@ -133,8 +134,7 @@ impl<'a> Base64StreamWriter<'a> {
                     .copied()
                     .unwrap_or(0),
             ];
-            let mut out_4 = [0u8; 4];
-            encode_triplet(&in_3, &mut out_4);
+            let out_4 = encode_triplet(in_3);
             let out_start = i.saturating_mul(4);
             let out_end = out_start.saturating_add(4);
             if let Some(dst) = out.get_mut(out_start..out_end) {
@@ -142,10 +142,10 @@ impl<'a> Base64StreamWriter<'a> {
             }
         }
         let full_bytes = full_triplets.saturating_mul(4);
-        if full_bytes > 0 {
-            if let Some(slice) = out.get(..full_bytes) {
-                let _ = self.tx.write_all(slice);
-            }
+        if full_bytes > 0
+            && let Some(slice) = out.get(..full_bytes)
+        {
+            let _ = self.tx.write_all(slice);
         }
 
         let remainder = self.buf_len % 3;
@@ -185,7 +185,7 @@ impl<'a> Base64StreamWriter<'a> {
     }
 }
 
-#[inline(always)]
+#[inline]
 fn get_pixel(fb: &[u8], idx: usize) -> [u8; 2] {
     let offset = idx.saturating_mul(2);
     [
@@ -197,7 +197,12 @@ fn get_pixel(fb: &[u8], idx: usize) -> [u8; 2] {
 /// Streams framebuffer bytes to USB TX as TGA-RLE compressed base64 within a single JSON line.
 fn stream_screenshot_base64(tx: &mut UsbSerialJtagTx<'static, esp_hal::Async>, fb: &[u8]) {
     use embedded_io::Write;
-    let _ = tx.write_all(b"{\"type\":\"screenshot\",\"width\":390,\"height\":390,\"data\":\"");
+    let ts_us = embassy_time::Instant::now().as_micros();
+    let _ = tx.write_all(b"{\"type\":\"screenshot\",\"width\":390,\"height\":390,\"ts_us\":");
+    let mut ts_buf = heapless::String::<32>::new();
+    let _ = core::fmt::write(&mut ts_buf, format_args!("{ts_us}"));
+    let _ = tx.write_all(ts_buf.as_bytes());
+    let _ = tx.write_all(b",\"data\":\"");
 
     let total_pixels = fb.len() / 2;
     let mut writer = Base64StreamWriter::new(tx);
@@ -258,6 +263,7 @@ pub async fn tx_task(mut tx: UsbSerialJtagTx<'static, esp_hal::Async>) {
                 } else {
                     let err = DeviceMessage::Response(CommandResponse {
                         ok: false,
+                        ts_us: embassy_time::Instant::now().as_micros(),
                         error: Some("framebuffer unavailable".to_string()),
                     });
                     json_buf.clear();
@@ -334,16 +340,18 @@ async fn handle_command(line: &str) {
             }
             let _ = TX_CHANNEL.try_send(TxMessage::Response(CommandResponse {
                 ok: true,
+                ts_us: embassy_time::Instant::now().as_micros(),
                 error: None,
             }));
         }
         Ok(IncomingCommand::Screenshot) => {
-            let _ = TX_CHANNEL.send(TxMessage::Screenshot).await;
+            TX_CHANNEL.send(TxMessage::Screenshot).await;
         }
         Ok(IncomingCommand::Reset) => {
-            let _ = TX_CHANNEL
+            TX_CHANNEL
                 .send(TxMessage::Response(CommandResponse {
                     ok: true,
+                    ts_us: embassy_time::Instant::now().as_micros(),
                     error: None,
                 }))
                 .await;
@@ -355,6 +363,7 @@ async fn handle_command(line: &str) {
             let _ = core::fmt::write(&mut err_msg, format_args!("malformed command: {e}"));
             let _ = TX_CHANNEL.try_send(TxMessage::Response(CommandResponse {
                 ok: false,
+                ts_us: embassy_time::Instant::now().as_micros(),
                 error: Some(err_msg),
             }));
         }

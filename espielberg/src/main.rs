@@ -208,8 +208,11 @@ impl EspielbergMcp {
                 let png_path_string = absolute_png_path.display();
                 let raw_path_string = absolute_raw_path.display();
 
+                let device_time = shot.telemetry().format_device_time();
+                let client_latency = shot.telemetry().format_client_latency();
+
                 Ok(CallToolResult::success(vec![ContentBlock::text(format!(
-                    "Take successful! Captured {w}x{h} frame:\n- PNG: {png_path_string}\n- Raw: {raw_path_string}",
+                    "Take successful! Captured {w}x{h} frame:\n- PNG: {png_path_string}\n- Raw: {raw_path_string}\n- Device time: {device_time}\n- Client latency: {client_latency}",
                     w = shot.width(),
                     h = shot.height(),
                 ))]))
@@ -257,39 +260,45 @@ impl EspielbergMcp {
         };
 
         let mut cued_descriptions = Vec::new();
+        let mut last_telemetry = None;
 
         if let Some(rotate) = args.rotate {
-            director.rotate(rotate.delta).map_err(|e| {
+            let tel = director.rotate(rotate.delta).map_err(|e| {
                 McpError::internal_error(format!("Failed to cue rotate: {e}"), None)
             })?;
+            last_telemetry = Some(tel);
             cued_descriptions.push(format!("rotate({})", rotate.delta));
         }
 
         if args.press.is_some_and(|p| p.is_active()) {
-            director
+            let tel = director
                 .press()
                 .map_err(|e| McpError::internal_error(format!("Failed to cue press: {e}"), None))?;
+            last_telemetry = Some(tel);
             cued_descriptions.push("press".to_string());
         }
 
         if args.long_press.is_some_and(|p| p.is_active()) {
-            director.long_press().map_err(|e| {
+            let tel = director.long_press().map_err(|e| {
                 McpError::internal_error(format!("Failed to cue long_press: {e}"), None)
             })?;
+            last_telemetry = Some(tel);
             cued_descriptions.push("long_press".to_string());
         }
 
         if let Some(tap) = args.tap {
-            director
+            let tel = director
                 .tap(tap.x, tap.y)
                 .map_err(|e| McpError::internal_error(format!("Failed to cue tap: {e}"), None))?;
+            last_telemetry = Some(tel);
             cued_descriptions.push(format!("tap({}, {})", tap.x, tap.y));
         }
 
         if let Some(swipe) = args.swipe {
-            director
+            let tel = director
                 .swipe(swipe.direction)
                 .map_err(|e| McpError::internal_error(format!("Failed to cue swipe: {e}"), None))?;
+            last_telemetry = Some(tel);
             cued_descriptions.push(format!("swipe({})", swipe.direction.as_str()));
         }
 
@@ -300,8 +309,17 @@ impl EspielbergMcp {
             ));
         }
 
+        let telemetry_info = match last_telemetry {
+            Some(t) => format!(
+                "\n- Device time: {}\n- Client latency: {}",
+                t.format_device_time(),
+                t.format_client_latency()
+            ),
+            None => String::new(),
+        };
+
         Ok(CallToolResult::success(vec![ContentBlock::text(format!(
-            "Cue delivered to set: {}",
+            "Cue delivered to set: {}{telemetry_info}",
             cued_descriptions.join(", ")
         ))]))
     }
@@ -319,9 +337,10 @@ impl EspielbergMcp {
         };
 
         match director.reset() {
-            Ok(()) => Ok(CallToolResult::success(vec![ContentBlock::text(
-                "Reset successful! Device rebooted and reconnected to launcher.",
-            )])),
+            Ok(duration) => Ok(CallToolResult::success(vec![ContentBlock::text(format!(
+                "Reset successful! Device rebooted and reconnected to launcher.\n- Client latency: {:.2}s",
+                duration.as_secs_f64()
+            ))])),
             Err(err) => Err(McpError::internal_error(
                 format!("Failed to reset device: {err}"),
                 None,

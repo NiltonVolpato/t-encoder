@@ -102,6 +102,9 @@ pub enum DeviceEvent {
 pub struct CommandResponse {
     /// Whether command succeeded.
     pub ok: bool,
+    /// Microseconds elapsed on device since boot when the command was processed.
+    #[serde(default)]
+    pub ts_us: u64,
     /// Optional error description on failure.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
@@ -114,6 +117,9 @@ pub struct ScreenshotMessage {
     pub width: u32,
     /// Frame height in pixels.
     pub height: u32,
+    /// Microseconds elapsed on device since boot when the screenshot was captured.
+    #[serde(default)]
+    pub ts_us: u64,
     /// Base64 encoded big-endian RGB565 pixel payload.
     pub data: String,
 }
