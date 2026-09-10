@@ -28,7 +28,7 @@ pub struct ActionArgs {
 #[derive(Debug, serde::Deserialize, JsonSchema)]
 pub struct TakeArgs {
     /// Optional file path to save the screenshot to.
-    /// Defaults to ".espielberg/take-<timestamp>.png".
+    /// Defaults to ".espielberg/take-<timestamp>.png" in the working directory.
     pub filename: Option<String>,
 }
 
@@ -139,7 +139,7 @@ impl EspielbergMcp {
     }
 
     #[tool(
-        description = "Take! Captures a live frame from the device set and saves the shot to disk."
+        description = "Take! Captures a live frame from the device set and saves the shot to disk (defaults to .espielberg/take-<timestamp>.png, returning absolute paths)."
     )]
     async fn take(
         &self,
@@ -186,11 +186,30 @@ impl EspielbergMcp {
                     ));
                 }
 
-                let png_str = png_path.to_string_lossy();
-                let raw_str = raw_path.to_string_lossy();
+                let absolute_png_path = std::fs::canonicalize(&png_path).unwrap_or_else(|_| {
+                    if png_path.is_absolute() {
+                        png_path
+                    } else {
+                        std::env::current_dir()
+                            .map(|cwd| cwd.join(&png_path))
+                            .unwrap_or(png_path)
+                    }
+                });
+                let absolute_raw_path = std::fs::canonicalize(&raw_path).unwrap_or_else(|_| {
+                    if raw_path.is_absolute() {
+                        raw_path
+                    } else {
+                        std::env::current_dir()
+                            .map(|cwd| cwd.join(&raw_path))
+                            .unwrap_or(raw_path)
+                    }
+                });
+
+                let png_path_string = absolute_png_path.display();
+                let raw_path_string = absolute_raw_path.display();
 
                 Ok(CallToolResult::success(vec![ContentBlock::text(format!(
-                    "Take successful! Captured {w}x{h} frame:\n- PNG: {png_str}\n- Raw: {raw_str}",
+                    "Take successful! Captured {w}x{h} frame:\n- PNG: {png_path_string}\n- Raw: {raw_path_string}",
                     w = shot.width(),
                     h = shot.height(),
                 ))]))
@@ -318,7 +337,7 @@ impl ServerHandler for EspielbergMcp {
             .with_server_info(Implementation::new("espielberg", env!("CARGO_PKG_VERSION")))
             .with_protocol_version(ProtocolVersion::V_2024_11_05)
             .with_instructions(
-                "espielberg directs the T-Encoder-Pro hardware set. Tools: 'action' opens the serial connection, 'cue' injects an input event, 'take' captures a screenshot to disk, 'reset' reboots the device, 'cut' cleanly closes the connection.",
+                "espielberg directs the T-Encoder-Pro hardware set. Tools: 'action' opens the serial connection, 'cue' injects an input event, 'take' captures a screenshot to disk (saved to .espielberg/ by default, returning absolute paths), 'reset' reboots the device, 'cut' cleanly closes the connection.",
             )
     }
 }
