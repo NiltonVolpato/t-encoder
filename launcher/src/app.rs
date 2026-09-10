@@ -17,6 +17,19 @@ use embedded_graphics::pixelcolor::Rgb565;
 /// into gestures, and an app that wants the panel gets samples through
 /// [`App::touch`] instead. Keeping the impossible variant meant every app
 /// writing a match arm for it.
+/// Direction of a swipe gesture across the panel.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SwipeDirection {
+    /// Right-to-left swipe.
+    Left,
+    /// Left-to-right swipe.
+    Right,
+    /// Bottom-to-top swipe.
+    Up,
+    /// Top-to-bottom swipe.
+    Down,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InputEvent {
     /// Encoder detents, signed; positive is clockwise.
@@ -30,6 +43,12 @@ pub enum InputEvent {
         /// Y coordinate on the panel.
         y: i32,
     },
+    /// A directional swipe gesture completed across the panel.
+    Swipe(SwipeDirection),
+    /// Hold progress reported while finger is held stationary (0..100%).
+    HoldProgress(u8),
+    /// Stationary touch hold completed (600ms).
+    Hold,
 }
 
 /// Identifies an app's icon. Bound to a real sprite by the asset pipeline in
@@ -61,6 +80,10 @@ pub enum TouchAccess {
     /// but forwards completed [`crate::gesture::Gesture::Tap`] events to the app
     /// as [`InputEvent::Tap`].
     Taps,
+    /// The app receives all gestures (taps, swipes in all 4 directions, and
+    /// hold events). Long-pressing the encoder button remains the system-wide
+    /// exit to the launcher.
+    AllGestures,
     /// The app owns it: every sample goes to [`App::touch`] and no gesture is
     /// recognised, so a canvas can draw a stroke right across the screen
     /// without quitting itself. The encoder long-press is then the only way

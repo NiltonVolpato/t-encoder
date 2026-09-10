@@ -341,6 +341,7 @@ impl App for Magic8 {
         match event {
             InputEvent::Rotate(delta) => self.rotate(delta, ctx.now_ms),
             InputEvent::Select | InputEvent::Tap { .. } => self.shake(ctx.now_ms),
+            InputEvent::Swipe(_) | InputEvent::HoldProgress(_) | InputEvent::Hold => Outcome::NONE,
         }
     }
 

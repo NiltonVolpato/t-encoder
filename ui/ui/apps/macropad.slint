@@ -1,110 +1,231 @@
-// BLE macropad.
-//
-// A vertical list of macros with the selected one centred and lit, on the same
-// true-black ground as the rest of the shell. The round panel means the list
-// has to fade at the edges rather than clip at a hard rectangle, so entries
-// dim with distance from the centre.
-
-export struct MacroEntry {
-    label: string,
-    // Pre-formatted chord, e.g. "⌘C". Built in Rust so the markup does no
-    // string work.
-    chord: string,
-}
+// BLE macropad with multi-profile selection and expanding circle hold feedback.
 
 export struct MacropadState {
-    entries: [MacroEntry],
-    selected: int,
+    mode: int, // 0 = Profile Selector, 1 = Pad Mode
+    profiles: [string],
+    selected_profile: int,
+    active_profile_name: string,
+    last_action_label: string,
+    last_action_chord: string,
+    toast_message: string,
+    toast_visible: bool,
+    hold_progress: float, // 0.0 .. 1.0
     accent: color,
-    // Whether a host is connected. Drives the status dot: an unconnected
-    // macropad looks identical to a connected one otherwise, which is the
-    // single most confusing thing it could do.
     linked: bool,
-    // Shown under the list — the paired host, or why there isn't one.
     status: string,
 }
 
 export component Macropad inherits Rectangle {
     in property <MacropadState> state;
 
-    // Row pitch. Three rows fit inside the round panel with room for the
-    // status line.
-    property <length> pitch: 72px;
+    property <length> pitch: 64px;
 
     background: #000000;
 
     // Connection dot, top centre. Green when a host is listening, otherwise a
-    // dim outline — present either way so its absence is never ambiguous.
+    // dim outline.
     Rectangle {
-        y: 34px;
-        x: (parent.width - 12px) / 2;
-        width: 12px;
-        height: 12px;
-        border-radius: 6px;
+        y: 28px;
+        x: (parent.width - 10px) / 2;
+        width: 10px;
+        height: 10px;
+        border-radius: 5px;
         background: state.linked ? #34c759 : #000000;
         border-width: state.linked ? 0px : 1.5px;
         border-color: #555555;
     }
 
-    for entry[i] in state.entries: Rectangle {
-        property <int> offset: i - state.selected;
-        property <bool> focal: offset == 0;
-        // Fade with distance so the list reads as a wheel on a round panel
-        // instead of a list clipped by one.
-        property <float> dim: offset == 0 ? 1.0 : (abs(offset) == 1 ? 0.45 : 0.15);
-
-        y: parent.height / 2 - pitch / 2 + offset * pitch;
-        x: 0;
+    // =========================================================================
+    // Mode 0: Profile Selector (Landing Page)
+    // =========================================================================
+    if state.mode == 0: Rectangle {
         width: parent.width;
-        height: pitch;
-        // Only the focal row is visible enough to matter; the rest are hints.
-        opacity: dim;
+        height: parent.height;
 
-        // Selection pill behind the focal row.
+        Text {
+            y: 48px;
+            width: parent.width;
+            text: "SELECT PROFILE";
+            color: #718096;
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: 1.5px;
+            horizontal-alignment: center;
+        }
+
+        // Selection pill behind the focal profile
         Rectangle {
-            visible: focal;
-            x: 46px;
-            width: parent.width - 92px;
-            height: 58px;
-            y: (parent.height - 58px) / 2;
-            border-radius: 29px;
+            x: 40px;
+            width: parent.width - 80px;
+            height: 54px;
+            y: (parent.height - 54px) / 2;
+            border-radius: 27px;
             background: state.accent;
-            opacity: 0.16;
+            opacity: 0.18;
             border-width: 1.5px;
             border-color: state.accent;
         }
 
-        HorizontalLayout {
-            padding-left: 64px;
-            padding-right: 64px;
-            spacing: 12px;
-            alignment: space-between;
+        for name[i] in state.profiles: Rectangle {
+            property <int> offset: i - state.selected_profile;
+            property <bool> focal: offset == 0;
+            property <float> dim: offset == 0 ? 1.0 : (abs(offset) == 1 ? 0.45 : 0.15);
+
+            y: parent.height / 2 - pitch / 2 + offset * pitch;
+            x: 0;
+            width: parent.width;
+            height: pitch;
+            opacity: dim;
 
             Text {
-                text: entry.label;
-                color: focal ? #ffffff : #cccccc;
-                font-size: focal ? 26px : 22px;
-                font-weight: focal ? 700 : 400;
+                width: parent.width;
+                text: name;
+                color: focal ? #ffffff : #a0aec0;
+                font-size: focal ? 24px : 20px;
+                font-weight: focal ? 700 : 500;
+                horizontal-alignment: center;
                 vertical-alignment: center;
                 overflow: elide;
             }
+        }
 
-            Text {
-                text: entry.chord;
-                color: focal ? state.accent : #888888;
-                font-size: focal ? 24px : 20px;
-                vertical-alignment: center;
-            }
+        Text {
+            y: parent.height - 50px;
+            width: parent.width;
+            text: "Press knob to activate";
+            color: #4a5568;
+            font-size: 14px;
+            font-weight: 500;
+            horizontal-alignment: center;
         }
     }
 
-    Text {
-        y: parent.height - 62px;
+    // =========================================================================
+    // Mode 1: Active Pad Mode
+    // =========================================================================
+    if state.mode == 1: Rectangle {
         width: parent.width;
-        text: state.status;
-        color: #777777;
-        font-size: 16px;
-        horizontal-alignment: center;
-        overflow: elide;
+        height: parent.height;
+
+        // Profile Title at Top
+        Text {
+            y: 52px;
+            width: parent.width;
+            text: state.active_profile_name;
+            color: #ffffff;
+            font-size: 22px;
+            font-weight: 700;
+            horizontal-alignment: center;
+            overflow: elide;
+        }
+
+        // Center Action Card
+        Rectangle {
+            x: 55px;
+            y: 110px;
+            width: parent.width - 110px;
+            height: 140px;
+            border-radius: 20px;
+            background: rgba(255, 255, 255, 0.04);
+            border-width: 1px;
+            border-color: rgba(255, 255, 255, 0.1);
+
+            VerticalLayout {
+                padding: 16px;
+                alignment: center;
+                spacing: 8px;
+
+                Text {
+                    text: state.last_action_label != "" ? state.last_action_label : "Ready";
+                    color: #f1f5f9;
+                    font-size: 24px;
+                    font-weight: 600;
+                    horizontal-alignment: center;
+                    overflow: elide;
+                }
+
+                if state.last_action_chord != "": Rectangle {
+                    height: 32px;
+                    border-radius: 16px;
+                    background: state.accent;
+                    opacity: 0.25;
+                    border-width: 1px;
+                    border-color: state.accent;
+
+                    Text {
+                        text: state.last_action_chord;
+                        color: state.accent;
+                        font-size: 18px;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+
+        // Status or Toast at bottom
+        if state.toast_visible: Rectangle {
+            y: parent.height - 70px;
+            x: 45px;
+            width: parent.width - 90px;
+            height: 36px;
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.12);
+            border-width: 1px;
+            border-color: rgba(255, 255, 255, 0.2);
+
+            Text {
+                width: parent.width;
+                height: parent.height;
+                text: state.toast_message;
+                color: #e2e8f0;
+                font-size: 14px;
+                font-weight: 500;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+
+        if !state.toast_visible: Text {
+            y: parent.height - 60px;
+            width: parent.width;
+            text: state.status;
+            color: #718096;
+            font-size: 14px;
+            horizontal-alignment: center;
+            overflow: elide;
+        }
+
+        // Expanding circle hold feedback overlay
+        if state.hold_progress > 0.0: Rectangle {
+            width: parent.width;
+            height: parent.height;
+            background: #000000;
+            opacity: min(1.0, state.hold_progress * 1.5);
+
+            Rectangle {
+                property <length> max_dim: 390px;
+                property <length> cur_dim: max_dim * state.hold_progress;
+                x: (parent.width - cur_dim) / 2;
+                y: (parent.height - cur_dim) / 2;
+                width: cur_dim;
+                height: cur_dim;
+                border-radius: cur_dim / 2;
+                background: state.accent;
+                opacity: 0.85;
+            }
+
+            Text {
+                y: parent.height / 2 - 12px;
+                width: parent.width;
+                text: "Hold to exit";
+                color: #ffffff;
+                font-size: 16px;
+                font-weight: 700;
+                horizontal-alignment: center;
+                visible: state.hold_progress < 0.95;
+            }
+        }
     }
 }

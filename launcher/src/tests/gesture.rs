@@ -407,3 +407,87 @@ fn a_press_part_way_through_a_stroke_condemns_it() {
         assert_eq!(router.view(), View::Launcher);
     });
 }
+
+#[test]
+fn a_stationary_touch_reports_hold_progress_and_completes_hold() {
+    let mut recognizer = Recognizer::new();
+    assert_eq!(recognizer.push(sample(TouchEvent::Down, 195, 195, 0)), None);
+    assert_eq!(
+        recognizer.push(sample(TouchEvent::Move, 195, 195, 150)),
+        None
+    );
+    assert_eq!(
+        recognizer.push(sample(TouchEvent::Move, 195, 195, 300)),
+        Some(Gesture::HoldProgress { progress_pct: 0 })
+    );
+    assert_eq!(
+        recognizer.push(sample(TouchEvent::Move, 195, 195, 450)),
+        Some(Gesture::HoldProgress { progress_pct: 50 })
+    );
+    assert_eq!(
+        recognizer.push(sample(TouchEvent::Move, 195, 195, 600)),
+        Some(Gesture::Hold)
+    );
+    assert_eq!(recognizer.push(sample(TouchEvent::Up, 195, 195, 650)), None);
+}
+
+#[test]
+fn an_early_release_before_hold_start_is_a_tap() {
+    let mut recognizer = Recognizer::new();
+    assert_eq!(recognizer.push(sample(TouchEvent::Down, 195, 195, 0)), None);
+    assert_eq!(
+        recognizer.push(sample(TouchEvent::Move, 195, 195, 100)),
+        None
+    );
+    assert_eq!(
+        recognizer.push(sample(TouchEvent::Up, 195, 195, 150)),
+        Some(Gesture::Tap { x: 195, y: 195 })
+    );
+}
+
+#[test]
+fn a_drag_cancels_hold_progress() {
+    let mut recognizer = Recognizer::new();
+    assert_eq!(recognizer.push(sample(TouchEvent::Down, 195, 195, 0)), None);
+    assert_eq!(
+        recognizer.push(sample(TouchEvent::Move, 195, 195, 300)),
+        Some(Gesture::HoldProgress { progress_pct: 0 })
+    );
+    assert_eq!(
+        recognizer.push(sample(TouchEvent::Move, 195, 195, 450)),
+        Some(Gesture::HoldProgress { progress_pct: 50 })
+    );
+    assert_eq!(
+        recognizer.push(sample(TouchEvent::Move, 250, 195, 460)),
+        Some(Gesture::HoldProgress { progress_pct: 0 })
+    );
+}
+
+#[test]
+fn an_all_gestures_app_receives_swipes_and_holds_without_quitting() {
+    let ctx = Ctx {
+        now_ms: 0,
+        ble_linked: false,
+    };
+    let log = Log::default();
+    let factory = StubFactory::new("MacropadStub", &log).with_all_gestures_touch();
+    let registry: [&dyn AppFactory; 1] = [&factory];
+    let mut router = Router::new(&registry, default_carousel(0));
+
+    router.handle(Input::ShortPress, &ctx);
+    assert_eq!(router.view(), View::App(0));
+
+    // Swiping up does NOT exit to launcher because app consumes all gestures
+    let changed = feed(&mut router, &ctx, &swipe(195, 340, 195, 40));
+    assert!(changed);
+    assert_eq!(router.view(), View::App(0), "swipe up stays in app");
+    assert_eq!(log.events.get(), 1, "swipe reached the app as an event");
+
+    // Long press on encoder button STILL exits to launcher
+    router.handle(Input::LongPress, &ctx);
+    assert_eq!(
+        router.view(),
+        View::Launcher,
+        "encoder long press returns home"
+    );
+}

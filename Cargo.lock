@@ -122,6 +122,7 @@ dependencies = [
  "embedded-graphics",
  "heapless 0.9.3",
  "launcher",
+ "serde",
  "slint",
  "ui",
 ]

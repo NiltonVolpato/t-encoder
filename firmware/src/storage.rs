@@ -3,7 +3,10 @@
 //! Stores user configuration (such as Macropad rotary & press key bindings)
 //! in the dedicated 16 KiB `settings` partition (`0xFFC000`..`0x1000000`).
 
+pub use apps::{MacroBinding, MacropadSettings, Profile};
+use core::cell::RefCell;
 use core::ops::Range;
+use embassy_sync::blocking_mutex::Mutex as BlockingMutex;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::mutex::Mutex;
 use embedded_storage::nor_flash::{
@@ -23,8 +26,63 @@ use sequential_storage::{
 /// Partition range for `settings` from `partitions.csv`: 0xFFC000 (16 KiB = 4 pages).
 const SETTINGS_RANGE: Range<u32> = 0x00FF_C000..0x0100_0000;
 
+/// Application settings identifier key (up to 16 ASCII bytes, e.g. "macropad").
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AppKey(pub [u8; 16]);
+
+impl AppKey {
+    /// Creates an `AppKey` from a string slice, padding with zeros up to 16 bytes.
+    #[must_use]
+    #[expect(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
+    pub const fn from_str(name: &str) -> Self {
+        let bytes = name.as_bytes();
+        let mut buffer = [0u8; 16];
+        let length = if bytes.len() > 16 { 16 } else { bytes.len() };
+        let mut index = 0;
+        while index < length {
+            buffer[index] = bytes[index];
+            index += 1;
+        }
+        Self(buffer)
+    }
+
+    /// Returns the string representation of the key.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        let length = self
+            .0
+            .iter()
+            .position(|&byte| byte == 0)
+            .unwrap_or(self.0.len());
+        let slice = self.0.get(..length).unwrap_or(&self.0);
+        core::str::from_utf8(slice).unwrap_or("<invalid-utf8>")
+    }
+}
+
+impl core::fmt::Display for AppKey {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+impl sequential_storage::map::Key for AppKey {
+    fn serialize_into(
+        &self,
+        buffer: &mut [u8],
+    ) -> Result<usize, sequential_storage::map::SerializationError> {
+        self.0.serialize_into(buffer)
+    }
+
+    fn deserialize_from(
+        buffer: &[u8],
+    ) -> Result<(Self, usize), sequential_storage::map::SerializationError> {
+        let (bytes, length) = <[u8; 16] as sequential_storage::map::Key>::deserialize_from(buffer)?;
+        Ok((Self(bytes), length))
+    }
+}
+
 /// Map key for Macropad key bindings.
-const KEY_MACROPAD: u8 = 1;
+pub const KEY_MACROPAD: AppKey = AppKey::from_str("macropad");
 
 /// Adapter bridging synchronous `embedded-storage` to asynchronous `embedded-storage-async`.
 pub struct BlockingAsync<T>(pub T);
@@ -60,55 +118,15 @@ impl<T: SyncNorFlash> NorFlash for BlockingAsync<T> {
 
 impl<T: SyncMultiwriteNorFlash> MultiwriteNorFlash for BlockingAsync<T> {}
 
-/// Configurable key binding for rotary or button input.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
-pub struct MacroBinding {
-    pub label: heapless::String<32>,
-    pub modifiers: u8,
-    pub usage: u8,
-}
+#[serde(transparent)]
+struct StoredMacropadSettings(pub MacropadSettings);
 
-/// Settings for the Macropad application.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
-pub struct MacropadSettings {
-    pub rotate_cw: MacroBinding,
-    pub rotate_ccw: MacroBinding,
-    pub press: MacroBinding,
-}
-
-impl PostcardValue<'_> for MacropadSettings {}
-
-impl Default for MacropadSettings {
-    fn default() -> Self {
-        let mut clockwise_label = heapless::String::new();
-        let _ = clockwise_label.push_str("Scroll Down");
-        let mut counter_clockwise_label = heapless::String::new();
-        let _ = counter_clockwise_label.push_str("Scroll Up");
-        let mut press_label = heapless::String::new();
-        let _ = press_label.push_str("Play/Pause");
-
-        Self {
-            rotate_cw: MacroBinding {
-                label: clockwise_label,
-                modifiers: 0,
-                usage: 0x51, // DOWN ARROW
-            },
-            rotate_ccw: MacroBinding {
-                label: counter_clockwise_label,
-                modifiers: 0,
-                usage: 0x52, // UP ARROW
-            },
-            press: MacroBinding {
-                label: press_label,
-                modifiers: 0,
-                usage: 0x2C, // SPACE
-            },
-        }
-    }
-}
+impl PostcardValue<'_> for StoredMacropadSettings {}
 
 /// In-memory cached Macropad settings for instant read access across cores/tasks.
-static CACHED_MACROPAD: Mutex<CriticalSectionRawMutex, Option<MacropadSettings>> = Mutex::new(None);
+static CACHED_MACROPAD: BlockingMutex<CriticalSectionRawMutex, RefCell<Option<MacropadSettings>>> =
+    BlockingMutex::new(RefCell::new(None));
 
 /// Hardware flash access mutex so concurrent operations don't collide.
 static FLASH_MUTEX: Mutex<CriticalSectionRawMutex, ()> = Mutex::new(());
@@ -124,44 +142,70 @@ pub async fn init() {
         Cache::new(
             ArrayPageStates::<4>::new(),
             ArrayPagePointers::<4>::new(),
-            ArrayKeyPointers::<u8, 4>::new(),
+            ArrayKeyPointers::<AppKey, 4>::new(),
         ),
     );
 
-    let mut buffer = [0u8; 256];
+    let mut buffer = [0u8; 2048];
     let loaded: Option<MacropadSettings> = match map_storage
-        .fetch_item::<MacropadSettings>(&mut buffer, &KEY_MACROPAD)
+        .fetch_item::<StoredMacropadSettings>(&mut buffer, &KEY_MACROPAD)
         .await
     {
-        Ok(Some(settings)) => {
-            log::info!("storage: loaded macropad settings from flash");
-            Some(settings)
+        Ok(Some(stored)) => {
+            log::info!("storage: loaded {KEY_MACROPAD} settings from flash");
+            Some(stored.0)
         }
         Ok(None) => {
-            log::info!("storage: no macropad settings found, writing defaults");
+            log::info!("storage: no {KEY_MACROPAD} settings found, writing defaults");
             let default_settings = MacropadSettings::default();
-            if let Err(e) = map_storage
-                .store_item(&mut buffer, &KEY_MACROPAD, &default_settings)
+            if let Err(error) = map_storage
+                .store_item(
+                    &mut buffer,
+                    &KEY_MACROPAD,
+                    &StoredMacropadSettings(default_settings.clone()),
+                )
                 .await
             {
-                log::error!("storage: failed to store default settings: {e:?}");
+                log::error!("storage: failed to store default {KEY_MACROPAD} settings: {error:?}");
             }
             Some(default_settings)
         }
-        Err(e) => {
-            log::warn!("storage: failed to fetch settings ({e:?}), using default");
-            Some(MacropadSettings::default())
+        Err(error) => {
+            log::warn!(
+                "storage: failed to fetch settings for '{KEY_MACROPAD}' ({error:?}), writing defaults"
+            );
+            let default_settings = MacropadSettings::default();
+            if let Err(heal_error) = map_storage
+                .store_item(
+                    &mut buffer,
+                    &KEY_MACROPAD,
+                    &StoredMacropadSettings(default_settings.clone()),
+                )
+                .await
+            {
+                log::error!(
+                    "storage: failed to heal {KEY_MACROPAD} settings in flash: {heal_error:?}"
+                );
+            }
+            Some(default_settings)
         }
     };
 
-    let mut cache = CACHED_MACROPAD.lock().await;
-    *cache = loaded;
+    CACHED_MACROPAD.lock(|cell| {
+        *cell.borrow_mut() = loaded;
+    });
+}
+
+/// Returns the current Macropad settings synchronously from in-memory cache.
+#[must_use]
+pub fn get_macropad_settings_sync() -> MacropadSettings {
+    CACHED_MACROPAD.lock(|cell| cell.borrow().clone().unwrap_or_default())
 }
 
 /// Returns the current Macropad settings from in-memory cache.
-pub async fn get_macropad_settings() -> MacropadSettings {
-    let cache = CACHED_MACROPAD.lock().await;
-    cache.clone().unwrap_or_default()
+#[must_use]
+pub fn get_macropad_settings() -> MacropadSettings {
+    get_macropad_settings_sync()
 }
 
 /// Persists updated Macropad settings to flash and updates in-memory cache.
@@ -179,23 +223,28 @@ pub async fn save_macropad_settings(settings: MacropadSettings) -> Result<(), &'
         Cache::new(
             ArrayPageStates::<4>::new(),
             ArrayPagePointers::<4>::new(),
-            ArrayKeyPointers::<u8, 4>::new(),
+            ArrayKeyPointers::<AppKey, 4>::new(),
         ),
     );
 
-    let mut buffer = [0u8; 256];
+    let mut buffer = [0u8; 2048];
     match map_storage
-        .store_item(&mut buffer, &KEY_MACROPAD, &settings)
+        .store_item(
+            &mut buffer,
+            &KEY_MACROPAD,
+            &StoredMacropadSettings(settings.clone()),
+        )
         .await
     {
         Ok(()) => {
-            log::info!("storage: successfully saved macropad settings to flash");
-            let mut cache = CACHED_MACROPAD.lock().await;
-            *cache = Some(settings);
+            log::info!("storage: successfully saved {KEY_MACROPAD} settings to flash");
+            CACHED_MACROPAD.lock(|cell| {
+                *cell.borrow_mut() = Some(settings);
+            });
             Ok(())
         }
-        Err(e) => {
-            log::error!("storage: failed to save macropad settings: {e:?}");
+        Err(error) => {
+            log::error!("storage: failed to save {KEY_MACROPAD} settings: {error:?}");
             Err("flash write failed")
         }
     }

@@ -165,6 +165,12 @@ impl<'a> StubFactory<'a> {
         self.manifest.touch = TouchAccess::Taps;
         self
     }
+
+    /// Makes this stub receive all gestures (swipes, taps, hold).
+    fn with_all_gestures_touch(mut self) -> StubFactory<'a> {
+        self.manifest.touch = TouchAccess::AllGestures;
+        self
+    }
 }
 
 impl AppFactory for StubFactory<'_> {

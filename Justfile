@@ -177,6 +177,8 @@ flash-log MARKER='boot: ready' TIMEOUT='20' TAIL='3': (build)
             expect {
                 "PANIC" {
                     send_user "\n*** panicked after '{{MARKER}}'\n"
+                    set timeout 2
+                    expect timeout {}
                     shutdown $pid 1
                 }
                 timeout {}

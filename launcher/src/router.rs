@@ -224,11 +224,29 @@ impl<'a> Router<'a> {
             // which with one level of navigation is the same place. The rest is
             // swallowed — apps do not see touch.
             View::App(_) => match gesture {
+                Gesture::Hold if self.app_wants_all_gestures() => {
+                    self.deliver(InputEvent::Hold, ctx)
+                }
+                Gesture::HoldProgress { progress_pct } if self.app_wants_all_gestures() => {
+                    self.deliver(InputEvent::HoldProgress(progress_pct), ctx)
+                }
+                Gesture::SwipeLeft if self.app_wants_all_gestures() => {
+                    self.deliver(InputEvent::Swipe(crate::app::SwipeDirection::Left), ctx)
+                }
+                Gesture::SwipeRight if self.app_wants_all_gestures() => {
+                    self.deliver(InputEvent::Swipe(crate::app::SwipeDirection::Right), ctx)
+                }
+                Gesture::SwipeUp if self.app_wants_all_gestures() => {
+                    self.deliver(InputEvent::Swipe(crate::app::SwipeDirection::Up), ctx)
+                }
+                Gesture::SwipeDown if self.app_wants_all_gestures() => {
+                    self.deliver(InputEvent::Swipe(crate::app::SwipeDirection::Down), ctx)
+                }
                 Gesture::SwipeUp | Gesture::SwipeLeft => self.go_home(),
                 Gesture::Tap { x, y } if self.app_wants_taps() => {
                     self.deliver(InputEvent::Tap { x, y }, ctx)
                 }
-                Gesture::SwipeDown | Gesture::SwipeRight | Gesture::Tap { .. } => false,
+                _ => false,
             },
         }
     }
@@ -256,14 +274,27 @@ impl<'a> Router<'a> {
         }
     }
 
-    /// Whether the app on screen asked for tap gestures.
-    fn app_wants_taps(&self) -> bool {
+    /// Whether the app on screen asked for all gestures.
+    fn app_wants_all_gestures(&self) -> bool {
         let View::App(index) = self.view else {
             return false;
         };
         self.factories
             .get(index)
-            .is_some_and(|factory| factory.manifest().touch == TouchAccess::Taps)
+            .is_some_and(|factory| factory.manifest().touch == TouchAccess::AllGestures)
+    }
+
+    /// Whether the app on screen asked for tap gestures.
+    fn app_wants_taps(&self) -> bool {
+        let View::App(index) = self.view else {
+            return false;
+        };
+        self.factories.get(index).is_some_and(|factory| {
+            matches!(
+                factory.manifest().touch,
+                TouchAccess::Taps | TouchAccess::AllGestures
+            )
+        })
     }
 
     /// Whether the app on screen asked for the raw panel.

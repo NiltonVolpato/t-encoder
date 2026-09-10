@@ -47,13 +47,17 @@ const SNTP_INTERVAL: Duration = Duration::from_secs(3_600);
 const SNTP_RETRY: Duration = Duration::from_secs(30);
 
 /// Number of concurrent Picoserve HTTP worker tasks.
-const WEB_TASK_POOL_SIZE: usize = 3;
+const WEB_TASK_POOL_SIZE: usize = 1;
 
-/// Socket pool capacity: DHCP + DNS + SNTP + 3 HTTP sockets + headroom.
-const SOCKETS: usize = 10;
+/// Socket pool capacity: DHCP + DNS + SNTP + 1 HTTP socket + headroom.
+const SOCKETS: usize = 6;
 
 static RESOURCES: StaticCell<StackResources<SOCKETS>> = StaticCell::new();
-static CONFIG: picoserve::Config = picoserve::Config::const_default();
+static CONFIG: picoserve::Config = picoserve::Config::new(picoserve::Timeouts {
+    write: Duration::from_secs(2),
+    read_request: Duration::from_secs(2),
+    ..picoserve::Timeouts::const_default()
+});
 
 /// Telemetry response returned by `/api/status`.
 #[derive(serde::Serialize)]
@@ -79,6 +83,14 @@ impl AppBuilder for App {
                 "/",
                 get_service(File::html(include_str!("../web/index.html"))),
             )
+            .route(
+                "/macropad",
+                get_service(File::html(include_str!("../web/macropad.html"))),
+            )
+            .route(
+                "/macropad.html",
+                get_service(File::html(include_str!("../web/macropad.html"))),
+            )
             .route("/favicon.ico", get(async || StatusCode::NO_CONTENT))
             .route(
                 "/api/status",
@@ -102,7 +114,7 @@ impl AppBuilder for App {
             .route(
                 "/api/macropad",
                 get(async || {
-                    let settings = crate::storage::get_macropad_settings().await;
+                    let settings = crate::storage::get_macropad_settings();
                     Json(settings)
                 })
                 .post(
@@ -189,6 +201,7 @@ async fn net_task(mut runner: Runner<'static, Interface<'static>>) -> ! {
 /// Drives Wi-Fi association and automatic reconnect.
 #[embassy_executor::task]
 async fn connection_task(mut controller: WifiController<'static>, state: &'static AppState) -> ! {
+    log::info!("net: starting connection task for SSID '{SSID}'");
     let config = WifiConfig::Station(
         StationConfig::default()
             .with_ssid(SSID)
@@ -200,16 +213,17 @@ async fn connection_task(mut controller: WifiController<'static>, state: &'stati
 
     loop {
         state.set_conn(ConnState::Connecting);
+        log::info!("net: connecting to '{SSID}'...");
         match controller.connect_async().await {
             Ok(_) => {
-                log::info!("net: associated to {SSID}");
+                log::info!("net: associated to '{SSID}'");
                 let _ = controller.wait_for_disconnect_async().await;
                 log::warn!("net: link lost");
                 state.set_conn(ConnState::Disconnected);
                 state.clear_ip();
             }
             Err(e) => {
-                log::warn!("net: connect failed: {e:?}");
+                log::warn!("net: connect to '{SSID}' failed: {e:?}");
                 state.set_conn(ConnState::Disconnected);
                 Timer::after(RETRY).await;
             }
@@ -279,6 +293,7 @@ async fn web_task(task_id: usize, stack: Stack<'static>, app: &'static AppRouter
     let mut transmit_buffer = [0u8; 1024];
     let mut http_buffer = [0u8; 2048];
 
+    #[expect(clippy::large_futures)]
     picoserve::Server::new(app, &CONFIG, &mut http_buffer)
         .listen_and_serve(
             task_id,

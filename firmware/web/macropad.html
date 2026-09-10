@@ -1,0 +1,1125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Macropad Configurator - T-Encoder Pro</title>
+  <style>
+    :root {
+      --bg: #090a0f;
+      --card: #12141c;
+      --card-alt: #181c26;
+      --border: #222634;
+      --text: #f1f5f9;
+      --subtext: #94a3b8;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --success: #10b981;
+      --accent: #8b5cf6;
+      --danger: #ef4444;
+      --radius: 12px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      line-height: 1.5;
+      padding: 24px 16px;
+      display: flex;
+      justify-content: center;
+    }
+    .container {
+      width: 100%;
+      max-width: 800px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .logo-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .logo {
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .logo-badge {
+      font-size: 0.75rem;
+      background: rgba(59, 130, 246, 0.15);
+      color: var(--primary);
+      padding: 2px 8px;
+      border-radius: 9999px;
+      font-weight: 600;
+    }
+    .nav-link {
+      color: var(--subtext);
+      text-decoration: none;
+      font-size: 0.85rem;
+      font-weight: 500;
+      transition: color 0.15s;
+    }
+    .nav-link:hover {
+      color: var(--text);
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+    }
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .card-title {
+      font-size: 1.05rem;
+      font-weight: 600;
+    }
+    .profile-tabs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    .tab-btn {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border);
+      color: var(--subtext);
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s;
+    }
+    .tab-btn:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text);
+    }
+    .tab-btn.active {
+      background: rgba(59, 130, 246, 0.18);
+      border-color: var(--primary);
+      color: var(--text);
+      font-weight: 600;
+    }
+    .active-badge {
+      font-size: 0.65rem;
+      background: var(--success);
+      color: #000;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 999px;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    .profile-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: var(--card-alt);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .profile-meta {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .profile-name-title {
+      font-size: 1rem;
+      font-weight: 600;
+    }
+    .profile-controls {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      font-weight: 500;
+      transition: all 0.15s;
+    }
+    .btn-secondary:hover:not(:disabled) {
+      background: rgba(255, 255, 255, 0.12);
+    }
+    .btn-secondary:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    .btn-danger {
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #fca5a5;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      font-weight: 500;
+      transition: all 0.15s;
+    }
+    .btn-danger:hover:not(:disabled) {
+      background: rgba(239, 68, 68, 0.3);
+      color: #fff;
+    }
+    .btn-danger:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    .actions-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      gap: 16px;
+    }
+    .action-card {
+      background: var(--card-alt);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .action-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .action-name {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+      font-size: 0.95rem;
+    }
+    .action-badge {
+      font-size: 0.7rem;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--subtext);
+    }
+    .field-label {
+      font-size: 0.75rem;
+      color: var(--subtext);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 4px;
+    }
+    input[type="text"] {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      width: 100%;
+    }
+    input[type="text"]:focus {
+      outline: none;
+      border-color: var(--primary);
+    }
+    .key-picker-trigger {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 12px;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: all 0.15s;
+    }
+    .key-picker-trigger:hover {
+      border-color: var(--primary);
+      background: rgba(59, 130, 246, 0.05);
+    }
+    .key-display {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #93c5fd;
+    }
+    .key-usage-code {
+      font-size: 0.75rem;
+      color: var(--subtext);
+    }
+    .modifiers {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+      font-size: 0.8rem;
+      color: var(--subtext);
+      padding-top: 4px;
+    }
+    .mod-check {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .mod-check input[type="checkbox"] {
+      cursor: pointer;
+    }
+    .footer-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+      margin-top: 20px;
+    }
+    .btn-save {
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      padding: 12px 28px;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn-save:hover {
+      background: var(--primary-hover);
+    }
+    .btn-save:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--success);
+      color: #fff;
+      padding: 12px 20px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+      opacity: 0;
+      transform: translateY(10px);
+      transition: all 0.25s;
+      pointer-events: none;
+      z-index: 1000;
+    }
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    /* Modal Picker */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(4px);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 999;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s;
+    }
+    .modal-overlay.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .modal {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      width: 90%;
+      max-width: 620px;
+      max-height: 85vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.8);
+    }
+    .modal-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .modal-title {
+      font-size: 1rem;
+      font-weight: 600;
+    }
+    .btn-close {
+      background: transparent;
+      border: none;
+      color: var(--subtext);
+      font-size: 1.25rem;
+      cursor: pointer;
+      line-height: 1;
+      padding: 4px;
+    }
+    .btn-close:hover {
+      color: var(--text);
+    }
+    .picker-category-tabs {
+      display: flex;
+      overflow-x: auto;
+      border-bottom: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.02);
+      padding: 0 10px;
+    }
+    .cat-btn {
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--subtext);
+      padding: 10px 14px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.15s;
+    }
+    .cat-btn:hover {
+      color: var(--text);
+    }
+    .cat-btn.active {
+      color: var(--primary);
+      border-bottom-color: var(--primary);
+      font-weight: 600;
+    }
+    .modal-body {
+      padding: 20px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .key-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+      gap: 8px;
+    }
+    .key-btn {
+      background: var(--card-alt);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 10px 6px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.12s;
+    }
+    .key-btn:hover {
+      background: rgba(59, 130, 246, 0.15);
+      border-color: var(--primary);
+      color: #93c5fd;
+    }
+    .key-btn-sub {
+      font-size: 0.65rem;
+      color: var(--subtext);
+    }
+    .custom-key-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="logo-group">
+        <div class="logo">T-Encoder Pro</div>
+        <span class="logo-badge">Macropad</span>
+      </div>
+      <a href="/" class="nav-link">← Device Dashboard</a>
+    </header>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Profiles</div>
+        <button class="btn-secondary" onclick="addNewProfile()">+ Add Profile</button>
+      </div>
+
+      <!-- Profiles Tab Bar -->
+      <div id="profile-tabs" class="profile-tabs"></div>
+
+      <!-- Selected Profile Controls -->
+      <div class="profile-bar">
+        <div class="profile-meta">
+          <span id="current-profile-title" class="profile-name-title">Loading...</span>
+          <span id="current-profile-badge" class="active-badge" style="display: none;">Active</span>
+        </div>
+        <div class="profile-controls">
+          <button id="btn-set-active" class="btn-secondary" onclick="setActiveProfile()">Set as Active on Device</button>
+          <button class="btn-secondary" onclick="renameProfile()">Rename</button>
+          <button id="btn-del-profile" class="btn-danger" onclick="deleteProfile()">Delete</button>
+        </div>
+      </div>
+
+      <!-- 8 Actions Grid -->
+      <div class="actions-grid">
+        <!-- 1. Rotate Clockwise -->
+        <div class="action-card" id="card-rotate_cw">
+          <div class="action-head">
+            <span class="action-name">↻ Rotate Clockwise</span>
+            <span class="action-badge">Knob CW</span>
+          </div>
+          <div>
+            <div class="field-label">Action Label</div>
+            <input type="text" id="action-label-rotate_cw" maxlength="24" placeholder="e.g. Scroll Down">
+          </div>
+          <div>
+            <div class="field-label">Assigned Key</div>
+            <div class="key-picker-trigger" onclick="openKeyPicker('rotate_cw')">
+              <span class="key-display" id="action-key-rotate_cw">None</span>
+              <span class="key-usage-code" id="action-code-rotate_cw">0x00</span>
+            </div>
+          </div>
+          <div class="modifiers">
+            <span>Modifiers:</span>
+            <label class="mod-check"><input type="checkbox" id="mod-rotate_cw-gui"> ⌘ Cmd</label>
+            <label class="mod-check"><input type="checkbox" id="mod-rotate_cw-alt"> ⌥ Option</label>
+            <label class="mod-check"><input type="checkbox" id="mod-rotate_cw-ctrl"> ⌃ Ctrl</label>
+            <label class="mod-check"><input type="checkbox" id="mod-rotate_cw-shift"> ⇧ Shift</label>
+          </div>
+        </div>
+
+        <!-- 2. Rotate Counter-Clockwise -->
+        <div class="action-card" id="card-rotate_ccw">
+          <div class="action-head">
+            <span class="action-name">↺ Rotate Counter-Clockwise</span>
+            <span class="action-badge">Knob CCW</span>
+          </div>
+          <div>
+            <div class="field-label">Action Label</div>
+            <input type="text" id="action-label-rotate_ccw" maxlength="24" placeholder="e.g. Scroll Up">
+          </div>
+          <div>
+            <div class="field-label">Assigned Key</div>
+            <div class="key-picker-trigger" onclick="openKeyPicker('rotate_ccw')">
+              <span class="key-display" id="action-key-rotate_ccw">None</span>
+              <span class="key-usage-code" id="action-code-rotate_ccw">0x00</span>
+            </div>
+          </div>
+          <div class="modifiers">
+            <span>Modifiers:</span>
+            <label class="mod-check"><input type="checkbox" id="mod-rotate_ccw-gui"> ⌘ Cmd</label>
+            <label class="mod-check"><input type="checkbox" id="mod-rotate_ccw-alt"> ⌥ Option</label>
+            <label class="mod-check"><input type="checkbox" id="mod-rotate_ccw-ctrl"> ⌃ Ctrl</label>
+            <label class="mod-check"><input type="checkbox" id="mod-rotate_ccw-shift"> ⇧ Shift</label>
+          </div>
+        </div>
+
+        <!-- 3. Dial Press -->
+        <div class="action-card" id="card-press">
+          <div class="action-head">
+            <span class="action-name">🔘 Dial Press</span>
+            <span class="action-badge">Short Press</span>
+          </div>
+          <div>
+            <div class="field-label">Action Label</div>
+            <input type="text" id="action-label-press" maxlength="24" placeholder="e.g. Play / Pause">
+          </div>
+          <div>
+            <div class="field-label">Assigned Key</div>
+            <div class="key-picker-trigger" onclick="openKeyPicker('press')">
+              <span class="key-display" id="action-key-press">None</span>
+              <span class="key-usage-code" id="action-code-press">0x00</span>
+            </div>
+          </div>
+          <div class="modifiers">
+            <span>Modifiers:</span>
+            <label class="mod-check"><input type="checkbox" id="mod-press-gui"> ⌘ Cmd</label>
+            <label class="mod-check"><input type="checkbox" id="mod-press-alt"> ⌥ Option</label>
+            <label class="mod-check"><input type="checkbox" id="mod-press-ctrl"> ⌃ Ctrl</label>
+            <label class="mod-check"><input type="checkbox" id="mod-press-shift"> ⇧ Shift</label>
+          </div>
+        </div>
+
+        <!-- 4. Touch Tap -->
+        <div class="action-card" id="card-tap">
+          <div class="action-head">
+            <span class="action-name">👆 Touch Tap</span>
+            <span class="action-badge">&lt; 300ms Touch</span>
+          </div>
+          <div>
+            <div class="field-label">Action Label</div>
+            <input type="text" id="action-label-tap" maxlength="24" placeholder="e.g. New Tab">
+          </div>
+          <div>
+            <div class="field-label">Assigned Key</div>
+            <div class="key-picker-trigger" onclick="openKeyPicker('tap')">
+              <span class="key-display" id="action-key-tap">None</span>
+              <span class="key-usage-code" id="action-code-tap">0x00</span>
+            </div>
+          </div>
+          <div class="modifiers">
+            <span>Modifiers:</span>
+            <label class="mod-check"><input type="checkbox" id="mod-tap-gui"> ⌘ Cmd</label>
+            <label class="mod-check"><input type="checkbox" id="mod-tap-alt"> ⌥ Option</label>
+            <label class="mod-check"><input type="checkbox" id="mod-tap-ctrl"> ⌃ Ctrl</label>
+            <label class="mod-check"><input type="checkbox" id="mod-tap-shift"> ⇧ Shift</label>
+          </div>
+        </div>
+
+        <!-- 5. Swipe Left -->
+        <div class="action-card" id="card-swipe_left">
+          <div class="action-head">
+            <span class="action-name">⬅️ Swipe Left</span>
+            <span class="action-badge">Swipe &gt; 220px</span>
+          </div>
+          <div>
+            <div class="field-label">Action Label</div>
+            <input type="text" id="action-label-swipe_left" maxlength="24" placeholder="e.g. Prev Track / Back">
+          </div>
+          <div>
+            <div class="field-label">Assigned Key</div>
+            <div class="key-picker-trigger" onclick="openKeyPicker('swipe_left')">
+              <span class="key-display" id="action-key-swipe_left">None</span>
+              <span class="key-usage-code" id="action-code-swipe_left">0x00</span>
+            </div>
+          </div>
+          <div class="modifiers">
+            <span>Modifiers:</span>
+            <label class="mod-check"><input type="checkbox" id="mod-swipe_left-gui"> ⌘ Cmd</label>
+            <label class="mod-check"><input type="checkbox" id="mod-swipe_left-alt"> ⌥ Option</label>
+            <label class="mod-check"><input type="checkbox" id="mod-swipe_left-ctrl"> ⌃ Ctrl</label>
+            <label class="mod-check"><input type="checkbox" id="mod-swipe_left-shift"> ⇧ Shift</label>
+          </div>
+        </div>
+
+        <!-- 6. Swipe Right -->
+        <div class="action-card" id="card-swipe_right">
+          <div class="action-head">
+            <span class="action-name">➡️ Swipe Right</span>
+            <span class="action-badge">Swipe &gt; 220px</span>
+          </div>
+          <div>
+            <div class="field-label">Action Label</div>
+            <input type="text" id="action-label-swipe_right" maxlength="24" placeholder="e.g. Next Track / Forward">
+          </div>
+          <div>
+            <div class="field-label">Assigned Key</div>
+            <div class="key-picker-trigger" onclick="openKeyPicker('swipe_right')">
+              <span class="key-display" id="action-key-swipe_right">None</span>
+              <span class="key-usage-code" id="action-code-swipe_right">0x00</span>
+            </div>
+          </div>
+          <div class="modifiers">
+            <span>Modifiers:</span>
+            <label class="mod-check"><input type="checkbox" id="mod-swipe_right-gui"> ⌘ Cmd</label>
+            <label class="mod-check"><input type="checkbox" id="mod-swipe_right-alt"> ⌥ Option</label>
+            <label class="mod-check"><input type="checkbox" id="mod-swipe_right-ctrl"> ⌃ Ctrl</label>
+            <label class="mod-check"><input type="checkbox" id="mod-swipe_right-shift"> ⇧ Shift</label>
+          </div>
+        </div>
+
+        <!-- 7. Swipe Up -->
+        <div class="action-card" id="card-swipe_up">
+          <div class="action-head">
+            <span class="action-name">⬆️ Swipe Up</span>
+            <span class="action-badge">Swipe &gt; 220px</span>
+          </div>
+          <div>
+            <div class="field-label">Action Label</div>
+            <input type="text" id="action-label-swipe_up" maxlength="24" placeholder="e.g. Close Tab / Max Vol">
+          </div>
+          <div>
+            <div class="field-label">Assigned Key</div>
+            <div class="key-picker-trigger" onclick="openKeyPicker('swipe_up')">
+              <span class="key-display" id="action-key-swipe_up">None</span>
+              <span class="key-usage-code" id="action-code-swipe_up">0x00</span>
+            </div>
+          </div>
+          <div class="modifiers">
+            <span>Modifiers:</span>
+            <label class="mod-check"><input type="checkbox" id="mod-swipe_up-gui"> ⌘ Cmd</label>
+            <label class="mod-check"><input type="checkbox" id="mod-swipe_up-alt"> ⌥ Option</label>
+            <label class="mod-check"><input type="checkbox" id="mod-swipe_up-ctrl"> ⌃ Ctrl</label>
+            <label class="mod-check"><input type="checkbox" id="mod-swipe_up-shift"> ⇧ Shift</label>
+          </div>
+        </div>
+
+        <!-- 8. Swipe Down -->
+        <div class="action-card" id="card-swipe_down">
+          <div class="action-head">
+            <span class="action-name">⬇️ Swipe Down</span>
+            <span class="action-badge">Swipe &gt; 220px</span>
+          </div>
+          <div>
+            <div class="field-label">Action Label</div>
+            <input type="text" id="action-label-swipe_down" maxlength="24" placeholder="e.g. Reopen Tab / Min Vol">
+          </div>
+          <div>
+            <div class="field-label">Assigned Key</div>
+            <div class="key-picker-trigger" onclick="openKeyPicker('swipe_down')">
+              <span class="key-display" id="action-key-swipe_down">None</span>
+              <span class="key-usage-code" id="action-code-swipe_down">0x00</span>
+            </div>
+          </div>
+          <div class="modifiers">
+            <span>Modifiers:</span>
+            <label class="mod-check"><input type="checkbox" id="mod-swipe_down-gui"> ⌘ Cmd</label>
+            <label class="mod-check"><input type="checkbox" id="mod-swipe_down-alt"> ⌥ Option</label>
+            <label class="mod-check"><input type="checkbox" id="mod-swipe_down-ctrl"> ⌃ Ctrl</label>
+            <label class="mod-check"><input type="checkbox" id="mod-swipe_down-shift"> ⇧ Shift</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer-actions">
+        <button id="btn-save" class="btn-save" onclick="saveAllSettings()">
+          <span>Save Changes to Flash</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Key Picker Modal -->
+  <div id="key-modal-overlay" class="modal-overlay" onclick="onOverlayClick(event)">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title" id="modal-target-title">Select Key</div>
+        <button class="btn-close" onclick="closeKeyPicker()">✕</button>
+      </div>
+      <div class="picker-category-tabs" id="picker-tabs"></div>
+      <div class="modal-body">
+        <div class="key-grid" id="key-grid"></div>
+        <div class="custom-key-row">
+          <span style="font-size: 0.8rem; color: var(--subtext); white-space: nowrap;">Direct Usage ID:</span>
+          <input type="text" id="custom-usage-input" placeholder="e.g. 0x2C or 44" style="max-width: 140px;">
+          <button class="btn-secondary" onclick="applyCustomUsage()">Apply Code</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast">Macropad settings saved to device!</div>
+
+  <script>
+    const CTRL = 0x01, SHIFT = 0x02, ALT = 0x04, GUI = 0x08;
+    const ACTIONS = ['rotate_cw', 'rotate_ccw', 'press', 'tap', 'swipe_left', 'swipe_right', 'swipe_up', 'swipe_down'];
+
+    // Comprehensive Key Library
+    const KEY_CATEGORIES = {
+      letters: {
+        title: "Letters",
+        keys: Array.from({ length: 26 }, (_, i) => {
+          const char = String.fromCharCode(65 + i);
+          return { name: char, usage: 0x04 + i };
+        })
+      },
+      numbers: {
+        title: "Numbers",
+        keys: [
+          ...Array.from({ length: 9 }, (_, i) => ({ name: String(i + 1), usage: 0x1E + i })),
+          { name: "0", usage: 0x27 }
+        ]
+      },
+      navigation: {
+        title: "Navigation",
+        keys: [
+          { name: "Up Arrow", usage: 0x52 },
+          { name: "Down Arrow", usage: 0x51 },
+          { name: "Left Arrow", usage: 0x50 },
+          { name: "Right Arrow", usage: 0x4F },
+          { name: "Page Up", usage: 0x4B },
+          { name: "Page Down", usage: 0x4E },
+          { name: "Home", usage: 0x4A },
+          { name: "End", usage: 0x4D }
+        ]
+      },
+      functions: {
+        title: "Function (F1-F12)",
+        keys: Array.from({ length: 12 }, (_, i) => ({ name: `F${i + 1}`, usage: 0x3A + i }))
+      },
+      special: {
+        title: "Editing & Special",
+        keys: [
+          { name: "Enter / Return", usage: 0x28 },
+          { name: "Escape", usage: 0x29 },
+          { name: "Backspace", usage: 0x2A },
+          { name: "Tab", usage: 0x2B },
+          { name: "Spacebar", usage: 0x2C },
+          { name: "Delete", usage: 0x4C },
+          { name: "Caps Lock", usage: 0x39 },
+          { name: "None (Unbound)", usage: 0x00 }
+        ]
+      },
+      symbols: {
+        title: "Symbols",
+        keys: [
+          { name: "- (Minus)", usage: 0x2D },
+          { name: "= (Equal)", usage: 0x2E },
+          { name: "[ (Left Bracket)", usage: 0x2F },
+          { name: "] (Right Bracket)", usage: 0x30 },
+          { name: "\\ (Backslash)", usage: 0x31 },
+          { name: "; (Semicolon)", usage: 0x33 },
+          { name: "' (Apostrophe)", usage: 0x34 },
+          { name: "` (Grave / Tilde)", usage: 0x35 },
+          { name: ", (Comma)", usage: 0x36 },
+          { name: ". (Period)", usage: 0x37 },
+          { name: "/ (Slash)", usage: 0x38 }
+        ]
+      },
+      media: {
+        title: "Volume & Media",
+        keys: [
+          { name: "Volume Up", usage: 0x80 },
+          { name: "Volume Down", usage: 0x81 },
+          { name: "Mute", usage: 0x7F }
+        ]
+      }
+    };
+
+    // Human readable lookup
+    function getUsageName(usage) {
+      if (usage === 0) return "None";
+      for (const cat of Object.values(KEY_CATEGORIES)) {
+        const found = cat.keys.find(k => k.usage === usage);
+        if (found) return found.name;
+      }
+      return `0x${usage.toString(16).toUpperCase().padStart(2, '0')}`;
+    }
+
+    // App State
+    let settings = {
+      profiles: [],
+      active_index: 0
+    };
+    let editingProfileIndex = 0;
+    let currentPickerAction = null;
+    let currentCategory = 'letters';
+
+    function initKeyCategories() {
+      const tabs = document.getElementById('picker-tabs');
+      tabs.innerHTML = '';
+      for (const [key, cat] of Object.entries(KEY_CATEGORIES)) {
+        const btn = document.createElement('button');
+        btn.className = `cat-btn ${key === currentCategory ? 'active' : ''}`;
+        btn.textContent = cat.title;
+        btn.onclick = () => selectCategory(key);
+        tabs.appendChild(btn);
+      }
+      renderKeyGrid();
+    }
+
+    function selectCategory(catKey) {
+      currentCategory = catKey;
+      document.querySelectorAll('.cat-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.textContent === KEY_CATEGORIES[catKey].title);
+      });
+      renderKeyGrid();
+    }
+
+    function renderKeyGrid() {
+      const grid = document.getElementById('key-grid');
+      grid.innerHTML = '';
+      const cat = KEY_CATEGORIES[currentCategory];
+      if (!cat) return;
+
+      for (const k of cat.keys) {
+        const btn = document.createElement('button');
+        btn.className = 'key-btn';
+        btn.onclick = () => selectKey(k.usage);
+        btn.innerHTML = `
+          <span>${k.name}</span>
+          <span class="key-btn-sub">0x${k.usage.toString(16).toUpperCase().padStart(2, '0')}</span>
+        `;
+        grid.appendChild(btn);
+      }
+    }
+
+    function openKeyPicker(actionName) {
+      currentPickerAction = actionName;
+      document.getElementById('modal-target-title').textContent = `Select Key for ${actionName.replace('_', ' ').toUpperCase()}`;
+      document.getElementById('custom-usage-input').value = '';
+      document.getElementById('key-modal-overlay').classList.add('open');
+    }
+
+    function closeKeyPicker() {
+      document.getElementById('key-modal-overlay').classList.remove('open');
+      currentPickerAction = null;
+    }
+
+    function onOverlayClick(e) {
+      if (e.target === document.getElementById('key-modal-overlay')) {
+        closeKeyPicker();
+      }
+    }
+
+    function selectKey(usage) {
+      if (!currentPickerAction) return;
+      const profile = settings.profiles[editingProfileIndex];
+      if (profile && profile[currentPickerAction]) {
+        profile[currentPickerAction].usage = usage;
+        updateActionCardUI(currentPickerAction, profile[currentPickerAction]);
+      }
+      closeKeyPicker();
+    }
+
+    function applyCustomUsage() {
+      const input = document.getElementById('custom-usage-input').value.trim();
+      if (!input) return;
+      let usage = 0;
+      if (input.startsWith('0x') || input.startsWith('0X')) {
+        usage = parseInt(input, 16);
+      } else {
+        usage = parseInt(input, 10);
+      }
+      if (isNaN(usage) || usage < 0 || usage > 255) {
+        alert('Please enter a valid HID Usage ID between 0 and 255 (0x00 - 0xFF).');
+        return;
+      }
+      selectKey(usage);
+    }
+
+    function renderProfileTabs() {
+      const container = document.getElementById('profile-tabs');
+      container.innerHTML = '';
+
+      settings.profiles.forEach((profile, idx) => {
+        const btn = document.createElement('button');
+        btn.className = `tab-btn ${idx === editingProfileIndex ? 'active' : ''}`;
+        
+        let label = profile.name || `Profile ${idx + 1}`;
+        btn.innerHTML = `<span>${label}</span>`;
+        if (idx === settings.active_index) {
+          const badge = document.createElement('span');
+          badge.className = 'active-badge';
+          badge.textContent = 'Active';
+          btn.appendChild(badge);
+        }
+        btn.onclick = () => selectProfile(idx);
+        container.appendChild(btn);
+      });
+
+      renderSelectedProfile();
+    }
+
+    function selectProfile(idx) {
+      syncCurrentFormToProfile();
+      editingProfileIndex = idx;
+      renderProfileTabs();
+    }
+
+    function renderSelectedProfile() {
+      const profile = settings.profiles[editingProfileIndex];
+      if (!profile) return;
+
+      document.getElementById('current-profile-title').textContent = profile.name || `Profile ${editingProfileIndex + 1}`;
+      const isActive = editingProfileIndex === settings.active_index;
+      document.getElementById('current-profile-badge').style.display = isActive ? 'inline-block' : 'none';
+      document.getElementById('btn-set-active').disabled = isActive;
+      document.getElementById('btn-del-profile').disabled = settings.profiles.length <= 1;
+
+      ACTIONS.forEach(action => {
+        const binding = profile[action] || { label: '', modifiers: 0, usage: 0 };
+        updateActionCardUI(action, binding);
+      });
+    }
+
+    function updateActionCardUI(action, binding) {
+      document.getElementById(`action-label-${action}`).value = binding.label || '';
+      document.getElementById(`action-key-${action}`).textContent = getUsageName(binding.usage);
+      document.getElementById(`action-code-${action}`).textContent = `0x${(binding.usage || 0).toString(16).toUpperCase().padStart(2, '0')}`;
+
+      const mod = binding.modifiers || 0;
+      document.getElementById(`mod-${action}-gui`).checked = !!(mod & GUI);
+      document.getElementById(`mod-${action}-alt`).checked = !!(mod & ALT);
+      document.getElementById(`mod-${action}-ctrl`).checked = !!(mod & CTRL);
+      document.getElementById(`mod-${action}-shift`).checked = !!(mod & SHIFT);
+    }
+
+    function syncCurrentFormToProfile() {
+      const profile = settings.profiles[editingProfileIndex];
+      if (!profile) return;
+
+      ACTIONS.forEach(action => {
+        if (!profile[action]) {
+          profile[action] = { label: '', modifiers: 0, usage: 0 };
+        }
+        profile[action].label = document.getElementById(`action-label-${action}`).value.trim().slice(0, 24);
+        let mod = 0;
+        if (document.getElementById(`mod-${action}-gui`).checked) mod |= GUI;
+        if (document.getElementById(`mod-${action}-alt`).checked) mod |= ALT;
+        if (document.getElementById(`mod-${action}-ctrl`).checked) mod |= CTRL;
+        if (document.getElementById(`mod-${action}-shift`).checked) mod |= SHIFT;
+        profile[action].modifiers = mod;
+      });
+    }
+
+    function setActiveProfile() {
+      settings.active_index = editingProfileIndex;
+      renderProfileTabs();
+      showToast(`Profile "${settings.profiles[editingProfileIndex].name}" is now active.`);
+    }
+
+    function addNewProfile() {
+      if (settings.profiles.length >= 8) {
+        alert('Maximum of 8 profiles supported.');
+        return;
+      }
+      const name = prompt('Enter a name for the new profile:', `Profile ${settings.profiles.length + 1}`);
+      if (!name) return;
+
+      syncCurrentFormToProfile();
+      const newProfile = {
+        name: name.trim().slice(0, 24),
+        rotate_cw: { label: "Next", modifiers: 0, usage: 0x4F },
+        rotate_ccw: { label: "Prev", modifiers: 0, usage: 0x50 },
+        press: { label: "Action", modifiers: 0, usage: 0x28 },
+        tap: { label: "Tap", modifiers: 0, usage: 0x2C },
+        swipe_left: { label: "Back", modifiers: 0, usage: 0x50 },
+        swipe_right: { label: "Forward", modifiers: 0, usage: 0x4F },
+        swipe_up: { label: "Up", modifiers: 0, usage: 0x52 },
+        swipe_down: { label: "Down", modifiers: 0, usage: 0x51 }
+      };
+
+      settings.profiles.push(newProfile);
+      editingProfileIndex = settings.profiles.length - 1;
+      renderProfileTabs();
+    }
+
+    function renameProfile() {
+      const profile = settings.profiles[editingProfileIndex];
+      if (!profile) return;
+      const newName = prompt('Enter new profile name:', profile.name);
+      if (newName && newName.trim()) {
+        profile.name = newName.trim().slice(0, 24);
+        renderProfileTabs();
+      }
+    }
+
+    function deleteProfile() {
+      if (settings.profiles.length <= 1) {
+        alert('You must have at least one profile.');
+        return;
+      }
+      const profile = settings.profiles[editingProfileIndex];
+      if (!confirm(`Are you sure you want to delete profile "${profile.name}"?`)) return;
+
+      settings.profiles.splice(editingProfileIndex, 1);
+      if (settings.active_index >= settings.profiles.length) {
+        settings.active_index = 0;
+      } else if (editingProfileIndex < settings.active_index) {
+        settings.active_index--;
+      }
+      editingProfileIndex = Math.min(editingProfileIndex, settings.profiles.length - 1);
+      renderProfileTabs();
+    }
+
+    async function loadSettings() {
+      try {
+        const res = await fetch('/api/macropad');
+        if (!res.ok) throw new Error('Failed to fetch settings');
+        const data = await res.json();
+        if (data && Array.isArray(data.profiles) && data.profiles.length > 0) {
+          settings = data;
+        } else {
+          // Defaults if empty
+          settings = {
+            profiles: [
+              {
+                name: "Web Browser",
+                rotate_cw: { label: "Scroll Down", modifiers: 0, usage: 0x51 },
+                rotate_ccw: { label: "Scroll Up", modifiers: 0, usage: 0x52 },
+                press: { label: "Reload", modifiers: GUI, usage: 0x15 },
+                tap: { label: "New Tab", modifiers: GUI, usage: 0x17 },
+                swipe_left: { label: "Back", modifiers: GUI, usage: 0x2F },
+                swipe_right: { label: "Forward", modifiers: GUI, usage: 0x30 },
+                swipe_up: { label: "Close Tab", modifiers: GUI, usage: 0x1A },
+                swipe_down: { label: "Reopen Tab", modifiers: GUI | SHIFT, usage: 0x17 }
+              }
+            ],
+            active_index: 0
+          };
+        }
+        editingProfileIndex = Math.min(settings.active_index || 0, settings.profiles.length - 1);
+        renderProfileTabs();
+      } catch (e) {
+        console.error('Error loading macropad settings:', e);
+        showToast('Error loading settings from device.');
+      }
+    }
+
+    async function saveAllSettings() {
+      syncCurrentFormToProfile();
+      const btn = document.getElementById('btn-save');
+      btn.disabled = true;
+      btn.textContent = 'Saving...';
+
+      try {
+        const res = await fetch('/api/macropad', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(settings)
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const success = await res.json();
+        if (success) {
+          showToast('Settings successfully saved to flash!');
+        } else {
+          throw new Error('Flash write returned failure');
+        }
+      } catch (err) {
+        alert('Failed to save settings to flash: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<span>Save Changes to Flash</span>';
+      }
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      toast.textContent = msg;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 3000);
+    }
+
+    // Init
+    initKeyCategories();
+    loadSettings();
+  </script>
+</body>
+</html>

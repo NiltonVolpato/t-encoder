@@ -6,11 +6,11 @@
 
 import { Launcher, CardData } from "launcher.slint";
 import { Pomodoro, PomodoroState } from "apps/pomodoro.slint";
-import { Macropad, MacropadState, MacroEntry } from "apps/macropad.slint";
+import { Macropad, MacropadState } from "apps/macropad.slint";
 import { Simon, SimonState } from "apps/simon.slint";
 import { Magic8, Magic8State } from "apps/magic8.slint";
 
-export { CardData, PomodoroState, MacropadState, MacroEntry, SimonState, Magic8State }
+export { CardData, PomodoroState, MacropadState, SimonState, Magic8State }
 
 // Which screen is live: `launcher::ViewId`, published verbatim by the host.
 // 0 is the launcher; every app claims its own id in its `Manifest`. An int

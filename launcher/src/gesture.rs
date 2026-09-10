@@ -42,6 +42,13 @@ pub enum Gesture {
     SwipeUp,
     /// Dragged top-to-bottom across the panel.
     SwipeDown,
+    /// Hold progress reported while finger is held stationary (0..100%).
+    HoldProgress {
+        /// Progress percentage from 300ms (0%) to 600ms (100%).
+        progress_pct: u8,
+    },
+    /// Stationary touch hold completed (600ms).
+    Hold,
 }
 
 /// Travel along the dominant axis before a drag counts as a swipe: 220 px of
@@ -85,6 +92,12 @@ const TAP_MAX_WANDER: i32 = 16;
 /// settling, not a new gesture.
 const PHANTOM_GRACE_MS: u64 = 250;
 
+/// Time before a stationary touch begins reporting hold progress.
+pub const HOLD_START_MS: u64 = 300;
+
+/// Time at which a stationary touch completes as a Hold gesture.
+pub const HOLD_COMPLETE_MS: u64 = 600;
+
 /// Whether a reported point is actually on the panel.
 ///
 /// The controller's coordinate registers are 12-bit and can read back garbage —
@@ -114,6 +127,10 @@ struct Stroke {
     /// Set when the stroke overlaps an encoder press. Pressing the encoder
     /// registers a phantom touch, and a phantom must never navigate.
     suppressed: bool,
+    /// Whether the Hold gesture has already been emitted for this stroke.
+    hold_emitted: bool,
+    /// Last progress percentage reported for hold (0..100).
+    last_progress_pct: Option<u8>,
 }
 
 impl Stroke {
@@ -130,6 +147,8 @@ impl Stroke {
             path: 0,
             wander: 0,
             suppressed,
+            hold_emitted: false,
+            last_progress_pct: None,
         }
     }
 
@@ -207,8 +226,38 @@ impl Recognizer {
                 None
             }
             TouchEvent::Move => {
-                if let Some(stroke) = self.stroke.as_mut() {
-                    stroke.reached(x, y);
+                let stroke = self.stroke.as_mut()?;
+                stroke.reached(x, y);
+                if stroke.suppressed || stroke.hold_emitted {
+                    return None;
+                }
+                if stroke.wander <= TAP_MAX_WANDER {
+                    let elapsed = sample.at_ms.saturating_sub(stroke.start_ms);
+                    if elapsed >= HOLD_COMPLETE_MS {
+                        stroke.hold_emitted = true;
+                        stroke.last_progress_pct = Some(100);
+                        return Some(Gesture::Hold);
+                    }
+                    if elapsed >= HOLD_START_MS {
+                        let span = HOLD_COMPLETE_MS.saturating_sub(HOLD_START_MS);
+                        let progress = if span > 0 {
+                            elapsed
+                                .saturating_sub(HOLD_START_MS)
+                                .saturating_mul(100)
+                                .checked_div(span)
+                                .unwrap_or(0)
+                        } else {
+                            100
+                        };
+                        let progress_pct = u8::try_from(progress.min(100)).unwrap_or(100);
+                        if stroke.last_progress_pct != Some(progress_pct) {
+                            stroke.last_progress_pct = Some(progress_pct);
+                            return Some(Gesture::HoldProgress { progress_pct });
+                        }
+                    }
+                } else if stroke.last_progress_pct.is_some_and(|p| p > 0) {
+                    stroke.last_progress_pct = Some(0);
+                    return Some(Gesture::HoldProgress { progress_pct: 0 });
                 }
                 None
             }
@@ -218,8 +267,11 @@ impl Recognizer {
                 let mut stroke = self.stroke.take()?;
                 stroke.reached(x, y);
                 stroke.closed(x, y);
-                if stroke.suppressed {
+                if stroke.suppressed || stroke.hold_emitted {
                     return None;
+                }
+                if stroke.last_progress_pct.is_some_and(|p| p > 0) {
+                    return Some(Gesture::HoldProgress { progress_pct: 0 });
                 }
                 let gesture = classify(&stroke, x, y, sample.at_ms);
                 if let Some(ref g) = gesture {

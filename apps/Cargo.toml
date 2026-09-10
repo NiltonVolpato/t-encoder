@@ -19,7 +19,8 @@ slint = { version = "1.17.1", default-features = false, features = [
     "renderer-software",
 ] }
 embedded-graphics = { workspace = true }
-heapless = { workspace = true }
+heapless = { workspace = true, features = ["serde"] }
+serde = { version = "1.0", default-features = false, features = ["derive"] }
 
 [lints]
 workspace = true

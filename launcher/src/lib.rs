@@ -20,7 +20,7 @@ mod router;
 
 pub use app::{
     Action, App, AppFactory, Ctx, Feedback, IconId, InputEvent, KeyChord, Manifest, Outcome,
-    TouchAccess, ViewId,
+    SwipeDirection, TouchAccess, ViewId,
 };
 pub use carousel::Carousel;
 pub use enc_touch::{TouchEvent, TouchPoint};

@@ -279,7 +279,10 @@ impl Device {
             apps::PomodoroFactory::new(slint_ui.shell().as_weak()),
         ));
         let macropad: &'static dyn AppFactory = alloc::boxed::Box::leak(alloc::boxed::Box::new(
-            apps::MacropadFactory::new(slint_ui.shell().as_weak()),
+            apps::MacropadFactory::with_settings_getter(
+                slint_ui.shell().as_weak(),
+                crate::storage::get_macropad_settings_sync,
+            ),
         ));
         let simon: &'static dyn AppFactory = alloc::boxed::Box::leak(alloc::boxed::Box::new(
             apps::SimonFactory::new(slint_ui.shell().as_weak()),

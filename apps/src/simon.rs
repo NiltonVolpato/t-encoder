@@ -415,7 +415,10 @@ impl App for Simon {
                 }
                 _ => Outcome::NONE,
             },
-            InputEvent::Rotate(_) => Outcome::NONE,
+            InputEvent::Rotate(_)
+            | InputEvent::Swipe(_)
+            | InputEvent::HoldProgress(_)
+            | InputEvent::Hold => Outcome::NONE,
         }
     }
 
