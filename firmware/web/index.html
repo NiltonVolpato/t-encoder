@@ -259,6 +259,14 @@
           <div class="stat-label">Free Heap</div>
           <div class="stat-value" id="stat-heap">--</div>
         </div>
+        <div class="stat-box">
+          <div class="stat-label">Core 0 (Net/Sys)</div>
+          <div class="stat-value" id="stat-cpu0">--</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Core 1 (UI/Display)</div>
+          <div class="stat-value" id="stat-cpu1">--</div>
+        </div>
       </div>
     </div>
 
@@ -406,6 +414,8 @@
         document.getElementById('stat-uptime').textContent = formatUptime(data.uptime_secs || 0);
         document.getElementById('stat-ble').textContent = data.ble_linked ? 'Connected' : (data.ble_active ? 'Advertising' : 'Dormant');
         document.getElementById('stat-heap').textContent = `${Math.round((data.heap_free || 0) / 1024)} KiB`;
+        document.getElementById('stat-cpu0').textContent = `${data.cpu0_usage ?? 0}%`;
+        document.getElementById('stat-cpu1').textContent = `${data.cpu1_usage ?? 0}%`;
       } catch (e) {
         console.warn('telemetry err:', e);
       }

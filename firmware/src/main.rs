@@ -19,6 +19,7 @@ extern crate alloc;
 #[cfg(feature = "radio")]
 mod ble;
 mod buzzer;
+pub mod cpu_metrics;
 mod display;
 mod event;
 mod heap;
@@ -158,10 +159,13 @@ fn core1_entry(peripherals: Core1Peripherals) -> ! {
     static CORE1_EXECUTOR: static_cell::StaticCell<esp_rtos::embassy::Executor> =
         static_cell::StaticCell::new();
     let executor = CORE1_EXECUTOR.init(esp_rtos::embassy::Executor::new());
-    executor.run(|spawner| match core1_task(spawner, peripherals) {
-        Ok(token) => spawner.spawn(token),
-        Err(_) => log::error!("core1: failed to spawn core1_task"),
-    })
+    executor.run_with_callbacks(
+        |spawner| match core1_task(spawner, peripherals) {
+            Ok(token) => spawner.spawn(token),
+            Err(_) => log::error!("core1: failed to spawn core1_task"),
+        },
+        cpu_metrics::CoreTracker::new(&cpu_metrics::CPU1_USAGE),
+    )
 }
 
 /// Main async task on Core 1 owning display, touch, encoder, and UI rendering loop.
@@ -459,8 +463,70 @@ impl Device {
     }
 }
 
-#[esp_rtos::main]
-async fn main(spawner: Spawner) -> ! {
+/// Context and peripherals passed to Core 0 main async task.
+struct Core0Parts {
+    cpu_ctrl: esp_hal::peripherals::CPU_CTRL<'static>,
+    sw_int1: esp_hal::interrupt::software::SoftwareInterrupt<'static, 1>,
+    core1_peripherals: Core1Peripherals,
+    rx: esp_hal::usb_serial_jtag::UsbSerialJtagRx<'static, esp_hal::Async>,
+    tx: esp_hal::usb_serial_jtag::UsbSerialJtagTx<'static, esp_hal::Async>,
+    wifi: esp_hal::peripherals::WIFI<'static>,
+    bt: esp_hal::peripherals::BT<'static>,
+    rng: esp_hal::peripherals::RNG<'static>,
+    adc1: esp_hal::peripherals::ADC1<'static>,
+}
+
+#[embassy_executor::task]
+async fn core0_task(spawner: Spawner, parts: Core0Parts) {
+    if let Ok(token) = serial::tx_task(parts.tx) {
+        spawner.spawn(token);
+    }
+    if let Ok(token) = serial::rx_task(parts.rx) {
+        spawner.spawn(token);
+    }
+
+    // Initialize flash settings storage on Core 0 before starting second core.
+    storage::init().await;
+
+    // Start Core 1 (AppCpu) thread.
+    esp_rtos::start_second_core::<APP_CORE_STACK_SIZE>(
+        parts.cpu_ctrl,
+        parts.sw_int1,
+        unsafe { &mut *core::ptr::addr_of_mut!(APP_CORE_STACK) },
+        move || {
+            core1_entry(parts.core1_peripherals);
+        },
+    );
+
+    // Wi-Fi STA + embassy-net and BLE HID keyboard on Core 0.
+    let (_stack, _radio_guard) = radio::start(
+        spawner,
+        radio::Parts {
+            wifi: parts.wifi,
+            bt: parts.bt,
+            rng: parts.rng,
+            adc1: parts.adc1,
+        },
+    );
+    log::info!(
+        "heap: internal free={} used={} | psram free={} used={}",
+        esp_alloc::HEAP.free(),
+        esp_alloc::HEAP.used(),
+        heap::PSRAM_HEAP.free(),
+        heap::PSRAM_HEAP.used(),
+    );
+
+    // Core 0 loop: ticks every 1s to keep _radio_guard alive and prevent cycle overflow.
+    loop {
+        Timer::after(Duration::from_secs(1)).await;
+    }
+}
+
+static CORE0_EXECUTOR: static_cell::StaticCell<esp_rtos::embassy::Executor> =
+    static_cell::StaticCell::new();
+
+#[esp_hal::main]
+fn main() -> ! {
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
 
@@ -508,7 +574,7 @@ async fn main(spawner: Spawner) -> ! {
     let Some(fb_buf) = framebuffer else {
         log::error!("boot: framebuffer unavailable, idling");
         loop {
-            Timer::after(Duration::from_secs(5)).await;
+            core::hint::spin_loop();
         }
     };
 
@@ -516,14 +582,6 @@ async fn main(spawner: Spawner) -> ! {
     let usb_serial =
         esp_hal::usb_serial_jtag::UsbSerialJtag::new(peripherals.USB_DEVICE).into_async();
     let (rx, tx) = usb_serial.split();
-    match serial::tx_task(tx) {
-        Ok(token) => spawner.spawn(token),
-        Err(_) => log::error!("boot: failed to spawn serial tx task"),
-    }
-    match serial::rx_task(rx) {
-        Ok(token) => spawner.spawn(token),
-        Err(_) => log::error!("boot: failed to spawn serial rx task"),
-    }
 
     // Hand HMI, display, and UI peripherals across to Core 1.
     let core1_peripherals = Core1Peripherals {
@@ -551,39 +609,24 @@ async fn main(spawner: Spawner) -> ! {
         fb_buf,
     };
 
-    // Initialize flash settings storage on Core 0 before starting second core.
-    storage::init().await;
+    let parts = Core0Parts {
+        cpu_ctrl: peripherals.CPU_CTRL,
+        sw_int1: sw_int.software_interrupt1,
+        core1_peripherals,
+        rx,
+        tx,
+        wifi: peripherals.WIFI,
+        bt: peripherals.BT,
+        rng: peripherals.RNG,
+        adc1: peripherals.ADC1,
+    };
 
-    // Start Core 1 (AppCpu) thread.
-    esp_rtos::start_second_core::<APP_CORE_STACK_SIZE>(
-        peripherals.CPU_CTRL,
-        sw_int.software_interrupt1,
-        unsafe { &mut *core::ptr::addr_of_mut!(APP_CORE_STACK) },
-        move || {
-            core1_entry(core1_peripherals);
+    let executor = CORE0_EXECUTOR.init(esp_rtos::embassy::Executor::new());
+    executor.run_with_callbacks(
+        |spawner| match core0_task(spawner, parts) {
+            Ok(token) => spawner.spawn(token),
+            Err(_) => log::error!("boot: failed to spawn core0_task"),
         },
+        cpu_metrics::CoreTracker::new(&cpu_metrics::CPU0_USAGE),
     );
-
-    // Wi-Fi STA + embassy-net and BLE HID keyboard on Core 0.
-    let (_stack, _radio_guard) = radio::start(
-        spawner,
-        radio::Parts {
-            wifi: peripherals.WIFI,
-            bt: peripherals.BT,
-            rng: peripherals.RNG,
-            adc1: peripherals.ADC1,
-        },
-    );
-    log::info!(
-        "heap: internal free={} used={} | psram free={} used={}",
-        esp_alloc::HEAP.free(),
-        esp_alloc::HEAP.used(),
-        heap::PSRAM_HEAP.free(),
-        heap::PSRAM_HEAP.used(),
-    );
-
-    // Core 0 loop: keeps _radio_guard alive.
-    loop {
-        Timer::after(Duration::from_secs(3600)).await;
-    }
 }

@@ -63,6 +63,8 @@ struct StatusResponse<'a> {
     ip: heapless::String<16>,
     ble_linked: bool,
     heap_free: usize,
+    cpu0_usage: u8,
+    cpu1_usage: u8,
 }
 
 /// Picoserve Application definition.
@@ -91,6 +93,8 @@ impl AppBuilder for App {
                         ip: ip_str,
                         ble_linked: crate::radio::ble_linked(),
                         heap_free: esp_alloc::HEAP.free(),
+                        cpu0_usage: crate::cpu_metrics::cpu0_usage_pct(),
+                        cpu1_usage: crate::cpu_metrics::cpu1_usage_pct(),
                     };
                     Json(status)
                 }),
