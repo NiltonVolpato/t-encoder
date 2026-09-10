@@ -133,10 +133,15 @@ pub fn start(
         }
     };
 
+    let mut dhcp_config = embassy_net::DhcpConfig::default();
+    let mut hostname = heapless::String::new();
+    let _ = hostname.push_str("t-encoder");
+    dhcp_config.hostname = Some(hostname);
+
     let resources = RESOURCES.init(StackResources::new());
     let (stack, runner) = embassy_net::new(
         interfaces.station,
-        NetConfig::dhcpv4(embassy_net::DhcpConfig::default()),
+        NetConfig::dhcpv4(dhcp_config),
         resources,
         seed,
     );

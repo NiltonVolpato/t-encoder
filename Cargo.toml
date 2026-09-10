@@ -73,7 +73,7 @@ bt-hci = "0.8"
 trouble-host = { version = "0.6", default-features = false, features = ["peripheral", "gatt", "security", "default-packet-pool", "default-packet-pool-mtu-255"] }
 
 # --- Networking -----------------------------------------------------------
-embassy-net = { version = "0.9.1", features = ["dhcpv4", "dns", "medium-ethernet", "tcp", "udp"] }
+embassy-net = { version = "0.9.1", features = ["dhcpv4", "dhcpv4-hostname", "dns", "medium-ethernet", "tcp", "udp"] }
 
 # --- Storage --------------------------------------------------------------
 esp-storage = { version = "0.7", features = ["esp32s3"] }
