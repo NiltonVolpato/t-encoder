@@ -1,5 +1,6 @@
 //! Serial communication task over native USB-Serial/JTAG using NDJSON.
 
+use alloc::boxed::Box;
 use alloc::string::ToString;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
@@ -14,8 +15,11 @@ pub enum TxMessage {
     Event(DeviceEvent),
     /// Response to a command.
     Response(CommandResponse),
-    /// Framebuffer capture streaming request.
-    Screenshot,
+    /// Framebuffer capture streaming request holding snapshot data.
+    ///
+    /// Latency note: ~98.6 ms round-trip vs ~55.5 ms with raw slice streaming.
+    /// Deferred optimizations: Core 1 RLE compression (Option 1) or Mutex lock (Option 2).
+    Screenshot(Box<[u8; ui::FRAMEBUFFER_BYTES]>),
 }
 
 /// Channel queuing outgoing messages for the serial transmitter task.
@@ -257,23 +261,8 @@ pub async fn tx_task(mut tx: UsbSerialJtagTx<'static, esp_hal::Async>) {
     loop {
         let msg = TX_CHANNEL.receive().await;
         match msg {
-            TxMessage::Screenshot => {
-                if let Some(fb) = crate::heap::framebuffer_slice() {
-                    stream_screenshot_base64(&mut tx, fb);
-                } else {
-                    let err = DeviceMessage::Response(CommandResponse {
-                        ok: false,
-                        ts_us: embassy_time::Instant::now().as_micros(),
-                        error: Some("framebuffer unavailable".to_string()),
-                    });
-                    json_buf.clear();
-                    if let Ok(s) = serde_json::to_string(&err) {
-                        json_buf.push_str(&s);
-                        json_buf.push('\n');
-                        let _ = tx.write_all(json_buf.as_bytes()).await;
-                        let _ = tx.flush().await;
-                    }
-                }
+            TxMessage::Screenshot(framebuffer) => {
+                stream_screenshot_base64(&mut tx, &framebuffer[..]);
             }
             TxMessage::Log(rec) => {
                 let dev_msg = DeviceMessage::Log(rec);
@@ -345,7 +334,7 @@ async fn handle_command(line: &str) {
             }));
         }
         Ok(IncomingCommand::Screenshot) => {
-            TX_CHANNEL.send(TxMessage::Screenshot).await;
+            crate::event::send(crate::event::Event::Screenshot);
         }
         Ok(IncomingCommand::Reset) => {
             TX_CHANNEL

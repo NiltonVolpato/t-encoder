@@ -32,6 +32,7 @@ mod serial;
 pub mod storage;
 mod touch;
 
+use alloc::boxed::Box;
 use buzzer::Feedback;
 use embassy_executor::Spawner;
 use embassy_futures::select::{Either, select};
@@ -39,7 +40,6 @@ use embassy_time::{Duration, Instant, Timer};
 use esp_hal::clock::CpuClock;
 use esp_hal::gpio::{Input, InputConfig, Pull};
 use esp_hal::interrupt::software::SoftwareInterruptControl;
-use esp_hal::psram;
 use esp_hal::system::Stack;
 use esp_hal::timer::timg::TimerGroup;
 use event::{EVENTS, Event};
@@ -48,9 +48,6 @@ use slint::ComponentHandle;
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
-/// Framebuffer size (mirrors `enc_config::display`); the panel's own width and
-/// height live in `display::Display`, which does the clipping.
-const DISPLAY_BYTES: usize = enc_config::display::FRAMEBUFFER_BYTES;
 /// Device uptime in milliseconds, for the launcher's animation clock.
 fn now_ms() -> u64 {
     Instant::now().as_millis()
@@ -151,7 +148,7 @@ struct Core1Peripherals {
     gpio13: esp_hal::peripherals::GPIO13<'static>,
     gpio14: esp_hal::peripherals::GPIO14<'static>,
     gpio17: esp_hal::peripherals::GPIO17<'static>,
-    fb_buf: &'static mut [u8],
+    framebuffer: Box<[u8; enc_config::display::FRAMEBUFFER_BYTES]>,
 }
 
 /// Entry point for the Core 1 (`AppCpu`) thread.
@@ -263,8 +260,10 @@ impl Device {
             }
         };
 
+        let framebuffer = Box::leak(peripherals.framebuffer);
+
         // Slint UI.
-        let slint_ui = match ui::Ui::new(peripherals.fb_buf) {
+        let slint_ui = match ui::Ui::new(framebuffer) {
             Ok(slint_ui) => slint_ui,
             Err(e) => {
                 log::error!("ui: Slint init failed: {e}");
@@ -275,23 +274,22 @@ impl Device {
         };
 
         // App registry & Router.
-        let pomodoro: &'static dyn AppFactory = alloc::boxed::Box::leak(alloc::boxed::Box::new(
-            apps::PomodoroFactory::new(slint_ui.shell().as_weak()),
-        ));
-        let macropad: &'static dyn AppFactory = alloc::boxed::Box::leak(alloc::boxed::Box::new(
-            apps::MacropadFactory::with_settings_getter(
+        let pomodoro: &'static dyn AppFactory = Box::leak(Box::new(apps::PomodoroFactory::new(
+            slint_ui.shell().as_weak(),
+        )));
+        let macropad: &'static dyn AppFactory =
+            Box::leak(Box::new(apps::MacropadFactory::with_settings_getter(
                 slint_ui.shell().as_weak(),
                 crate::storage::get_macropad_settings_sync,
-            ),
-        ));
-        let simon: &'static dyn AppFactory = alloc::boxed::Box::leak(alloc::boxed::Box::new(
-            apps::SimonFactory::new(slint_ui.shell().as_weak()),
-        ));
-        let magic8: &'static dyn AppFactory = alloc::boxed::Box::leak(alloc::boxed::Box::new(
-            apps::Magic8Factory::new(slint_ui.shell().as_weak()),
-        ));
+            )));
+        let simon: &'static dyn AppFactory = Box::leak(Box::new(apps::SimonFactory::new(
+            slint_ui.shell().as_weak(),
+        )));
+        let magic8: &'static dyn AppFactory = Box::leak(Box::new(apps::Magic8Factory::new(
+            slint_ui.shell().as_weak(),
+        )));
         let registry: &'static [&'static dyn AppFactory] =
-            alloc::boxed::Box::leak(alloc::boxed::Box::new([pomodoro, macropad, simon, magic8]));
+            Box::leak(Box::new([pomodoro, macropad, simon, magic8]));
         let router = Router::new(registry, launcher::default_carousel(0));
 
         slint_ui.shell().set_cards(app_cards(router.factories()));
@@ -363,6 +361,16 @@ impl Device {
                     self.router.handle(launcher::Input::LongPress, &ctx)
                 }
                 Event::Gesture(gesture) => self.router.handle_gesture(gesture, &ctx),
+                Event::Screenshot => {
+                    // Takes a snapshot copy in PSRAM and queues to Core 0.
+                    // Latency note: round-trip is ~98.6 ms (vs ~55.5 ms with direct unsynchronized read).
+                    // See ui::Ui::snapshot doc for measured data and Option 1 (Core 1 RLE) / Option 2 (Mutex) plans.
+                    let snapshot = self.slint_ui.snapshot();
+                    serial::TX_CHANNEL
+                        .send(serial::TxMessage::Screenshot(snapshot))
+                        .await;
+                    false
+                }
             };
 
             drew_frame = self.render(changed);
@@ -534,25 +542,8 @@ fn main() -> ! {
 
     logger::init();
 
-    // ESP32-S3-R8 carries octal (OPI) PSRAM. Smoke test confirms it on hardware.
-    let psram = psram::Psram::new(
-        peripherals.PSRAM,
-        psram::PsramConfig {
-            mode: psram::PsramMode::OctalSpi,
-            size: psram::PsramSize::AutoDetect,
-            ram_frequency: psram::SpiRamFreq::Freq80m,
-            ..Default::default()
-        },
-    );
-    let (psram_start, psram_size) = psram.raw_parts();
-    let psram_ok = heap::smoke_test(psram_start, psram_size);
-    if psram_ok {
-        if !heap::init_psram_heap(psram_start, psram_size, DISPLAY_BYTES, heap::PROBE_LEN) {
-            log::error!("psram: heap region not registered (range invalid/too small)");
-        }
-    } else {
-        log::error!("psram: smoke test FAILED — check PSRAM mode (octal vs quad)");
-    }
+    // Register PSRAM allocator first.
+    esp_alloc::psram_allocator!(peripherals.PSRAM, esp_hal::psram);
 
     // Register internal heap regions after PSRAM so PSRAM is Region 0 (default for general alloc).
     esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: heap::INTERNAL_HEAP_RECLAIMED);
@@ -568,19 +559,13 @@ fn main() -> ! {
         env!("BUILD_HOST"),
         env!("BUILD_DATE")
     );
-    log::info!("psram: {} KiB mapped at {psram_start:p}", psram_size / 1024);
-    if psram_ok {
-        log::info!("psram: smoke test OK (octal mode confirmed)");
-    }
+    log::info!("heap: {}", esp_alloc::HEAP.stats());
 
     // PSRAM Framebuffer.
-    let framebuffer = heap::framebuffer(psram_start, psram_size, psram_ok, DISPLAY_BYTES);
-    let Some(fb_buf) = framebuffer else {
-        log::error!("boot: framebuffer unavailable, idling");
-        loop {
-            core::hint::spin_loop();
-        }
-    };
+    let framebuffer = alloc::vec![0u8; enc_config::display::FRAMEBUFFER_BYTES]
+        .into_boxed_slice()
+        .try_into()
+        .unwrap();
 
     // Serial NDJSON tasks over native USB-Serial/JTAG on Core 0.
     let usb_serial =
@@ -610,7 +595,7 @@ fn main() -> ! {
         gpio13: peripherals.GPIO13,
         gpio14: peripherals.GPIO14,
         gpio17: peripherals.GPIO17,
-        fb_buf,
+        framebuffer,
     };
 
     let parts = Core0Parts {

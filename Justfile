@@ -40,6 +40,9 @@ export CARGO_UNSTABLE_BUILD_STD_FEATURES := "compiler-builtins-mem"
 #                      it can be overridden with `FLASH_PORT` in `.env.local`.
 FLASH_PORT := env('FLASH_PORT', "/dev/cu.usbmodem101")
 FIRMWARE_PATH := justfile_directory() + "/target/xtensa-esp32s3-none-elf/release/firmware"
+# Baseline firmware binary size in bytes. `just build` fails if binary exceeds baseline + 10%.
+# Bump this threshold consciously when adding features that legitimately grow code size.
+FIRMWARE_SIZE_BASELINE := "3182916"
 FLASH_ARGS := "--chip esp32s3 --port " + FLASH_PORT + " --partition-table firmware/partitions.csv --after hard-reset " + FIRMWARE_PATH
 
 # QEMU-related variables. Espressif's fork ships inside the esp-idf tool tree;
@@ -122,6 +125,7 @@ _default:
 [group("deploy")]
 build *ARGS:
     cargo build -p firmware --release {{ARGS}}
+    @python3 -c 'import os, sys; p = "{{FIRMWARE_PATH}}"; s = os.path.getsize(p); b = int("{{FIRMWARE_SIZE_BASELINE}}"); m = int(b * 1.1); d = (s - b) / b * 100; sys.exit(f"\n❌ ERROR: Firmware size {s:,} bytes exceeds +10% limit ({m:,} bytes, +{d:.1f}% vs baseline {b:,}).\nBump FIRMWARE_SIZE_BASELINE in Justfile.") if s > m else print(f"Firmware size: {s:,} bytes (limit: {m:,} bytes, {d:+.1f}% vs baseline)")'
 
 [doc("Build, flash, and open the serial monitor. Interactive: runs until you quit.")]
 [group("deploy")]
@@ -143,7 +147,7 @@ flash-only *ARGS: (build ARGS)
 # display. TIMEOUT is in seconds and doesn't include the build time.
 [doc("Flash, stream the boot log, and exit as soon as the app reports MARKER.")]
 [group("deploy")]
-flash-log MARKER='boot: ready' TIMEOUT='20' TAIL='3': (build)
+flash-log MARKER='boot: ready' TIMEOUT='60' TAIL='3': (build)
     #!/usr/bin/env expect -f
 
     # Tear the whole tree down — just, cargo and espflash. Every exit path goes

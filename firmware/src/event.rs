@@ -18,6 +18,8 @@ pub enum Event {
     LongPress,
     /// Touch gesture completed on the panel.
     Gesture(Gesture),
+    /// Framebuffer screenshot capture request.
+    Screenshot,
 }
 
 /// Global event channel feeding the Device main loop.
