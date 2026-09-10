@@ -12,6 +12,7 @@
 
 #![no_std]
 #![no_main]
+#![feature(impl_trait_in_assoc_type)]
 
 extern crate alloc;
 
@@ -23,8 +24,11 @@ mod event;
 mod heap;
 mod input;
 mod logger;
+#[cfg(feature = "radio")]
+pub mod net;
 mod radio;
 mod serial;
+pub mod storage;
 mod touch;
 
 use buzzer::Feedback;
@@ -546,6 +550,9 @@ async fn main(spawner: Spawner) -> ! {
         gpio17: peripherals.GPIO17,
         fb_buf,
     };
+
+    // Initialize flash settings storage on Core 0 before starting second core.
+    storage::init().await;
 
     // Start Core 1 (AppCpu) thread.
     esp_rtos::start_second_core::<APP_CORE_STACK_SIZE>(

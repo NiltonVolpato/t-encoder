@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>T-Encoder Pro</title>
+  <style>
+    :root {
+      --bg: #090a0f;
+      --card: #12141c;
+      --border: #222634;
+      --text: #f1f5f9;
+      --subtext: #94a3b8;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --success: #10b981;
+      --accent: #8b5cf6;
+      --radius: 12px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      line-height: 1.5;
+      padding: 24px 16px;
+      display: flex;
+      justify-content: center;
+    }
+    .container {
+      width: 100%;
+      max-width: 680px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .logo {
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .logo-badge {
+      font-size: 0.75rem;
+      background: rgba(59, 130, 246, 0.15);
+      color: var(--primary);
+      padding: 2px 8px;
+      border-radius: 9999px;
+      font-weight: 600;
+    }
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: var(--success);
+      background: rgba(16, 185, 129, 0.1);
+      padding: 4px 10px;
+      border-radius: 9999px;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      background: var(--success);
+      border-radius: 50%;
+      box-shadow: 0 0 8px var(--success);
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+    }
+    .card-title {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 12px;
+    }
+    .stat-box {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .stat-label {
+      font-size: 0.75rem;
+      color: var(--subtext);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .stat-value {
+      font-size: 1.05rem;
+      font-weight: 600;
+      margin-top: 4px;
+    }
+    .presets {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    .btn-preset {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .btn-preset:hover {
+      background: rgba(59, 130, 246, 0.15);
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+    .action-group {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .action-row {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .action-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-weight: 600;
+      font-size: 0.9rem;
+    }
+    .action-fields {
+      display: grid;
+      grid-template-columns: 1fr 120px;
+      gap: 10px;
+    }
+    input[type="text"], input[type="number"], select {
+      background: #090a0f;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      width: 100%;
+    }
+    input[type="text"]:focus, input[type="number"]:focus, select:focus {
+      outline: none;
+      border-color: var(--primary);
+    }
+    .modifiers {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+      font-size: 0.8rem;
+      color: var(--subtext);
+    }
+    .mod-check {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+    }
+    .btn-save {
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      padding: 12px 20px;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      width: 100%;
+      transition: background 0.15s;
+    }
+    .btn-save:hover {
+      background: var(--primary-hover);
+    }
+    .btn-save:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--success);
+      color: #fff;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+      opacity: 0;
+      transform: translateY(10px);
+      transition: all 0.25s;
+      pointer-events: none;
+    }
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="logo">
+        T-Encoder Pro
+        <span class="logo-badge">ESP32-S3</span>
+      </div>
+      <div class="status-badge">
+        <span class="status-dot"></span>
+        <span id="conn-text">Connected</span>
+      </div>
+    </header>
+
+    <!-- Device Status -->
+    <div class="card">
+      <div class="card-title">Device Telemetry</div>
+      <div class="grid-2">
+        <div class="stat-box">
+          <div class="stat-label">Wi-Fi IP</div>
+          <div class="stat-value" id="stat-ip">Loading...</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">System Uptime</div>
+          <div class="stat-value" id="stat-uptime">--</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Bluetooth</div>
+          <div class="stat-value" id="stat-ble">--</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Free Heap</div>
+          <div class="stat-value" id="stat-heap">--</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Macropad Settings -->
+    <div class="card">
+      <div class="card-title">
+        <span>Macropad Key Customization</span>
+      </div>
+      
+      <div class="stat-label" style="margin-bottom: 8px;">Quick Presets</div>
+      <div class="presets">
+        <button class="btn-preset" onclick="applyPreset('browser')">🌐 Web Browser (Scroll/Tab)</button>
+        <button class="btn-preset" onclick="applyPreset('media')">🎵 Media Player (Vol/Play)</button>
+        <button class="btn-preset" onclick="applyPreset('mac')">⌨️ Mac Shortcuts (Undo/Redo)</button>
+      </div>
+
+      <form id="macro-form" class="action-group" onsubmit="saveSettings(event)">
+        <!-- Clockwise -->
+        <div class="action-row">
+          <div class="action-header">
+            <span>🔄 Rotate Clockwise</span>
+          </div>
+          <div class="action-fields">
+            <input type="text" id="cw-label" placeholder="Action Label" required>
+            <input type="number" id="cw-usage" placeholder="HID (hex)" min="0" max="255" required title="USB HID Usage ID">
+          </div>
+          <div class="modifiers">
+            <span>Modifiers:</span>
+            <label class="mod-check"><input type="checkbox" id="cw-mod-gui"> ⌘ GUI</label>
+            <label class="mod-check"><input type="checkbox" id="cw-mod-alt"> ⌥ Alt</label>
+            <label class="mod-check"><input type="checkbox" id="cw-mod-ctrl"> ⌃ Ctrl</label>
+            <label class="mod-check"><input type="checkbox" id="cw-mod-shift"> ⇧ Shift</label>
+          </div>
+        </div>
+
+        <!-- Counter-Clockwise -->
+        <div class="action-row">
+          <div class="action-header">
+            <span>🔄 Rotate Counter-Clockwise</span>
+          </div>
+          <div class="action-fields">
+            <input type="text" id="ccw-label" placeholder="Action Label" required>
+            <input type="number" id="ccw-usage" placeholder="HID (hex)" min="0" max="255" required title="USB HID Usage ID">
+          </div>
+          <div class="modifiers">
+            <span>Modifiers:</span>
+            <label class="mod-check"><input type="checkbox" id="ccw-mod-gui"> ⌘ GUI</label>
+            <label class="mod-check"><input type="checkbox" id="ccw-mod-alt"> ⌥ Alt</label>
+            <label class="mod-check"><input type="checkbox" id="ccw-mod-ctrl"> ⌃ Ctrl</label>
+            <label class="mod-check"><input type="checkbox" id="ccw-mod-shift"> ⇧ Shift</label>
+          </div>
+        </div>
+
+        <!-- Press -->
+        <div class="action-row">
+          <div class="action-header">
+            <span>🔘 Dial Press</span>
+          </div>
+          <div class="action-fields">
+            <input type="text" id="press-label" placeholder="Action Label" required>
+            <input type="number" id="press-usage" placeholder="HID (hex)" min="0" max="255" required title="USB HID Usage ID">
+          </div>
+          <div class="modifiers">
+            <span>Modifiers:</span>
+            <label class="mod-check"><input type="checkbox" id="press-mod-gui"> ⌘ GUI</label>
+            <label class="mod-check"><input type="checkbox" id="press-mod-alt"> ⌥ Alt</label>
+            <label class="mod-check"><input type="checkbox" id="press-mod-ctrl"> ⌃ Ctrl</label>
+            <label class="mod-check"><input type="checkbox" id="press-mod-shift"> ⇧ Shift</label>
+          </div>
+        </div>
+
+        <button type="submit" id="btn-submit" class="btn-save">Save Settings to Flash</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="toast" class="toast">Settings successfully saved to flash!</div>
+
+  <script>
+    const CTRL = 0x01, SHIFT = 0x02, ALT = 0x04, GUI = 0x08;
+
+    const PRESETS = {
+      browser: {
+        rotate_cw: { label: "Scroll Down", modifiers: 0, usage: 81 },       // Down Arrow
+        rotate_ccw: { label: "Scroll Up", modifiers: 0, usage: 82 },        // Up Arrow
+        press: { label: "New Tab", modifiers: GUI, usage: 23 }              // ⌘T
+      },
+      media: {
+        rotate_cw: { label: "Volume Up", modifiers: 0, usage: 128 },        // Vol Up
+        rotate_ccw: { label: "Volume Down", modifiers: 0, usage: 129 },     // Vol Down
+        press: { label: "Play/Pause", modifiers: 0, usage: 44 }             // Space
+      },
+      mac: {
+        rotate_cw: { label: "Redo", modifiers: GUI | SHIFT, usage: 29 },    // ⇧⌘Z
+        rotate_ccw: { label: "Undo", modifiers: GUI, usage: 29 },           // ⌘Z
+        press: { label: "Copy", modifiers: GUI, usage: 6 }                  // ⌘C
+      }
+    };
+
+    function parseMod(prefix) {
+      let mod = 0;
+      if (document.getElementById(`${prefix}-mod-ctrl`).checked) mod |= CTRL;
+      if (document.getElementById(`${prefix}-mod-shift`).checked) mod |= SHIFT;
+      if (document.getElementById(`${prefix}-mod-alt`).checked) mod |= ALT;
+      if (document.getElementById(`${prefix}-mod-gui`).checked) mod |= GUI;
+      return mod;
+    }
+
+    function setMod(prefix, mod) {
+      document.getElementById(`${prefix}-mod-ctrl`).checked = !!(mod & CTRL);
+      document.getElementById(`${prefix}-mod-shift`).checked = !!(mod & SHIFT);
+      document.getElementById(`${prefix}-mod-alt`).checked = !!(mod & ALT);
+      document.getElementById(`${prefix}-mod-gui`).checked = !!(mod & GUI);
+    }
+
+    function applyPreset(name) {
+      const p = PRESETS[name];
+      if (!p) return;
+      populateBinding('cw', p.rotate_cw);
+      populateBinding('ccw', p.rotate_ccw);
+      populateBinding('press', p.press);
+    }
+
+    function populateBinding(prefix, binding) {
+      document.getElementById(`${prefix}-label`).value = binding.label;
+      document.getElementById(`${prefix}-usage`).value = binding.usage;
+      setMod(prefix, binding.modifiers);
+    }
+
+    function formatUptime(seconds) {
+      const h = Math.floor(seconds / 3600);
+      const m = Math.floor((seconds % 3600) / 60);
+      const s = seconds % 60;
+      if (h > 0) return `${h}h ${m}m ${s}s`;
+      if (m > 0) return `${m}m ${s}s`;
+      return `${s}s`;
+    }
+
+    async function loadTelemetry() {
+      try {
+        const res = await fetch('/api/status');
+        if (!res.ok) throw new Error('status fetch failed');
+        const data = await res.json();
+        document.getElementById('stat-ip').textContent = data.ip || 'Unavailable';
+        document.getElementById('stat-uptime').textContent = formatUptime(data.uptime_secs || 0);
+        document.getElementById('stat-ble').textContent = data.ble_linked ? 'Connected' : (data.ble_active ? 'Advertising' : 'Dormant');
+        document.getElementById('stat-heap').textContent = `${Math.round((data.heap_free || 0) / 1024)} KiB`;
+      } catch (e) {
+        console.warn('telemetry err:', e);
+      }
+    }
+
+    async function loadSettings() {
+      try {
+        const res = await fetch('/api/macropad');
+        if (!res.ok) throw new Error('settings fetch failed');
+        const data = await res.json();
+        if (data.rotate_cw) populateBinding('cw', data.rotate_cw);
+        if (data.rotate_ccw) populateBinding('ccw', data.rotate_ccw);
+        if (data.press) populateBinding('press', data.press);
+      } catch (e) {
+        console.warn('macropad load err:', e);
+      }
+    }
+
+    async function saveSettings(e) {
+      e.preventDefault();
+      const btn = document.getElementById('btn-submit');
+      btn.disabled = true;
+      btn.textContent = 'Saving...';
+
+      const payload = {
+        rotate_cw: {
+          label: document.getElementById('cw-label').value,
+          modifiers: parseMod('cw'),
+          usage: parseInt(document.getElementById('cw-usage').value, 10)
+        },
+        rotate_ccw: {
+          label: document.getElementById('ccw-label').value,
+          modifiers: parseMod('ccw'),
+          usage: parseInt(document.getElementById('ccw-usage').value, 10)
+        },
+        press: {
+          label: document.getElementById('press-label').value,
+          modifiers: parseMod('press'),
+          usage: parseInt(document.getElementById('press-usage').value, 10)
+        }
+      };
+
+      try {
+        const res = await fetch('/api/macropad', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!res.ok) throw new Error('save failed');
+        showToast('Settings saved to flash!');
+      } catch (err) {
+        alert('Failed to save settings: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Save Settings to Flash';
+      }
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      toast.textContent = msg;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 3000);
+    }
+
+    async function init() {
+      await loadTelemetry();
+      await loadSettings();
+    }
+    init();
+    setInterval(loadTelemetry, 5000);
+  </script>
+</body>
+</html>

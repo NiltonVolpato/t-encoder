@@ -73,7 +73,7 @@ pub fn start(spawner: Spawner, parts: Parts) -> (Option<Stack<'static>>, Guard) 
     let [a0, a1, a2, a3] = rng.random().to_be_bytes();
     let [b0, b1, b2, b3] = rng.random().to_be_bytes();
     let seed = u64::from_be_bytes([a0, a1, a2, a3, b0, b1, b2, b3]);
-    let stack = enc_net::start(&spawner, parts.wifi, seed, &APP_STATE);
+    let stack = crate::net::start(&spawner, parts.wifi, seed, &APP_STATE);
     if let Some(stack) = stack {
         match net_monitor_task(stack) {
             Ok(token) => spawner.spawn(token),
@@ -125,7 +125,6 @@ pub fn ble_linked() -> bool {
 }
 
 /// Returns Wi-Fi IP and connected status, if available.
-#[expect(dead_code)]
 pub fn wifi_info() -> Option<([u8; 4], bool)> {
     #[cfg(feature = "radio")]
     {

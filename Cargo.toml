@@ -21,7 +21,6 @@ enc-input = { path = "vendor/rust-enc/enc-input" }
 enc-touch = { path = "vendor/rust-enc/enc-touch" }
 enc-ui = { path = "vendor/rust-enc/enc-ui" }
 enc-state = { path = "vendor/rust-enc/enc-state" }
-enc-net = { path = "vendor/rust-enc/enc-net" }
 
 # --- Pure / shared --------------------------------------------------------
 # These MUST stay semver-compatible with vendor/rust-enc/Cargo.toml's
