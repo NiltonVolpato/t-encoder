@@ -16,7 +16,7 @@
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use esp_alloc::{EspHeap, HeapRegion, MemoryCapability};
+use esp_alloc::{HeapRegion, MemoryCapability};
 
 /// Internal global-heap region reclaimed from bootloader RAM (the full
 /// `dram2_seg`; larger overflows it). First of two `heap_allocator!` regions.
@@ -27,9 +27,6 @@ pub const INTERNAL_HEAP_RECLAIMED: usize = 73_744;
 /// region alone (radio task stacks alloc from the global heap via `esp-rtos`).
 pub const INTERNAL_HEAP_EXTRA: usize = 64 * 1024;
 
-/// Separate, non-global heap backed by PSRAM (External capability) for app bulk.
-pub static PSRAM_HEAP: EspHeap = EspHeap::empty();
-
 /// PSRAM smoke-test probe length (written at the top of PSRAM, and reserved
 /// from the heap so nothing else ever lands there).
 pub const PROBE_LEN: usize = 4096;
@@ -38,8 +35,8 @@ pub const PROBE_LEN: usize = 4096;
 /// overlapping region and let the allocator hand out aliased blocks).
 static PSRAM_HEAP_INIT: AtomicBool = AtomicBool::new(false);
 
-/// Registers a PSRAM region with [`PSRAM_HEAP`], placed after the framebuffer
-/// and before the top smoke-test probe. Returns `true` if a region was added.
+/// Registers a PSRAM region with the global [`esp_alloc::HEAP`] with `MemoryCapability::External`,
+/// placed after the framebuffer and before the top smoke-test probe. Returns `true` if a region was added.
 ///
 /// Idempotent: only the first call registers a region; later calls and any
 /// invalid/too-small range (null base, `framebuffer_bytes + probe_len` past the
@@ -67,7 +64,7 @@ pub fn init_psram_heap(
     // before the top probe (bounds checked above); the swap guard guarantees it
     // is registered at most once, so no other allocation aliases it.
     unsafe {
-        PSRAM_HEAP.add_region(HeapRegion::new(
+        esp_alloc::HEAP.add_region(HeapRegion::new(
             start,
             len,
             MemoryCapability::External.into(),

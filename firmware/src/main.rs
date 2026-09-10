@@ -512,11 +512,10 @@ async fn core0_task(spawner: Spawner, parts: Core0Parts) {
         },
     );
     log::info!(
-        "heap: internal free={} used={} | psram free={} used={}",
-        esp_alloc::HEAP.free(),
+        "heap: internal free={} | psram free={} | total used={}",
+        esp_alloc::HEAP.free_caps(esp_alloc::MemoryCapability::Internal.into()),
+        esp_alloc::HEAP.free_caps(esp_alloc::MemoryCapability::External.into()),
         esp_alloc::HEAP.used(),
-        heap::PSRAM_HEAP.free(),
-        heap::PSRAM_HEAP.used(),
     );
 
     // Core 0 loop: ticks every 1s to keep _radio_guard alive and prevent cycle overflow.
@@ -535,7 +534,27 @@ fn main() -> ! {
 
     logger::init();
 
-    // Internal-only global heap (esp_alloc::HEAP) — serves esp-radio + DMA.
+    // ESP32-S3-R8 carries octal (OPI) PSRAM. Smoke test confirms it on hardware.
+    let psram = psram::Psram::new(
+        peripherals.PSRAM,
+        psram::PsramConfig {
+            mode: psram::PsramMode::OctalSpi,
+            size: psram::PsramSize::AutoDetect,
+            ram_frequency: psram::SpiRamFreq::Freq80m,
+            ..Default::default()
+        },
+    );
+    let (psram_start, psram_size) = psram.raw_parts();
+    let psram_ok = heap::smoke_test(psram_start, psram_size);
+    if psram_ok {
+        if !heap::init_psram_heap(psram_start, psram_size, DISPLAY_BYTES, heap::PROBE_LEN) {
+            log::error!("psram: heap region not registered (range invalid/too small)");
+        }
+    } else {
+        log::error!("psram: smoke test FAILED — check PSRAM mode (octal vs quad)");
+    }
+
+    // Register internal heap regions after PSRAM so PSRAM is Region 0 (default for general alloc).
     esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: heap::INTERNAL_HEAP_RECLAIMED);
     esp_alloc::heap_allocator!(size: heap::INTERNAL_HEAP_EXTRA);
 
@@ -549,27 +568,9 @@ fn main() -> ! {
         env!("BUILD_HOST"),
         env!("BUILD_DATE")
     );
-
-    // ESP32-S3-R8 carries octal (OPI) PSRAM. Smoke test confirms it on hardware.
-    let psram = psram::Psram::new(
-        peripherals.PSRAM,
-        psram::PsramConfig {
-            mode: psram::PsramMode::OctalSpi,
-            size: psram::PsramSize::AutoDetect,
-            ram_frequency: psram::SpiRamFreq::Freq80m,
-            ..Default::default()
-        },
-    );
-    let (psram_start, psram_size) = psram.raw_parts();
     log::info!("psram: {} KiB mapped at {psram_start:p}", psram_size / 1024);
-    let psram_ok = heap::smoke_test(psram_start, psram_size);
     if psram_ok {
         log::info!("psram: smoke test OK (octal mode confirmed)");
-        if !heap::init_psram_heap(psram_start, psram_size, DISPLAY_BYTES, heap::PROBE_LEN) {
-            log::error!("psram: heap region not registered (range invalid/too small)");
-        }
-    } else {
-        log::error!("psram: smoke test FAILED — check PSRAM mode (octal vs quad)");
     }
 
     // PSRAM Framebuffer.

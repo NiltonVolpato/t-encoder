@@ -53,7 +53,7 @@ const WEB_TASK_POOL_SIZE: usize = 1;
 const SOCKETS: usize = 6;
 
 static RESOURCES: StaticCell<StackResources<SOCKETS>> = StaticCell::new();
-static CONFIG: picoserve::Config = picoserve::Config::new(picoserve::Timeouts {
+const CONFIG: picoserve::Config = picoserve::Config::new(picoserve::Timeouts {
     write: Duration::from_secs(2),
     read_request: Duration::from_secs(2),
     ..picoserve::Timeouts::const_default()
@@ -66,7 +66,10 @@ struct StatusResponse<'a> {
     uptime_secs: u32,
     ip: heapless::String<16>,
     ble_linked: bool,
-    heap_free: usize,
+    heap_size_internal: usize,
+    heap_allocated_internal: usize,
+    heap_size_external: usize,
+    heap_allocated_external: usize,
     cpu0_usage: u8,
     cpu1_usage: u8,
 }
@@ -99,12 +102,38 @@ impl AppBuilder for App {
                     if let Some(([a, b, c, d], _)) = crate::radio::wifi_info() {
                         let _ = write!(ip_str, "{a}.{b}.{c}.{d}");
                     }
+                    let stats = esp_alloc::HEAP.stats();
+                    let mut heap_size_internal = 0;
+                    let mut heap_allocated_internal = 0;
+                    let mut heap_size_external = 0;
+                    let mut heap_allocated_external = 0;
+
+                    for region in stats.region_stats.into_iter().flatten() {
+                        if region
+                            .capabilities
+                            .contains(esp_alloc::MemoryCapability::Internal)
+                        {
+                            heap_size_internal += region.size;
+                            heap_allocated_internal += region.used;
+                        }
+                        if region
+                            .capabilities
+                            .contains(esp_alloc::MemoryCapability::External)
+                        {
+                            heap_size_external += region.size;
+                            heap_allocated_external += region.used;
+                        }
+                    }
+
                     let status = StatusResponse {
                         version: env!("CARGO_PKG_VERSION"),
                         uptime_secs: uptime_secs(),
                         ip: ip_str,
                         ble_linked: crate::radio::ble_linked(),
-                        heap_free: esp_alloc::HEAP.free(),
+                        heap_size_internal,
+                        heap_allocated_internal,
+                        heap_size_external,
+                        heap_allocated_external,
                         cpu0_usage: crate::cpu_metrics::cpu0_usage_pct(),
                         cpu1_usage: crate::cpu_metrics::cpu1_usage_pct(),
                     };
@@ -289,9 +318,9 @@ async fn sntp_sync(stack: Stack<'static>) -> Option<u32> {
 #[embassy_executor::task(pool_size = WEB_TASK_POOL_SIZE)]
 async fn web_task(task_id: usize, stack: Stack<'static>, app: &'static AppRouter<App>) -> ! {
     let port = 80;
-    let mut receive_buffer = [0u8; 1024];
-    let mut transmit_buffer = [0u8; 1024];
-    let mut http_buffer = [0u8; 2048];
+    let mut receive_buffer = alloc::vec![0u8; 1024];
+    let mut transmit_buffer = alloc::vec![0u8; 1024];
+    let mut http_buffer = alloc::vec![0u8; 2048];
 
     #[expect(clippy::large_futures)]
     picoserve::Server::new(app, &CONFIG, &mut http_buffer)

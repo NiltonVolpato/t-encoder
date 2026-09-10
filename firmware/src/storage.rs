@@ -125,8 +125,10 @@ struct StoredMacropadSettings(pub MacropadSettings);
 impl PostcardValue<'_> for StoredMacropadSettings {}
 
 /// In-memory cached Macropad settings for instant read access across cores/tasks.
-static CACHED_MACROPAD: BlockingMutex<CriticalSectionRawMutex, RefCell<Option<MacropadSettings>>> =
-    BlockingMutex::new(RefCell::new(None));
+static CACHED_MACROPAD: BlockingMutex<
+    CriticalSectionRawMutex,
+    RefCell<Option<alloc::boxed::Box<MacropadSettings>>>,
+> = BlockingMutex::new(RefCell::new(None));
 
 /// Hardware flash access mutex so concurrent operations don't collide.
 static FLASH_MUTEX: Mutex<CriticalSectionRawMutex, ()> = Mutex::new(());
@@ -147,13 +149,13 @@ pub async fn init() {
     );
 
     let mut buffer = [0u8; 2048];
-    let loaded: Option<MacropadSettings> = match map_storage
+    let loaded: Option<alloc::boxed::Box<MacropadSettings>> = match map_storage
         .fetch_item::<StoredMacropadSettings>(&mut buffer, &KEY_MACROPAD)
         .await
     {
         Ok(Some(stored)) => {
             log::info!("storage: loaded {KEY_MACROPAD} settings from flash");
-            Some(stored.0)
+            Some(alloc::boxed::Box::new(stored.0))
         }
         Ok(None) => {
             log::info!("storage: no {KEY_MACROPAD} settings found, writing defaults");
@@ -168,7 +170,7 @@ pub async fn init() {
             {
                 log::error!("storage: failed to store default {KEY_MACROPAD} settings: {error:?}");
             }
-            Some(default_settings)
+            Some(alloc::boxed::Box::new(default_settings))
         }
         Err(error) => {
             log::warn!(
@@ -187,7 +189,7 @@ pub async fn init() {
                     "storage: failed to heal {KEY_MACROPAD} settings in flash: {heal_error:?}"
                 );
             }
-            Some(default_settings)
+            Some(alloc::boxed::Box::new(default_settings))
         }
     };
 
@@ -199,7 +201,7 @@ pub async fn init() {
 /// Returns the current Macropad settings synchronously from in-memory cache.
 #[must_use]
 pub fn get_macropad_settings_sync() -> MacropadSettings {
-    CACHED_MACROPAD.lock(|cell| cell.borrow().clone().unwrap_or_default())
+    CACHED_MACROPAD.lock(|cell| cell.borrow().as_deref().cloned().unwrap_or_default())
 }
 
 /// Returns the current Macropad settings from in-memory cache.
@@ -239,7 +241,7 @@ pub async fn save_macropad_settings(settings: MacropadSettings) -> Result<(), &'
         Ok(()) => {
             log::info!("storage: successfully saved {KEY_MACROPAD} settings to flash");
             CACHED_MACROPAD.lock(|cell| {
-                *cell.borrow_mut() = Some(settings);
+                *cell.borrow_mut() = Some(alloc::boxed::Box::new(settings));
             });
             Ok(())
         }

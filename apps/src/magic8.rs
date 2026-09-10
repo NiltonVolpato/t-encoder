@@ -123,7 +123,7 @@ pub struct ThemeConfig {
 }
 
 /// The 5 Magic 8 Ball theme definitions.
-pub static THEMES: [ThemeConfig; THEME_COUNT] = [
+pub const THEMES: [ThemeConfig; THEME_COUNT] = [
     ThemeConfig {
         name: "CLASSIC",
         answers: &CLASSIC_ANSWERS,

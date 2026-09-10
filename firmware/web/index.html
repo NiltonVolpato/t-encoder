@@ -256,8 +256,12 @@
           <div class="stat-value" id="stat-ble">--</div>
         </div>
         <div class="stat-box">
-          <div class="stat-label">Free Heap</div>
-          <div class="stat-value" id="stat-heap">--</div>
+          <div class="stat-label">Internal Heap</div>
+          <div class="stat-value" id="stat-heap-internal">--</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">PSRAM Heap</div>
+          <div class="stat-value" id="stat-heap-external">--</div>
         </div>
         <div class="stat-box">
           <div class="stat-label">Core 0 (Net/Sys)</div>
@@ -303,7 +307,15 @@
         document.getElementById('stat-ip').textContent = data.ip || 'Unavailable';
         document.getElementById('stat-uptime').textContent = formatUptime(data.uptime_secs || 0);
         document.getElementById('stat-ble').textContent = data.ble_linked ? 'Connected' : (data.ble_active ? 'Advertising' : 'Dormant');
-        document.getElementById('stat-heap').textContent = `${Math.round((data.heap_free || 0) / 1024)} KiB`;
+        
+        const intUsed = Math.round((data.heap_allocated_internal || 0) / 1024);
+        const intTotal = Math.round((data.heap_size_internal || 0) / 1024);
+        document.getElementById('stat-heap-internal').textContent = `${intUsed} / ${intTotal} KiB`;
+
+        const extUsed = Math.round((data.heap_allocated_external || 0) / 1024);
+        const extTotal = ((data.heap_size_external || 0) / (1024 * 1024)).toFixed(1);
+        document.getElementById('stat-heap-external').textContent = `${extUsed} KiB / ${extTotal} MiB`;
+
         document.getElementById('stat-cpu0').textContent = `${data.cpu0_usage ?? 0}%`;
         document.getElementById('stat-cpu1').textContent = `${data.cpu1_usage ?? 0}%`;
       } catch (e) {
