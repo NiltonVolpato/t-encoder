@@ -16,6 +16,7 @@
 //! where they appear.
 
 use bt_hci::controller::ExternalController;
+use embassy_futures::select::{Either, Either3, select, select3};
 use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex};
 use embassy_sync::channel::Channel;
 use embassy_time::{Duration, Timer};
@@ -41,6 +42,28 @@ const KEY_QUEUE: usize = 4;
 
 /// Reports waiting to go out. The app pushes, [`task`] delivers.
 pub static KEYS: Channel<CriticalSectionRawMutex, Report, KEY_QUEUE> = Channel::new();
+
+/// Commands controlling the active BLE lifecycle state.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BleCommand {
+    /// Enable advertising and accept connections.
+    Enable,
+    /// Disconnect and stop advertising.
+    Disable,
+}
+
+/// Control channel signaling BLE lifecycle transitions.
+pub static BLE_COMMANDS: Channel<CriticalSectionRawMutex, BleCommand, 4> = Channel::new();
+
+/// Signals the BLE task to enable advertising and accept connections.
+pub fn enable_ble() {
+    let _ = BLE_COMMANDS.try_send(BleCommand::Enable);
+}
+
+/// Signals the BLE task to stop advertising and disconnect any active connection.
+pub fn disable_ble() {
+    let _ = BLE_COMMANDS.try_send(BleCommand::Disable);
+}
 
 /// Advertised name; also the GAP device name.
 const DEVICE_NAME: &str = "T-Encoder Macropad";
@@ -299,7 +322,18 @@ pub async fn task(bt: BT<'static>, state: &'static AppState) {
     };
 
     let sessions = async {
+        let mut enabled = false;
         loop {
+            while !enabled {
+                match BLE_COMMANDS.receive().await {
+                    BleCommand::Enable => {
+                        log::info!("ble: enabled by foreground app");
+                        enabled = true;
+                    }
+                    BleCommand::Disable => {}
+                }
+            }
+
             if let Err(e) = session(
                 &mut peripheral,
                 &server,
@@ -307,6 +341,7 @@ pub async fn task(bt: BT<'static>, state: &'static AppState) {
                 &boot_report,
                 &stack,
                 state,
+                &mut enabled,
             )
             .await
             {
@@ -320,6 +355,7 @@ pub async fn task(bt: BT<'static>, state: &'static AppState) {
 }
 
 /// Advertises until a host connects, then pumps [`KEYS`] until it goes away.
+#[expect(clippy::too_many_lines)]
 async fn session<C: Controller>(
     peripheral: &mut Peripheral<'_, C, DefaultPacketPool>,
     server: &HidServer<'_>,
@@ -327,6 +363,7 @@ async fn session<C: Controller>(
     boot_report: &Characteristic<[u8; 8]>,
     stack: &Stack<'_, C, DefaultPacketPool>,
     state: &'static AppState,
+    enabled: &mut bool,
 ) -> Result<(), BleHostError<C::Error>> {
     let mut adv_data = [0u8; 31];
     let adv_len = AdStructure::encode_slice(
@@ -380,7 +417,17 @@ async fn session<C: Controller>(
             },
         )
         .await?;
-    let conn = advertiser.accept().await?;
+
+    let conn = match select(advertiser.accept(), BLE_COMMANDS.receive()).await {
+        Either::First(conn_res) => conn_res?,
+        Either::Second(BleCommand::Disable) => {
+            log::info!("ble: disabled while advertising");
+            *enabled = false;
+            return Ok(());
+        }
+        Either::Second(BleCommand::Enable) => return Ok(()),
+    };
+
     let gatt = conn.with_attribute_server(server)?;
     log::info!("ble: host connected");
 
@@ -402,8 +449,8 @@ async fn session<C: Controller>(
     state.set_ble_linked(true);
 
     loop {
-        match embassy_futures::select::select(gatt.next(), KEYS.receive()).await {
-            embassy_futures::select::Either::First(event) => match event {
+        match select3(gatt.next(), KEYS.receive(), BLE_COMMANDS.receive()).await {
+            Either3::First(event) => match event {
                 GattConnectionEvent::Disconnected { reason } => {
                     log::info!("ble: disconnected ({reason:?})");
                     state.set_ble_linked(false);
@@ -444,7 +491,7 @@ async fn session<C: Controller>(
                 }
                 _ => {}
             },
-            embassy_futures::select::Either::Second(report) => {
+            Either3::Second(report) => {
                 // Notify both: which one the host subscribed to depends on
                 // whether it chose report or boot protocol mode, and notifying
                 // an unsubscribed characteristic is a no-op rather than an
@@ -453,6 +500,14 @@ async fn session<C: Controller>(
                 let boot_result = boot_report.notify(&gatt, &report).await;
                 log::info!("ble: sent {report:02x?} report={report_result:?} boot={boot_result:?}");
             }
+            Either3::Third(BleCommand::Disable) => {
+                log::info!("ble: disabled by app transition — disconnecting");
+                *enabled = false;
+                gatt.raw().disconnect();
+                state.set_ble_linked(false);
+                return Ok(());
+            }
+            Either3::Third(BleCommand::Enable) => {}
         }
     }
 }

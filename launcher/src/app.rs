@@ -81,6 +81,8 @@ pub struct Manifest {
     pub accent: Rgb565,
     /// Whether this app wants the raw panel instead of the router's gestures.
     pub touch: TouchAccess,
+    /// Whether this app requires Bluetooth (e.g. Macropad HID keyboard).
+    pub requires_ble: bool,
 }
 
 /// Per-frame context handed to every app.

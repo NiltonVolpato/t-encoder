@@ -102,6 +102,7 @@ impl MacropadFactory {
                 // pomodoro's warm red as the palette goes.
                 accent: embedded_graphics::pixelcolor::Rgb565::new(8, 34, 31),
                 touch: TouchAccess::Gestures,
+                requires_ble: true,
             },
             shell,
         }

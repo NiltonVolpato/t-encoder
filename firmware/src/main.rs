@@ -173,6 +173,7 @@ pub struct Device {
     slint_ui: ui::Ui,
     router: Router<'static>,
     frames: u32,
+    ble_active: bool,
 }
 
 impl Device {
@@ -290,6 +291,7 @@ impl Device {
             slint_ui,
             router,
             frames: 0,
+            ble_active: false,
         };
 
         // Initial paint: launcher carousel.
@@ -380,6 +382,24 @@ impl Device {
                 if changed {
                     self.router.sync_app();
                 }
+            }
+        }
+
+        let ble_needed = match self.router.view() {
+            View::Launcher => false,
+            View::App(idx) => self
+                .router
+                .factories()
+                .get(idx)
+                .is_some_and(|f| f.manifest().requires_ble),
+        };
+
+        if ble_needed != self.ble_active {
+            self.ble_active = ble_needed;
+            if ble_needed {
+                radio::enable_ble();
+            } else {
+                radio::disable_ble();
             }
         }
 

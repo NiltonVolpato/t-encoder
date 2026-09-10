@@ -138,6 +138,7 @@ impl<'a> StubFactory<'a> {
                 view: ViewId(1),
                 accent: Rgb565::new(31, 0, 0),
                 touch: TouchAccess::Gestures,
+                requires_ble: false,
             },
             log,
             action: Action::None,

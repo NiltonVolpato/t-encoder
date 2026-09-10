@@ -171,6 +171,7 @@ impl SimonFactory {
                 // Golden yellow accent matching classic Simon branding.
                 accent: embedded_graphics::pixelcolor::Rgb565::new(31, 55, 0),
                 touch: TouchAccess::Taps,
+                requires_ble: false,
             },
             shell,
         }

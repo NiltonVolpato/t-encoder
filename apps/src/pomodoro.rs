@@ -64,6 +64,7 @@ impl PomodoroFactory {
                 // Warm red — this is the "do not disturb" app.
                 accent: embedded_graphics::pixelcolor::Rgb565::new(28, 18, 8),
                 touch: TouchAccess::Gestures,
+                requires_ble: false,
             },
             shell,
         }

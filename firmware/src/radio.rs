@@ -147,3 +147,15 @@ pub fn send_chord(modifiers: u8, usage: u8) {
 
 #[cfg(not(feature = "radio"))]
 pub fn send_chord(_modifiers: u8, _usage: u8) {}
+
+/// Signals the BLE subsystem to enable advertising and accept connections.
+pub fn enable_ble() {
+    #[cfg(feature = "radio")]
+    crate::ble::enable_ble();
+}
+
+/// Signals the BLE subsystem to stop advertising and disconnect any active link.
+pub fn disable_ble() {
+    #[cfg(feature = "radio")]
+    crate::ble::disable_ble();
+}

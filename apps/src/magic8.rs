@@ -225,6 +225,7 @@ impl Magic8Factory {
                 view: ViewId(4),
                 accent: embedded_graphics::pixelcolor::Rgb565::new(0, 36, 31),
                 touch: TouchAccess::Taps,
+                requires_ble: false,
             },
             shell,
         }
