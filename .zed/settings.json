@@ -7,6 +7,10 @@
     "rust-analyzer": {
       "initialization_options": {
         "cargo": {
+          "extraEnv": {
+            "RUSTUP_TOOLCHAIN": "esp",
+            "LIBCLANG_PATH": "/Users/nilton/.rustup/toolchains/esp/xtensa-esp32-elf-clang/esp-20.1.1_20250829/esp-clang/lib",
+          },
           "target": "xtensa-esp32s3-none-elf",
           "extraArgs": [
             "-Zbuild-std=alloc,core",
