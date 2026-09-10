@@ -35,6 +35,7 @@ use esp_hal::clock::CpuClock;
 use esp_hal::gpio::{Input, InputConfig, Pull};
 use esp_hal::interrupt::software::SoftwareInterruptControl;
 use esp_hal::psram;
+use esp_hal::system::Stack;
 use esp_hal::timer::timg::TimerGroup;
 use event::{EVENTS, Event};
 use launcher::{AppFactory, Ctx, Router, View};
@@ -118,111 +119,120 @@ extern "C" fn firmware_panic_stop() -> ! {
     }
 }
 
+/// Core 1 execution stack (16 KiB, 16-byte aligned).
+const APP_CORE_STACK_SIZE: usize = 16 * 1024;
+static mut APP_CORE_STACK: Stack<APP_CORE_STACK_SIZE> = Stack::new();
+
+/// Hardware peripherals and framebuffer handed across to Core 1 for HMI and UI.
+struct Core1Peripherals {
+    spi2: esp_hal::peripherals::SPI2<'static>,
+    dma_ch0: esp_hal::peripherals::DMA_CH0<'static>,
+    pcnt: esp_hal::peripherals::PCNT<'static>,
+    i2c0: esp_hal::peripherals::I2C0<'static>,
+    ledc: esp_hal::peripherals::LEDC<'static>,
+    gpio0: esp_hal::peripherals::GPIO0<'static>,
+    gpio1: esp_hal::peripherals::GPIO1<'static>,
+    gpio2: esp_hal::peripherals::GPIO2<'static>,
+    gpio3: esp_hal::peripherals::GPIO3<'static>,
+    gpio4: esp_hal::peripherals::GPIO4<'static>,
+    gpio5: esp_hal::peripherals::GPIO5<'static>,
+    gpio6: esp_hal::peripherals::GPIO6<'static>,
+    gpio7: esp_hal::peripherals::GPIO7<'static>,
+    gpio8: esp_hal::peripherals::GPIO8<'static>,
+    gpio9: esp_hal::peripherals::GPIO9<'static>,
+    gpio10: esp_hal::peripherals::GPIO10<'static>,
+    gpio11: esp_hal::peripherals::GPIO11<'static>,
+    gpio12: esp_hal::peripherals::GPIO12<'static>,
+    gpio13: esp_hal::peripherals::GPIO13<'static>,
+    gpio14: esp_hal::peripherals::GPIO14<'static>,
+    gpio17: esp_hal::peripherals::GPIO17<'static>,
+    fb_buf: &'static mut [u8],
+}
+
+/// Entry point for the Core 1 (`AppCpu`) thread.
+fn core1_entry(peripherals: Core1Peripherals) -> ! {
+    static CORE1_EXECUTOR: static_cell::StaticCell<esp_rtos::embassy::Executor> =
+        static_cell::StaticCell::new();
+    let executor = CORE1_EXECUTOR.init(esp_rtos::embassy::Executor::new());
+    executor.run(|spawner| match core1_task(spawner, peripherals) {
+        Ok(token) => spawner.spawn(token),
+        Err(_) => log::error!("core1: failed to spawn core1_task"),
+    })
+}
+
+/// Main async task on Core 1 owning display, touch, encoder, and UI rendering loop.
+#[embassy_executor::task]
+async fn core1_task(spawner: Spawner, peripherals: Core1Peripherals) {
+    let mut device = Device::setup_core1(spawner, peripherals).await;
+    device.run().await;
+}
+
 /// Encapsulates device hardware, UI renderer, and app router.
 pub struct Device {
     panel: display::Display,
     slint_ui: ui::Ui,
     router: Router<'static>,
-    _radio: radio::Guard,
     frames: u32,
 }
 
 impl Device {
-    /// Initializes all board peripherals, memory heaps, tasks, and UI state.
+    /// Initializes HMI hardware, display, Slint UI, and router on Core 1.
     #[expect(clippy::too_many_lines)]
-    pub async fn setup(spawner: Spawner) -> Self {
-        let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
-        let peripherals = esp_hal::init(config);
-
-        logger::init();
-
-        // Internal-only global heap (esp_alloc::HEAP) — serves esp-radio + DMA.
-        esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: heap::INTERNAL_HEAP_RECLAIMED);
-        esp_alloc::heap_allocator!(size: heap::INTERNAL_HEAP_EXTRA);
-
-        let timg0 = TimerGroup::new(peripherals.TIMG0);
-        let sw_int = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
-        esp_rtos::start(timg0.timer0, sw_int.software_interrupt0);
-
-        log::info!(
-            "t-encoder firmware: built by {} @ {} on {}",
-            env!("BUILD_USER"),
-            env!("BUILD_HOST"),
-            env!("BUILD_DATE")
-        );
-
-        // ESP32-S3-R8 carries octal (OPI) PSRAM. Smoke test confirms it on hardware.
-        let psram = psram::Psram::new(
-            peripherals.PSRAM,
-            psram::PsramConfig {
-                mode: psram::PsramMode::OctalSpi,
-                size: psram::PsramSize::AutoDetect,
-                ram_frequency: psram::SpiRamFreq::Freq80m,
-                ..Default::default()
-            },
-        );
-        let (psram_start, psram_size) = psram.raw_parts();
-        log::info!("psram: {} KiB mapped at {psram_start:p}", psram_size / 1024);
-        let psram_ok = heap::smoke_test(psram_start, psram_size);
-        if psram_ok {
-            log::info!("psram: smoke test OK (octal mode confirmed)");
-            if !heap::init_psram_heap(psram_start, psram_size, DISPLAY_BYTES, heap::PROBE_LEN) {
-                log::error!("psram: heap region not registered (range invalid/too small)");
-            }
-        } else {
-            log::error!("psram: smoke test FAILED — check PSRAM mode (octal vs quad)");
-        }
-
-        // Wi-Fi STA + embassy-net and BLE HID keyboard.
-        let (_stack, radio_guard) = radio::start(
-            spawner,
-            radio::Parts {
-                wifi: peripherals.WIFI,
-                bt: peripherals.BT,
-                rng: peripherals.RNG,
-                adc1: peripherals.ADC1,
-            },
-        );
-        log::info!(
-            "heap: internal free={} used={} | psram free={} used={}",
-            esp_alloc::HEAP.free(),
-            esp_alloc::HEAP.used(),
-            heap::PSRAM_HEAP.free(),
-            heap::PSRAM_HEAP.used(),
-        );
-
+    async fn setup_core1(spawner: Spawner, peripherals: Core1Peripherals) -> Self {
         // Buzzer/haptic task (emits the boot beep).
-        match buzzer::task(peripherals.LEDC, peripherals.GPIO17) {
+        match buzzer::task(peripherals.ledc, peripherals.gpio17) {
             Ok(token) => spawner.spawn(token),
             Err(_) => log::error!("boot: failed to spawn buzzer task"),
         }
 
-        // Serial NDJSON tasks over native USB-Serial/JTAG.
-        let usb_serial =
-            esp_hal::usb_serial_jtag::UsbSerialJtag::new(peripherals.USB_DEVICE).into_async();
-        let (rx, tx) = usb_serial.split();
-        match serial::tx_task(tx) {
+        // Encoder (PCNT) edge interrupt task.
+        let encoder_hw =
+            input::EncoderHw::new(peripherals.pcnt, peripherals.gpio1, peripherals.gpio2);
+        match input::encoder_task(encoder_hw) {
             Ok(token) => spawner.spawn(token),
-            Err(_) => log::error!("boot: failed to spawn serial tx task"),
+            Err(_) => log::error!("boot: failed to spawn encoder task"),
         }
-        match serial::rx_task(rx) {
+
+        // Button edge interrupt task.
+        let button = Input::new(
+            peripherals.gpio0,
+            InputConfig::default().with_pull(Pull::Up),
+        );
+        match input::button_task(button) {
             Ok(token) => spawner.spawn(token),
-            Err(_) => log::error!("boot: failed to spawn serial rx task"),
+            Err(_) => log::error!("boot: failed to spawn button task"),
+        }
+
+        // CHSC5816 touch task.
+        match touch::init(touch::TouchPins {
+            i2c: peripherals.i2c0,
+            sda: peripherals.gpio5,
+            scl: peripherals.gpio6,
+            int: peripherals.gpio9,
+            rst: peripherals.gpio8,
+        })
+        .await
+        {
+            Some(device) => match touch::task(device) {
+                Ok(token) => spawner.spawn(token),
+                Err(_) => log::error!("boot: failed to spawn touch task"),
+            },
+            None => log::error!("boot: touch unavailable"),
         }
 
         // Bring up the CO5300 display.
         let mut delay = esp_hal::delay::Delay::new();
         let pins = display::DisplayPins {
-            en: peripherals.GPIO3,
-            rst: peripherals.GPIO4,
-            cs: peripherals.GPIO10,
-            sclk: peripherals.GPIO12,
-            sio0: peripherals.GPIO11,
-            sio1: peripherals.GPIO13,
-            sio2: peripherals.GPIO7,
-            sio3: peripherals.GPIO14,
+            en: peripherals.gpio3,
+            rst: peripherals.gpio4,
+            cs: peripherals.gpio10,
+            sclk: peripherals.gpio12,
+            sio0: peripherals.gpio11,
+            sio1: peripherals.gpio13,
+            sio2: peripherals.gpio7,
+            sio3: peripherals.gpio14,
         };
-        let panel = match display::init(peripherals.SPI2, peripherals.DMA_CH0, pins, &mut delay) {
+        let panel = match display::init(peripherals.spi2, peripherals.dma_ch0, pins, &mut delay) {
             Ok(panel) => panel,
             Err(display::DisplayInitError::DmaBuffer) => {
                 log::error!("display: DMA buffer setup failed");
@@ -244,52 +254,8 @@ impl Device {
             }
         };
 
-        // Encoder (PCNT) edge interrupt task.
-        let encoder_hw =
-            input::EncoderHw::new(peripherals.PCNT, peripherals.GPIO1, peripherals.GPIO2);
-        match input::encoder_task(encoder_hw) {
-            Ok(token) => spawner.spawn(token),
-            Err(_) => log::error!("boot: failed to spawn encoder task"),
-        }
-
-        // Button edge interrupt task.
-        let button = Input::new(
-            peripherals.GPIO0,
-            InputConfig::default().with_pull(Pull::Up),
-        );
-        match input::button_task(button) {
-            Ok(token) => spawner.spawn(token),
-            Err(_) => log::error!("boot: failed to spawn button task"),
-        }
-
-        // CHSC5816 touch task.
-        match touch::init(touch::TouchPins {
-            i2c: peripherals.I2C0,
-            sda: peripherals.GPIO5,
-            scl: peripherals.GPIO6,
-            int: peripherals.GPIO9,
-            rst: peripherals.GPIO8,
-        })
-        .await
-        {
-            Some(device) => match touch::task(device) {
-                Ok(token) => spawner.spawn(token),
-                Err(_) => log::error!("boot: failed to spawn touch task"),
-            },
-            None => log::error!("boot: touch unavailable"),
-        }
-
-        // PSRAM Framebuffer.
-        let framebuffer = heap::framebuffer(psram_start, psram_size, psram_ok, DISPLAY_BYTES);
-        let Some(fb_buf) = framebuffer else {
-            log::error!("boot: framebuffer unavailable, idling");
-            loop {
-                Timer::after(Duration::from_secs(5)).await;
-            }
-        };
-
         // Slint UI.
-        let slint_ui = match ui::Ui::new(fb_buf) {
+        let slint_ui = match ui::Ui::new(peripherals.fb_buf) {
             Ok(slint_ui) => slint_ui,
             Err(e) => {
                 log::error!("ui: Slint init failed: {e}");
@@ -323,7 +289,6 @@ impl Device {
             panel,
             slint_ui,
             router,
-            _radio: radio_guard,
             frames: 0,
         };
 
@@ -472,6 +437,126 @@ impl Device {
 
 #[esp_rtos::main]
 async fn main(spawner: Spawner) -> ! {
-    let mut device = Device::setup(spawner).await;
-    device.run().await;
+    let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
+    let peripherals = esp_hal::init(config);
+
+    logger::init();
+
+    // Internal-only global heap (esp_alloc::HEAP) — serves esp-radio + DMA.
+    esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: heap::INTERNAL_HEAP_RECLAIMED);
+    esp_alloc::heap_allocator!(size: heap::INTERNAL_HEAP_EXTRA);
+
+    let timg0 = TimerGroup::new(peripherals.TIMG0);
+    let sw_int = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
+    esp_rtos::start(timg0.timer0, sw_int.software_interrupt0);
+
+    log::info!(
+        "t-encoder firmware: built by {} @ {} on {}",
+        env!("BUILD_USER"),
+        env!("BUILD_HOST"),
+        env!("BUILD_DATE")
+    );
+
+    // ESP32-S3-R8 carries octal (OPI) PSRAM. Smoke test confirms it on hardware.
+    let psram = psram::Psram::new(
+        peripherals.PSRAM,
+        psram::PsramConfig {
+            mode: psram::PsramMode::OctalSpi,
+            size: psram::PsramSize::AutoDetect,
+            ram_frequency: psram::SpiRamFreq::Freq80m,
+            ..Default::default()
+        },
+    );
+    let (psram_start, psram_size) = psram.raw_parts();
+    log::info!("psram: {} KiB mapped at {psram_start:p}", psram_size / 1024);
+    let psram_ok = heap::smoke_test(psram_start, psram_size);
+    if psram_ok {
+        log::info!("psram: smoke test OK (octal mode confirmed)");
+        if !heap::init_psram_heap(psram_start, psram_size, DISPLAY_BYTES, heap::PROBE_LEN) {
+            log::error!("psram: heap region not registered (range invalid/too small)");
+        }
+    } else {
+        log::error!("psram: smoke test FAILED — check PSRAM mode (octal vs quad)");
+    }
+
+    // PSRAM Framebuffer.
+    let framebuffer = heap::framebuffer(psram_start, psram_size, psram_ok, DISPLAY_BYTES);
+    let Some(fb_buf) = framebuffer else {
+        log::error!("boot: framebuffer unavailable, idling");
+        loop {
+            Timer::after(Duration::from_secs(5)).await;
+        }
+    };
+
+    // Serial NDJSON tasks over native USB-Serial/JTAG on Core 0.
+    let usb_serial =
+        esp_hal::usb_serial_jtag::UsbSerialJtag::new(peripherals.USB_DEVICE).into_async();
+    let (rx, tx) = usb_serial.split();
+    match serial::tx_task(tx) {
+        Ok(token) => spawner.spawn(token),
+        Err(_) => log::error!("boot: failed to spawn serial tx task"),
+    }
+    match serial::rx_task(rx) {
+        Ok(token) => spawner.spawn(token),
+        Err(_) => log::error!("boot: failed to spawn serial rx task"),
+    }
+
+    // Hand HMI, display, and UI peripherals across to Core 1.
+    let core1_peripherals = Core1Peripherals {
+        spi2: peripherals.SPI2,
+        dma_ch0: peripherals.DMA_CH0,
+        pcnt: peripherals.PCNT,
+        i2c0: peripherals.I2C0,
+        ledc: peripherals.LEDC,
+        gpio0: peripherals.GPIO0,
+        gpio1: peripherals.GPIO1,
+        gpio2: peripherals.GPIO2,
+        gpio3: peripherals.GPIO3,
+        gpio4: peripherals.GPIO4,
+        gpio5: peripherals.GPIO5,
+        gpio6: peripherals.GPIO6,
+        gpio7: peripherals.GPIO7,
+        gpio8: peripherals.GPIO8,
+        gpio9: peripherals.GPIO9,
+        gpio10: peripherals.GPIO10,
+        gpio11: peripherals.GPIO11,
+        gpio12: peripherals.GPIO12,
+        gpio13: peripherals.GPIO13,
+        gpio14: peripherals.GPIO14,
+        gpio17: peripherals.GPIO17,
+        fb_buf,
+    };
+
+    // Start Core 1 (AppCpu) thread.
+    esp_rtos::start_second_core::<APP_CORE_STACK_SIZE>(
+        peripherals.CPU_CTRL,
+        sw_int.software_interrupt1,
+        unsafe { &mut *core::ptr::addr_of_mut!(APP_CORE_STACK) },
+        move || {
+            core1_entry(core1_peripherals);
+        },
+    );
+
+    // Wi-Fi STA + embassy-net and BLE HID keyboard on Core 0.
+    let (_stack, _radio_guard) = radio::start(
+        spawner,
+        radio::Parts {
+            wifi: peripherals.WIFI,
+            bt: peripherals.BT,
+            rng: peripherals.RNG,
+            adc1: peripherals.ADC1,
+        },
+    );
+    log::info!(
+        "heap: internal free={} used={} | psram free={} used={}",
+        esp_alloc::HEAP.free(),
+        esp_alloc::HEAP.used(),
+        heap::PSRAM_HEAP.free(),
+        heap::PSRAM_HEAP.used(),
+    );
+
+    // Core 0 loop: keeps _radio_guard alive.
+    loop {
+        Timer::after(Duration::from_secs(3600)).await;
+    }
 }

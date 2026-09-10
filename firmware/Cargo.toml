@@ -35,6 +35,7 @@ embassy-sync = "0.7"
 embassy-futures = { workspace = true }
 embassy-net = { workspace = true }
 embedded-io-async = { workspace = true }
+static_cell = { workspace = true }
 esp-hal = { workspace = true }
 esp-rtos = { workspace = true }
 esp-println = { workspace = true }
