@@ -1,6 +1,5 @@
 //! Serial communication task over native USB-Serial/JTAG using NDJSON.
 
-use alloc::boxed::Box;
 use alloc::string::ToString;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
@@ -15,11 +14,8 @@ pub enum TxMessage {
     Event(DeviceEvent),
     /// Response to a command.
     Response(CommandResponse),
-    /// Framebuffer capture streaming request holding snapshot data.
-    ///
-    /// Latency note: ~98.6 ms round-trip vs ~55.5 ms with raw slice streaming.
-    /// Deferred optimizations: Core 1 RLE compression (Option 1) or Mutex lock (Option 2).
-    Screenshot(Box<[u8; ui::FRAMEBUFFER_BYTES]>),
+    /// Framebuffer capture streaming request holding the loaned framebuffer.
+    Screenshot(crate::event::Framebuffer),
 }
 
 /// Channel queuing outgoing messages for the serial transmitter task.
@@ -262,7 +258,10 @@ pub async fn tx_task(mut tx: UsbSerialJtagTx<'static, esp_hal::Async>) {
         let msg = TX_CHANNEL.receive().await;
         match msg {
             TxMessage::Screenshot(framebuffer) => {
-                stream_screenshot_base64(&mut tx, &framebuffer[..]);
+                stream_screenshot_base64(&mut tx, framebuffer.0);
+                crate::event::EVENTS
+                    .send(crate::event::Event::FramebufferReturn(framebuffer))
+                    .await;
             }
             TxMessage::Log(rec) => {
                 let dev_msg = DeviceMessage::Log(rec);

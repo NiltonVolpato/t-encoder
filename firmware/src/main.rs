@@ -363,14 +363,18 @@ impl Device {
                 }
                 Event::Gesture(gesture) => self.router.handle_gesture(gesture, &ctx),
                 Event::Screenshot => {
-                    // Takes a snapshot copy in PSRAM and queues to Core 0.
-                    // Latency note: round-trip is ~98.6 ms (vs ~55.5 ms with direct unsynchronized read).
-                    // See ui::Ui::snapshot doc for measured data and Option 1 (Core 1 RLE) / Option 2 (Mutex) plans.
-                    let snapshot = self.slint_ui.snapshot();
-                    serial::TX_CHANNEL
-                        .send(serial::TxMessage::Screenshot(snapshot))
-                        .await;
+                    if let Some(framebuffer) = self.slint_ui.take_framebuffer() {
+                        serial::TX_CHANNEL
+                            .send(serial::TxMessage::Screenshot(event::Framebuffer(
+                                framebuffer,
+                            )))
+                            .await;
+                    }
                     false
+                }
+                Event::FramebufferReturn(framebuffer) => {
+                    self.slint_ui.return_framebuffer(framebuffer.0);
+                    true
                 }
             };
 

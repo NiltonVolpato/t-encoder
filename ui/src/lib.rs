@@ -153,7 +153,7 @@ impl Platform for DevicePlatform {
 pub struct Ui {
     window: Rc<MinimalSoftwareWindow>,
     shell: Shell,
-    framebuffer: &'static mut [u8],
+    framebuffer: Option<&'static mut [u8]>,
 }
 
 impl Ui {
@@ -177,7 +177,7 @@ impl Ui {
         Ok(Ui {
             window,
             shell,
-            framebuffer,
+            framebuffer: Some(framebuffer),
         })
     }
 
@@ -200,14 +200,12 @@ impl Ui {
     pub fn render<P: Panel>(&mut self, panel: &mut P) -> Result<Option<DirtyRect>, P::Error> {
         slint::platform::update_timers_and_animations();
 
+        let Some(framebuffer) = self.framebuffer.as_mut() else {
+            return Ok(None);
+        };
+
         let stride = usize::try_from(WIDTH).unwrap_or(0);
-        // Split the borrow: `draw_if_needed` takes the window by shared
-        // reference while the closure needs the framebuffer mutably.
-        let Ui {
-            window,
-            framebuffer,
-            ..
-        } = self;
+        let window = &self.window;
 
         let mut dirty = None;
         let drawn = window.draw_if_needed(|renderer| {
@@ -239,34 +237,16 @@ impl Ui {
         self.window.has_active_animations()
     }
 
-    /// Takes a snapshot copy of the current framebuffer allocated on the heap (PSRAM).
+    /// Temporarily lends the framebuffer to another task (e.g. for screenshot streaming).
     ///
-    /// Statically safe from aliasing concurrent rendering because `render` requires `&mut self`.
-    /// Has zero stack footprint to prevent overflowing small core stacks.
-    ///
-    /// # Performance & Latency Note (Measured Data):
-    /// - Direct (unsound) slice streaming: ~55.5 ms client latency.
-    /// - PSRAM snapshot copy + cross-core dispatch: ~98.6 ms client latency (~43 ms delta).
-    /// - Latency doubled primarily due to:
-    ///   - PSRAM-to-PSRAM memcpy (~304 KB) at ~14-15 MB/s taking ~20-25 ms.
-    ///   - PSRAM heap block allocation and deallocation overhead.
-    ///   - Cross-core event routing (Core 0 -> Core 1 -> Core 0 via Embassy channels).
-    ///
-    /// # Future Optimization Candidates:
-    /// - Option 1: Perform TGA RLE compression on Core 1 directly instead of copying the raw
-    ///   framebuffer. RLE achieves 90-95% compression on typical UI screens, so Core 1 would
-    ///   only allocate, copy, and queue ~15-30 KB rather than 304 KB across cores.
-    /// - Option 2: Protect the single framebuffer with a Mutex (pausing UI rendering during
-    ///   capture). Pausing the UI during a screenshot is completely acceptable and eliminates
-    ///   the 304 KB memcpy and heap allocation altogether.
-    #[must_use]
-    pub fn snapshot(&self) -> Box<[u8; FRAMEBUFFER_BYTES]> {
-        let mut copy: Box<[u8; FRAMEBUFFER_BYTES]> = alloc::vec![0u8; FRAMEBUFFER_BYTES]
-            .into_boxed_slice()
-            .try_into()
-            .unwrap();
-        copy.copy_from_slice(self.framebuffer);
-        copy
+    /// While absent, [`Ui::render`] skips drawing and returns `Ok(None)` without losing Slint's dirty state.
+    pub fn take_framebuffer(&mut self) -> Option<&'static mut [u8]> {
+        self.framebuffer.take()
+    }
+
+    /// Restores the loaned framebuffer back to the UI.
+    pub fn return_framebuffer(&mut self, framebuffer: &'static mut [u8]) {
+        self.framebuffer = Some(framebuffer);
     }
 }
 
