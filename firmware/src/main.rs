@@ -42,6 +42,7 @@ use esp_hal::gpio::{Input, InputConfig, Pull};
 use esp_hal::interrupt::software::SoftwareInterruptControl;
 use esp_hal::system::Stack;
 use esp_hal::timer::timg::TimerGroup;
+use esp_println::{print, println};
 use event::{EVENTS, Event};
 use launcher::{AppFactory, Ctx, Router, View};
 use slint::ComponentHandle;
@@ -99,7 +100,7 @@ fn rgb565_to_slint(color: embedded_graphics::pixelcolor::Rgb565) -> slint::Color
 ///
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
-    esp_println::println!("PANIC: {info}");
+    println!("PANIC: {info}");
     firmware_panic_stop()
 }
 
@@ -548,6 +549,7 @@ fn main() -> ! {
     // Register internal heap regions after PSRAM so PSRAM is Region 0 (default for general alloc).
     esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: heap::INTERNAL_HEAP_RECLAIMED);
     esp_alloc::heap_allocator!(size: heap::INTERNAL_HEAP_EXTRA);
+    print!("{}", esp_alloc::HEAP.stats());
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     let sw_int = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
@@ -559,7 +561,6 @@ fn main() -> ! {
         env!("BUILD_HOST"),
         env!("BUILD_DATE")
     );
-    log::info!("heap: {}", esp_alloc::HEAP.stats());
 
     // PSRAM Framebuffer.
     let framebuffer = alloc::vec![0u8; enc_config::display::FRAMEBUFFER_BYTES]
