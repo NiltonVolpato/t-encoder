@@ -12,6 +12,7 @@ mod macropad;
 mod magic8;
 mod pomodoro;
 mod simon;
+mod sonos;
 
 pub use macropad::{
     ALT, CTRL, GUI, MAX_PROFILES, MacroBinding, Macropad, MacropadFactory, MacropadSettings,
@@ -20,3 +21,7 @@ pub use macropad::{
 pub use magic8::{Magic8, Magic8Factory};
 pub use pomodoro::{Pomodoro, PomodoroFactory};
 pub use simon::{Simon, SimonFactory};
+pub use sonos::{
+    CommandSink, GroupSummary, NowPlayingData, SnapshotGetter, Sonos, SonosCommand, SonosFactory,
+    SonosSnapshot,
+};

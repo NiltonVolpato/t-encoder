@@ -2344,6 +2344,7 @@ dependencies = [
  "embedded-hal 1.0.0",
  "embedded-io 0.6.1",
  "embedded-io-async 0.7.0",
+ "embedded-sonos",
  "embedded-storage",
  "embedded-storage-async",
  "enc-co5300",

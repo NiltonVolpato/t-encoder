@@ -49,8 +49,8 @@ const SNTP_RETRY: Duration = Duration::from_secs(30);
 /// Number of concurrent Picoserve HTTP worker tasks.
 const WEB_TASK_POOL_SIZE: usize = 1;
 
-/// Socket pool capacity: DHCP + DNS + SNTP + 1 HTTP socket + headroom.
-const SOCKETS: usize = 6;
+/// Socket pool capacity: DHCP + DNS + SNTP + 1 HTTP socket + Sonos + headroom.
+const SOCKETS: usize = 8;
 
 static RESOURCES: StaticCell<StackResources<SOCKETS>> = StaticCell::new();
 const CONFIG: picoserve::Config = picoserve::Config::new(picoserve::Timeouts {

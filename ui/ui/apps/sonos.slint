@@ -1,0 +1,320 @@
+// Sonos Controller for LilyGo T-Encoder-Pro (390x390 round AMOLED).
+
+export struct SonosGroupCard {
+    name: string,
+    members: string,
+    playing_summary: string,
+    is_playing: bool,
+}
+
+export struct SonosState {
+    mode: int, // 0 = Group Selector, 1 = Now Playing
+    groups: [SonosGroupCard],
+    selected_group: int,
+    active_group_name: string,
+    track_title: string,
+    track_artist: string,
+    track_album: string,
+    elapsed_str: string,
+    duration_str: string,
+    progress_ratio: float, // 0.0 .. 1.0
+    volume: int, // 0 .. 100
+    volume_visible: bool,
+    is_playing: bool,
+    accent: color,
+    status: string,
+}
+
+export component Sonos inherits Rectangle {
+    in property <SonosState> state;
+
+    property <length> pitch: 68px;
+
+    background: #000000;
+
+    // =========================================================================
+    // Mode 0: Speaker Group Selector (Level 1)
+    // =========================================================================
+    if state.mode == 0: Rectangle {
+        width: parent.width;
+        height: parent.height;
+
+        Text {
+            y: 46px;
+            width: parent.width;
+            text: "SONOS ROOMS";
+            color: #718096;
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: 1.5px;
+            horizontal-alignment: center;
+        }
+
+        // Selection pill behind focal group
+        Rectangle {
+            x: 28px;
+            width: parent.width - 56px;
+            height: 60px;
+            y: (parent.height - 60px) / 2;
+            border-radius: 30px;
+            background: state.accent;
+            opacity: 0.16;
+            border-width: 1.5px;
+            border-color: state.accent;
+        }
+
+        // Room carousel
+        for group[i] in state.groups: Rectangle {
+            property <int> offset: i - state.selected_group;
+            property <bool> focal: offset == 0;
+            property <float> dim: offset == 0 ? 1.0 : (abs(offset) == 1 ? 0.40 : 0.12);
+
+            y: parent.height / 2 - pitch / 2 + offset * pitch;
+            x: 0;
+            width: parent.width;
+            height: pitch;
+            opacity: dim;
+
+            VerticalLayout {
+                alignment: center;
+                spacing: 2px;
+
+                Text {
+                    width: parent.width;
+                    text: group.name;
+                    color: focal ? #ffffff : #a0aec0;
+                    font-size: focal ? 21px : 17px;
+                    font-weight: focal ? 700 : 500;
+                    horizontal-alignment: center;
+                    overflow: elide;
+                }
+
+                if group.playing_summary != "": Text {
+                    width: parent.width - 80px;
+                    text: (group.is_playing ? "▶ " : "") + group.playing_summary;
+                    color: focal ? (group.is_playing ? state.accent : #718096) : #4a5568;
+                    font-size: 12px;
+                    font-weight: 500;
+                    horizontal-alignment: center;
+                    overflow: elide;
+                }
+            }
+        }
+
+        Text {
+            y: parent.height - 48px;
+            width: parent.width;
+            text: "Press knob to select";
+            color: #4a5568;
+            font-size: 13px;
+            font-weight: 500;
+            horizontal-alignment: center;
+        }
+    }
+
+    // =========================================================================
+    // Mode 1: Now Playing (Level 2)
+    // =========================================================================
+    if state.mode == 1: Rectangle {
+        width: parent.width;
+        height: parent.height;
+
+        // Room name badge pill at top
+        HorizontalLayout {
+            y: 28px;
+            alignment: center;
+
+            Rectangle {
+                height: 24px;
+                border-radius: 12px;
+                background: #1a202c;
+                border-width: 1px;
+                border-color: #2d3748;
+
+                HorizontalLayout {
+                    padding-left: 14px;
+                    padding-right: 14px;
+                    alignment: center;
+
+                    Text {
+                        text: state.active_group_name;
+                        color: state.accent;
+                        font-size: 11px;
+                        font-weight: 700;
+                        letter-spacing: 1px;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+
+        // Center Track Info block
+        VerticalLayout {
+            y: 68px;
+            x: 30px;
+            width: parent.width - 60px;
+            spacing: 4px;
+            alignment: center;
+
+            // Track Title
+            Text {
+                width: parent.width;
+                text: state.track_title != "" ? state.track_title : "No Track";
+                color: #ffffff;
+                font-size: 22px;
+                font-weight: 700;
+                horizontal-alignment: center;
+                overflow: elide;
+            }
+
+            // Artist Name
+            Text {
+                width: parent.width;
+                text: state.track_artist != "" ? state.track_artist : "Unknown Artist";
+                color: state.accent;
+                font-size: 16px;
+                font-weight: 600;
+                horizontal-alignment: center;
+                overflow: elide;
+            }
+
+            // Album Name
+            if state.track_album != "": Text {
+                width: parent.width;
+                text: state.track_album;
+                color: #718096;
+                font-size: 12px;
+                font-weight: 500;
+                horizontal-alignment: center;
+                overflow: elide;
+            }
+        }
+
+        // Play / Pause Icon badge in center
+        Rectangle {
+            y: 180px;
+            x: (parent.width - 52px) / 2;
+            width: 52px;
+            height: 52px;
+            border-radius: 26px;
+            background: state.accent.darker(0.7);
+            border-width: 1.5px;
+            border-color: state.accent;
+
+            // Pause icon: two vertical bars
+            if state.is_playing: Rectangle {
+                width: 16px;
+                height: 18px;
+                x: (parent.width - 16px) / 2;
+                y: (parent.height - 18px) / 2;
+
+                Rectangle {
+                    x: 0;
+                    width: 5px;
+                    height: parent.height;
+                    border-radius: 2px;
+                    background: #ffffff;
+                }
+                Rectangle {
+                    x: 11px;
+                    width: 5px;
+                    height: parent.height;
+                    border-radius: 2px;
+                    background: #ffffff;
+                }
+            }
+
+            // Play icon: text glyph
+            if !state.is_playing: Text {
+                width: parent.width;
+                height: parent.height;
+                text: "▶";
+                color: #ffffff;
+                font-size: 20px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+
+        // Progress Bar & Time
+        VerticalLayout {
+            y: 250px;
+            x: 45px;
+            width: parent.width - 90px;
+            spacing: 6px;
+
+            // Track timeline bar
+            Rectangle {
+                width: parent.width;
+                height: 5px;
+                border-radius: 2.5px;
+                background: #2d3748;
+
+                // Fill progress
+                Rectangle {
+                    x: 0;
+                    y: 0;
+                    width: parent.width * max(0.0, min(1.0, state.progress_ratio));
+                    height: parent.height;
+                    border-radius: 2.5px;
+                    background: state.accent;
+                }
+            }
+
+            // Elapsed / Duration text
+            HorizontalLayout {
+                width: parent.width;
+
+                Text {
+                    text: state.elapsed_str != "" ? state.elapsed_str : "00:00";
+                    color: #a0aec0;
+                    font-size: 12px;
+                    font-weight: 500;
+                    horizontal-alignment: left;
+                }
+
+                Text {
+                    text: state.duration_str != "" ? state.duration_str : "00:00";
+                    color: #718096;
+                    font-size: 12px;
+                    font-weight: 500;
+                    horizontal-alignment: right;
+                }
+            }
+        }
+
+        // Temporary Volume HUD overlay (when volume is changing)
+        if state.volume_visible: Rectangle {
+            y: 300px;
+            x: (parent.width - 120px) / 2;
+            width: 120px;
+            height: 32px;
+            border-radius: 16px;
+            background: #1a202c;
+            border-width: 1.5px;
+            border-color: state.accent;
+
+            Text {
+                width: parent.width;
+                height: parent.height;
+                text: "VOL " + state.volume + "%";
+                color: #ffffff;
+                font-size: 13px;
+                font-weight: 700;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+
+        // Footer hint (when volume HUD is not visible)
+        if !state.volume_visible: Text {
+            y: parent.height - 44px;
+            width: parent.width;
+            text: "Swipe up for rooms";
+            color: #4a5568;
+            font-size: 12px;
+            font-weight: 500;
+            horizontal-alignment: center;
+        }
+    }
+}

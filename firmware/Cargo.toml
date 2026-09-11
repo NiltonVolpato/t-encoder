@@ -13,6 +13,7 @@ launcher = { path = "../launcher" }
 apps = { path = "../apps" }
 ui = { path = "../ui" }
 protocol = { path = "../protocol" }
+embedded-sonos = { path = "../embedded-sonos" }
 # For the card model + colours only; the renderer lives in `ui`.
 slint = { version = "1.17.1", default-features = false, features = ["compat-1-2", "unsafe-single-threaded", "libm", "renderer-software"] }
 

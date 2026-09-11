@@ -29,6 +29,8 @@ mod logger;
 pub mod net;
 mod radio;
 mod serial;
+#[cfg(feature = "radio")]
+pub mod sonos;
 pub mod storage;
 mod touch;
 
@@ -289,8 +291,18 @@ impl Device {
         let magic8: &'static dyn AppFactory = Box::leak(Box::new(apps::Magic8Factory::new(
             slint_ui.shell().as_weak(),
         )));
+        #[cfg(feature = "radio")]
+        let sonos: &'static dyn AppFactory = Box::leak(Box::new(apps::SonosFactory::with_bridge(
+            slint_ui.shell().as_weak(),
+            crate::sonos::get_sonos_snapshot_sync,
+            crate::sonos::send_sonos_command_sync,
+        )));
+        #[cfg(not(feature = "radio"))]
+        let sonos: &'static dyn AppFactory = Box::leak(Box::new(apps::SonosFactory::new(
+            slint_ui.shell().as_weak(),
+        )));
         let registry: &'static [&'static dyn AppFactory] =
-            Box::leak(Box::new([pomodoro, macropad, simon, magic8]));
+            Box::leak(Box::new([pomodoro, macropad, simon, magic8, sonos]));
         let router = Router::new(registry, launcher::default_carousel(0));
 
         slint_ui.shell().set_cards(app_cards(router.factories()));
@@ -515,7 +527,7 @@ async fn core0_task(spawner: Spawner, parts: Core0Parts) {
     );
 
     // Wi-Fi STA + embassy-net and BLE HID keyboard on Core 0.
-    let (_stack, _radio_guard) = radio::start(
+    let (stack, _radio_guard) = radio::start(
         spawner,
         radio::Parts {
             wifi: parts.wifi,
@@ -524,6 +536,14 @@ async fn core0_task(spawner: Spawner, parts: Core0Parts) {
             adc1: parts.adc1,
         },
     );
+
+    #[cfg(feature = "radio")]
+    if let Some(s) = stack {
+        match sonos::sonos_worker_task(s) {
+            Ok(token) => spawner.spawn(token),
+            Err(_) => log::error!("boot: failed to spawn sonos worker task"),
+        }
+    }
     log::info!(
         "heap: internal free={} | psram free={} | total used={}",
         esp_alloc::HEAP.free_caps(esp_alloc::MemoryCapability::Internal.into()),
