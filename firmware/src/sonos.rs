@@ -144,19 +144,8 @@ async fn refresh_topology(
         Err(_) => return Err(()),
     };
 
-    let mut summaries = Vec::new();
     let mut coords = Vec::new();
-
     for group in &topology.groups {
-        let mut members_str = String::new();
-        for (i, m) in group.members.iter().enumerate() {
-            if i > 0 {
-                members_str.push_str(", ");
-            }
-            members_str.push_str(&m.name);
-        }
-
-        summaries.push(GroupSummary::new(&group.name, &members_str, "", false));
         coords.push(group.coordinator_ip);
     }
 
@@ -166,6 +155,32 @@ async fn refresh_topology(
 
     SNAPSHOT.lock(|c| {
         let mut snap = c.borrow_mut();
+        let mut summaries = Vec::new();
+
+        for group in &topology.groups {
+            let mut members_str = String::new();
+            for (i, m) in group.members.iter().enumerate() {
+                if i > 0 {
+                    members_str.push_str(", ");
+                }
+                members_str.push_str(&m.name);
+            }
+
+            let prev_group = snap
+                .groups
+                .iter()
+                .find(|g| g.name.as_str() == group.name.as_str());
+            let summary = prev_group.map_or("", |g| g.playing_summary.as_str());
+            let is_playing = prev_group.map_or(false, |g| g.is_playing);
+
+            summaries.push(GroupSummary::new(
+                &group.name,
+                &members_str,
+                summary,
+                is_playing,
+            ));
+        }
+
         snap.groups = summaries;
         snap.revision = snap.revision.wrapping_add(1);
     });

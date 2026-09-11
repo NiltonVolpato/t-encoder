@@ -1,5 +1,7 @@
 // Sonos Controller for LilyGo T-Encoder-Pro (390x390 round AMOLED).
 
+import { ArcSegment, RingData, RingBgData } from "ring.slint";
+
 export struct SonosGroupCard {
     name: string,
     members: string,
@@ -23,148 +25,191 @@ export struct SonosState {
     is_playing: bool,
     accent: color,
     status: string,
+    title_scroll_offset: length,
+    title_scroll_active: bool,
 }
 
 export component Sonos inherits Rectangle {
     in property <SonosState> state;
 
-    property <length> pitch: 68px;
-
     background: #000000;
 
     // =========================================================================
-    // Mode 0: Speaker Group Selector (Level 1)
+    // Mode 0: Speaker Group Selector (Level 1 - Full Screen per Group)
     // =========================================================================
     if state.mode == 0: Rectangle {
         width: parent.width;
         height: parent.height;
 
+        // Top Category Header
         Text {
-            y: 46px;
+            y: 42px;
             width: parent.width;
             text: "SONOS ROOMS";
             color: #718096;
-            font-size: 13px;
+            font-size: 14px;
             font-weight: 700;
-            letter-spacing: 1.5px;
+            letter-spacing: 2px;
             horizontal-alignment: center;
         }
 
-        // Selection pill behind focal group
-        Rectangle {
-            x: 28px;
-            width: parent.width - 56px;
-            height: 60px;
-            y: (parent.height - 60px) / 2;
-            border-radius: 30px;
-            background: state.accent;
-            opacity: 0.16;
-            border-width: 1.5px;
-            border-color: state.accent;
-        }
-
-        // Room carousel
+        // Active Group Full-Page Display
         for group[i] in state.groups: Rectangle {
-            property <int> offset: i - state.selected_group;
-            property <bool> focal: offset == 0;
-            property <float> dim: offset == 0 ? 1.0 : (abs(offset) == 1 ? 0.40 : 0.12);
-
-            y: parent.height / 2 - pitch / 2 + offset * pitch;
-            x: 0;
+            visible: i == state.selected_group;
             width: parent.width;
-            height: pitch;
-            opacity: dim;
+            height: parent.height;
 
             VerticalLayout {
+                y: 85px;
+                x: 35px;
+                width: parent.width - 70px;
+                height: 180px;
                 alignment: center;
-                spacing: 2px;
+                spacing: 12px;
 
+                // Group Name (e.g. "Kitchen", "Living Room")
                 Text {
                     width: parent.width;
                     text: group.name;
-                    color: focal ? #ffffff : #a0aec0;
-                    font-size: focal ? 21px : 17px;
-                    font-weight: focal ? 700 : 500;
+                    color: #ffffff;
+                    font-size: 30px;
+                    font-weight: 800;
                     horizontal-alignment: center;
                     overflow: elide;
                 }
 
-                if group.playing_summary != "": Text {
-                    width: parent.width - 80px;
-                    text: (group.is_playing ? "▶ " : "") + group.playing_summary;
-                    color: focal ? (group.is_playing ? state.accent : #718096) : #4a5568;
-                    font-size: 12px;
+                // Member Rooms List
+                Text {
+                    width: parent.width;
+                    text: group.members;
+                    color: #a0aec0;
+                    font-size: 16px;
                     font-weight: 500;
                     horizontal-alignment: center;
                     overflow: elide;
                 }
+
+                // Now Playing Status Pill
+                Rectangle {
+                    height: 40px;
+                    border-radius: 20px;
+                    background: #12151c;
+                    border-width: 1.5px;
+                    border-color: group.is_playing ? state.accent : #2d3748;
+
+                    HorizontalLayout {
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        alignment: center;
+
+                        Text {
+                            text: (group.is_playing ? "▶  " : "") + (group.playing_summary != "" ? group.playing_summary : "Not Playing");
+                            color: group.is_playing ? state.accent : #a0aec0;
+                            font-size: 15px;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+                    }
+                }
             }
         }
 
+        // Bottom Page Indicator Dots
+        HorizontalLayout {
+            y: 318px;
+            alignment: center;
+            spacing: 8px;
+
+            for group[i] in state.groups: Rectangle {
+                width: i == state.selected_group ? 18px : 8px;
+                height: 8px;
+                border-radius: 4px;
+                background: i == state.selected_group ? state.accent : #2d3748;
+                animate width, background { duration: 180ms; easing: ease-out; }
+            }
+        }
+
+        // Bottom Navigation Hint
         Text {
-            y: parent.height - 48px;
+            y: 344px;
             width: parent.width;
-            text: "Press knob to select";
-            color: #4a5568;
-            font-size: 13px;
+            text: "Press knob to control";
+            color: #718096;
+            font-size: 14px;
             font-weight: 500;
             horizontal-alignment: center;
         }
     }
 
     // =========================================================================
-    // Mode 1: Now Playing (Level 2)
+    // Mode 1: Now Playing (Level 2 - Option A Layout)
     // =========================================================================
     if state.mode == 1: Rectangle {
         width: parent.width;
         height: parent.height;
 
-        // Room name badge pill at top
-        HorizontalLayout {
-            y: 28px;
-            alignment: center;
-
-            Rectangle {
-                height: 24px;
-                border-radius: 12px;
-                background: #1a202c;
-                border-width: 1px;
-                border-color: #2d3748;
-
-                HorizontalLayout {
-                    padding-left: 14px;
-                    padding-right: 14px;
-                    alignment: center;
-
-                    Text {
-                        text: state.active_group_name;
-                        color: state.accent;
-                        font-size: 11px;
-                        font-weight: 700;
-                        letter-spacing: 1px;
-                        vertical-alignment: center;
-                    }
-                }
-            }
+        // 1. Progress Ring (60 background segments)
+        for seg[i] in RingBgData.segments: Image {
+            x: seg.x;
+            y: seg.y;
+            source: seg.img;
         }
 
-        // Center Track Info block
+        // 2. Progress Ring (60 lit orange segments)
+        for seg[i] in RingData.segments: Image {
+            x: seg.x;
+            y: seg.y;
+            source: seg.img;
+            visible: (i / 60.0) <= state.progress_ratio;
+        }
+
+        // 3. Round Start Cap (12 o'clock, 12px diameter circle at x:189, y:8)
+        Rectangle {
+            width: 12px;
+            height: 12px;
+            border-radius: 6px;
+            background: state.accent;
+            x: 189px;
+            y: 8px;
+            visible: state.progress_ratio > 0.008;
+        }
+
+        // 4. Round Tip Cap (at progress tip, R=181px centerline)
+        Rectangle {
+            width: 12px;
+            height: 12px;
+            border-radius: 6px;
+            background: state.accent;
+            x: 189px + 181px * sin(state.progress_ratio * 360deg);
+            y: 189px - 181px * cos(state.progress_ratio * 360deg);
+            visible: state.progress_ratio > 0.008;
+        }
+
+        // 5. Upper Deck: Track Title, Artist, Album
         VerticalLayout {
-            y: 68px;
-            x: 30px;
-            width: parent.width - 60px;
-            spacing: 4px;
+            y: 65px;
+            x: (parent.width - 230px) / 2;
+            width: 230px;
+            height: 85px;
+            spacing: 3px;
             alignment: center;
 
-            // Track Title
-            Text {
+            // Track Title with Marquee container
+            Rectangle {
+                clip: true;
                 width: parent.width;
-                text: state.track_title != "" ? state.track_title : "No Track";
-                color: #ffffff;
-                font-size: 22px;
-                font-weight: 700;
-                horizontal-alignment: center;
-                overflow: elide;
+                height: 30px;
+
+                Text {
+                    x: state.title_scroll_active ? -state.title_scroll_offset : 0px;
+                    width: state.title_scroll_active ? self.preferred-width : parent.width;
+                    horizontal-alignment: state.title_scroll_active ? left : center;
+                    text: state.track_title != "" ? state.track_title : "No Track";
+                    color: #ffffff;
+                    font-size: 24px;
+                    font-weight: 800;
+                }
             }
 
             // Artist Name
@@ -182,115 +227,92 @@ export component Sonos inherits Rectangle {
             if state.track_album != "": Text {
                 width: parent.width;
                 text: state.track_album;
-                color: #718096;
-                font-size: 12px;
+                color: #a0aec0;
+                font-size: 14px;
                 font-weight: 500;
                 horizontal-alignment: center;
                 overflow: elide;
             }
         }
 
-        // Play / Pause Icon badge in center
+        // 6. Dead-Center Play / Pause Button (x: 161, y: 161, 68x68)
         Rectangle {
-            y: 180px;
-            x: (parent.width - 52px) / 2;
-            width: 52px;
-            height: 52px;
-            border-radius: 26px;
-            background: state.accent.darker(0.7);
+            x: (parent.width - 68px) / 2;
+            y: (parent.height - 68px) / 2;
+            width: 68px;
+            height: 68px;
+            border-radius: 34px;
+            background: #ffffff.with-alpha(0.06);
             border-width: 1.5px;
-            border-color: state.accent;
+            border-color: #ffffff.with-alpha(0.28);
 
             // Pause icon: two vertical bars
             if state.is_playing: Rectangle {
-                width: 16px;
-                height: 18px;
-                x: (parent.width - 16px) / 2;
-                y: (parent.height - 18px) / 2;
+                width: 20px;
+                height: 22px;
+                x: (parent.width - 20px) / 2;
+                y: (parent.height - 22px) / 2;
 
                 Rectangle {
                     x: 0;
-                    width: 5px;
+                    width: 6px;
                     height: parent.height;
-                    border-radius: 2px;
+                    border-radius: 3px;
                     background: #ffffff;
                 }
                 Rectangle {
-                    x: 11px;
-                    width: 5px;
+                    x: 14px;
+                    width: 6px;
                     height: parent.height;
-                    border-radius: 2px;
+                    border-radius: 3px;
                     background: #ffffff;
                 }
             }
 
-            // Play icon: text glyph
+            // Play icon: crisp text glyph with optical center
             if !state.is_playing: Text {
+                x: 3px; // Optical centering for triangle
                 width: parent.width;
                 height: parent.height;
                 text: "▶";
                 color: #ffffff;
-                font-size: 20px;
+                font-size: 26px;
                 horizontal-alignment: center;
                 vertical-alignment: center;
             }
         }
 
-        // Progress Bar & Time
-        VerticalLayout {
-            y: 250px;
-            x: 45px;
-            width: parent.width - 90px;
-            spacing: 6px;
+        // 7. Lower Deck: Timestamps
+        HorizontalLayout {
+            y: 252px;
+            x: 65px;
+            width: parent.width - 130px;
 
-            // Track timeline bar
-            Rectangle {
-                width: parent.width;
-                height: 5px;
-                border-radius: 2.5px;
-                background: #2d3748;
-
-                // Fill progress
-                Rectangle {
-                    x: 0;
-                    y: 0;
-                    width: parent.width * max(0.0, min(1.0, state.progress_ratio));
-                    height: parent.height;
-                    border-radius: 2.5px;
-                    background: state.accent;
-                }
+            Text {
+                text: state.elapsed_str != "" ? state.elapsed_str : "00:00";
+                color: #ffffff;
+                font-size: 15px;
+                font-weight: 600;
+                horizontal-alignment: left;
             }
 
-            // Elapsed / Duration text
-            HorizontalLayout {
-                width: parent.width;
-
-                Text {
-                    text: state.elapsed_str != "" ? state.elapsed_str : "00:00";
-                    color: #a0aec0;
-                    font-size: 12px;
-                    font-weight: 500;
-                    horizontal-alignment: left;
-                }
-
-                Text {
-                    text: state.duration_str != "" ? state.duration_str : "00:00";
-                    color: #718096;
-                    font-size: 12px;
-                    font-weight: 500;
-                    horizontal-alignment: right;
-                }
+            Text {
+                text: state.duration_str != "" ? state.duration_str : "00:00";
+                color: #a0aec0;
+                font-size: 15px;
+                font-weight: 500;
+                horizontal-alignment: right;
             }
         }
 
-        // Temporary Volume HUD overlay (when volume is changing)
+        // 8. Temporary Volume HUD overlay (when volume is changing)
         if state.volume_visible: Rectangle {
-            y: 300px;
-            x: (parent.width - 120px) / 2;
-            width: 120px;
-            height: 32px;
-            border-radius: 16px;
-            background: #1a202c;
+            y: 290px;
+            x: (parent.width - 130px) / 2;
+            width: 130px;
+            height: 36px;
+            border-radius: 18px;
+            background: #12151c;
             border-width: 1.5px;
             border-color: state.accent;
 
@@ -299,20 +321,20 @@ export component Sonos inherits Rectangle {
                 height: parent.height;
                 text: "VOL " + state.volume + "%";
                 color: #ffffff;
-                font-size: 13px;
+                font-size: 15px;
                 font-weight: 700;
                 horizontal-alignment: center;
                 vertical-alignment: center;
             }
         }
 
-        // Footer hint (when volume HUD is not visible)
+        // 9. Navigation hint (when volume HUD is not visible)
         if !state.volume_visible: Text {
-            y: parent.height - 44px;
+            y: 298px;
             width: parent.width;
             text: "Swipe up for rooms";
-            color: #4a5568;
-            font-size: 12px;
+            color: #718096;
+            font-size: 14px;
             font-weight: 500;
             horizontal-alignment: center;
         }

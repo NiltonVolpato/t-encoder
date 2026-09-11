@@ -175,6 +175,10 @@ pub struct Sonos {
     optimistic_playing: bool,
     volume_toast_expires_at_ms: u64,
     last_revision: u32,
+    marquee_start_ms: u64,
+    last_title: heapless::String<64>,
+    title_scroll_offset: f32,
+    title_scroll_active: bool,
 }
 
 impl Sonos {
@@ -200,6 +204,10 @@ impl Sonos {
             optimistic_playing: is_playing,
             volume_toast_expires_at_ms: 0,
             last_revision,
+            marquee_start_ms: 0,
+            last_title: heapless::String::new(),
+            title_scroll_offset: 0.0,
+            title_scroll_active: false,
         }
     }
 
@@ -314,6 +322,50 @@ impl App for Sonos {
             changed = true;
         }
 
+        // Track title marquee calculation
+        let title = &self.snapshot.active_now_playing.track_title;
+        if title.as_str() != self.last_title.as_str() {
+            self.last_title = title.clone();
+            self.marquee_start_ms = ctx.now_ms;
+            self.title_scroll_offset = 0.0;
+        }
+
+        let char_count = title.chars().count();
+        if char_count > 14 {
+            self.title_scroll_active = true;
+            let char_width_px = 15;
+            let total_width = char_count.saturating_mul(char_width_px);
+            let max_scroll = u32::try_from(total_width.saturating_sub(230)).unwrap_or(0);
+
+            let scroll_ms = u64::from(max_scroll).saturating_mul(28);
+            let cycle_ms = 2000 + scroll_ms + 2000 + 500;
+
+            let elapsed = ctx.now_ms.saturating_sub(self.marquee_start_ms);
+            let pos_in_cycle = elapsed % cycle_ms;
+
+            let new_offset = if pos_in_cycle < 2000 {
+                0.0
+            } else if pos_in_cycle < 2000 + scroll_ms {
+                let scroll_elapsed = pos_in_cycle - 2000;
+                let fraction = f32::from(u16::try_from(scroll_elapsed).unwrap_or(u16::MAX))
+                    / f32::from(u16::try_from(scroll_ms).unwrap_or(1).max(1));
+                fraction * f32::from(u16::try_from(max_scroll).unwrap_or(0))
+            } else if pos_in_cycle < 2000 + scroll_ms + 2000 {
+                f32::from(u16::try_from(max_scroll).unwrap_or(0))
+            } else {
+                0.0
+            };
+
+            if (new_offset - self.title_scroll_offset).abs() > 0.5 {
+                self.title_scroll_offset = new_offset;
+                changed = true;
+            }
+        } else if self.title_scroll_active {
+            self.title_scroll_active = false;
+            self.title_scroll_offset = 0.0;
+            changed = true;
+        }
+
         if changed {
             Outcome::CHANGED
         } else {
@@ -385,8 +437,10 @@ impl App for Sonos {
             volume: i32::from(self.optimistic_volume),
             volume_visible: self.volume_toast_expires_at_ms > 0,
             is_playing: self.optimistic_playing,
-            accent: slint::Color::from_rgb_u8(240, 140, 20),
+            accent: slint::Color::from_rgb_u8(0xF8, 0x70, 0x00),
             status: slint::SharedString::new(),
+            title_scroll_offset: self.title_scroll_offset,
+            title_scroll_active: self.title_scroll_active,
         };
 
         shell.set_sonos(state);
@@ -597,5 +651,39 @@ mod tests {
         assert_eq!(format_time(0).as_str(), "00:00");
         assert_eq!(format_time(65).as_str(), "01:05");
         assert_eq!(format_time(3600).as_str(), "60:00");
+    }
+
+    #[test]
+    fn test_marquee_scrolling() {
+        let mut app = Sonos::new(
+            slint::Weak::default(),
+            test_snapshot_getter,
+            test_command_sink,
+        );
+        let mut ctx = Ctx {
+            now_ms: 1000,
+            ble_linked: false,
+        };
+
+        // Short title "NEVER NEVER" has 11 chars, so marquee is inactive
+        let _ = app.tick(&ctx);
+        assert!(!app.title_scroll_active);
+        assert!(app.title_scroll_offset.abs() < f32::EPSILON);
+
+        // Update to long track title (> 14 chars)
+        let mut long_title = heapless::String::new();
+        let _ = long_title.push_str("A Very Long Track Title That Definitely Exceeds The Limit");
+        app.snapshot.active_now_playing.track_title = long_title;
+
+        // At t = 1000ms: cycle start, pause at 0
+        let _ = app.tick(&ctx);
+        assert!(app.title_scroll_active);
+        assert!(app.title_scroll_offset.abs() < f32::EPSILON);
+
+        // At t = 3500ms: midway through scroll
+        ctx.now_ms = 3500;
+        let outcome = app.tick(&ctx);
+        assert!(outcome.changed);
+        assert!(app.title_scroll_offset > 0.0);
     }
 }
