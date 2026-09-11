@@ -33,7 +33,7 @@ pub struct AppKey(pub [u8; 16]);
 impl AppKey {
     /// Creates an `AppKey` from a string slice, padding with zeros up to 16 bytes.
     #[must_use]
-    #[expect(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
+    #[allow(clippy::indexing_slicing)]
     pub const fn from_str(name: &str) -> Self {
         let bytes = name.as_bytes();
         let mut buffer = [0u8; 16];

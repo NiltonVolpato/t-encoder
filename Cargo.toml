@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["apps", "firmware", "launcher", "ui", "espielberg", "tests", "protocol"]
+members = ["apps", "firmware", "launcher", "ui", "espielberg", "tests", "protocol", "embedded-sonos"]
 # vendor/rust-enc is a submodule with its own [workspace] root. Its crates must
 # stay members of THAT workspace so their `edition.workspace = true` /
 # `[lints] workspace = true` inheritance resolves. We reach them by path
@@ -81,9 +81,10 @@ embedded-storage = "0.3"
 
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
-arithmetic_side_effects = "warn"
+complexity = { level = "warn", priority = -1 }
+correctness = { level = "warn", priority = -1 }
+perf = { level = "warn", priority = -1 }
 as_conversions = "warn"
-allow_attributes = "warn"
 get_unwrap = "warn"
 indexing_slicing = "warn"
 unwrap_used = "warn"
