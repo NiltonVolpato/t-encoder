@@ -42,7 +42,7 @@ FLASH_PORT := env('FLASH_PORT', "/dev/cu.usbmodem101")
 FIRMWARE_PATH := justfile_directory() + "/target/xtensa-esp32s3-none-elf/release/firmware"
 # Baseline firmware binary size in bytes. `just build` fails if binary exceeds baseline + 10%.
 # Bump this threshold consciously when adding features that legitimately grow code size.
-FIRMWARE_SIZE_BASELINE := "3665080"
+FIRMWARE_SIZE_BASELINE := "5743876"
 FLASH_ARGS := "--chip esp32s3 --port " + FLASH_PORT + " --partition-table firmware/partitions.csv --after hard-reset " + FIRMWARE_PATH
 
 # QEMU-related variables. Espressif's fork ships inside the esp-idf tool tree;

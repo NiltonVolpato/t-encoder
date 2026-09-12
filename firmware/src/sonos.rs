@@ -3,7 +3,6 @@
 //! Connects to Sonos speakers over TCP (SOAP), updates the shared [`SonosSnapshot`],
 //! and executes playback commands dispatched by [`apps::Sonos`].
 
-use alloc::string::String;
 use alloc::vec::Vec;
 use core::cell::RefCell;
 use core::net::Ipv4Addr;
@@ -158,12 +157,11 @@ async fn refresh_topology(
         let mut summaries = Vec::new();
 
         for group in &topology.groups {
-            let mut members_str = String::new();
-            for (i, m) in group.members.iter().enumerate() {
-                if i > 0 {
-                    members_str.push_str(", ");
-                }
-                members_str.push_str(&m.name);
+            let mut members = heapless::Vec::new();
+            for m in &group.members {
+                let mut name = heapless::String::new();
+                let _ = name.push_str(&m.name);
+                let _ = members.push(name);
             }
 
             let prev_group = snap
@@ -173,16 +171,23 @@ async fn refresh_topology(
             let summary = prev_group.map_or("", |g| g.playing_summary.as_str());
             let is_playing = prev_group.map_or(false, |g| g.is_playing);
 
-            summaries.push(GroupSummary::new(
-                &group.name,
-                &members_str,
-                summary,
+            let mut group_name = heapless::String::new();
+            let _ = group_name.push_str(&group.name);
+            let mut playing_summary = heapless::String::new();
+            let _ = playing_summary.push_str(summary);
+
+            summaries.push(GroupSummary {
+                name: group_name,
+                members,
+                playing_summary,
                 is_playing,
-            ));
+            });
         }
 
-        snap.groups = summaries;
-        snap.revision = snap.revision.wrapping_add(1);
+        if snap.groups != summaries {
+            snap.groups = summaries;
+            snap.revision = snap.revision.wrapping_add(1);
+        }
     });
 
     Ok(())
@@ -280,7 +285,7 @@ async fn refresh_now_playing(
 
     SNAPSHOT.lock(|c| {
         let mut snap = c.borrow_mut();
-        snap.active_now_playing = NowPlayingData {
+        let new_now_playing = NowPlayingData {
             track_title: title,
             track_artist: artist,
             track_album: album,
@@ -289,11 +294,18 @@ async fn refresh_now_playing(
             volume,
             is_playing,
         };
-        if let Some(g) = snap.groups.get_mut(group_idx) {
+        let group_changed = if let Some(g) = snap.groups.get_mut(group_idx) {
+            let changed = g.playing_summary != summary || g.is_playing != is_playing;
             g.playing_summary = summary;
             g.is_playing = is_playing;
+            changed
+        } else {
+            false
+        };
+        if snap.active_now_playing != new_now_playing || group_changed {
+            snap.active_now_playing = new_now_playing;
+            snap.revision = snap.revision.wrapping_add(1);
         }
-        snap.revision = snap.revision.wrapping_add(1);
     });
 
     Ok(())

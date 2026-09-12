@@ -12,9 +12,7 @@ fn main() {
         Ok(now) => now,
         Err(_) => time::OffsetDateTime::now_utc(),
     };
-    let descr = time::macros::format_description!(
-        "[year]-[month]-[day] [hour]:[minute]:[second] [offset_hour sign:mandatory]:[offset_minute]"
-    );
+    let descr = time::macros::format_description!("[year]-[month]-[day]");
     let date = now.format(&descr).unwrap_or_default();
     println!("cargo:rustc-env=BUILD_DATE={date}");
     let user = env!("USER");

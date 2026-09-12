@@ -1,10 +1,10 @@
 // Sonos Controller for LilyGo T-Encoder-Pro (390x390 round AMOLED).
 
-import { ArcSegment, RingData, RingBgData } from "ring.slint";
+import { ArcSegment, RingData } from "ring.slint";
 
 export struct SonosGroupCard {
     name: string,
-    members: string,
+    members: [string],
     playing_summary: string,
     is_playing: bool,
 }
@@ -17,35 +17,85 @@ export struct SonosState {
     track_title: string,
     track_artist: string,
     track_album: string,
-    elapsed_str: string,
-    duration_str: string,
+    remaining_str: string,
     progress_ratio: float, // 0.0 .. 1.0
     volume: int, // 0 .. 100
     volume_visible: bool,
     is_playing: bool,
     accent: color,
     status: string,
-    title_scroll_offset: length,
-    title_scroll_active: bool,
 }
 
 export component Sonos inherits Rectangle {
-    in property <SonosState> state;
+    in property <bool> DEBUG;
+    in-out property <SonosState> state;
+
+    private property <bool> marquee_scroll: false;
+    init => {
+        marquee_scroll = true;
+    }
 
     background: #000000;
+    width: 390px;
+    height: 390px;
+    border-radius: DEBUG ? self.width / 2 : 0;
+    clip: DEBUG ? true : false;
+
+    forward-focus: focus-scope;
+    focus-scope := FocusScope {
+        key-pressed(event) => {
+            if !root.DEBUG {
+                return reject;
+            }
+            if event.text == Key.LeftArrow {
+                root.state.selected_group = max(0, root.state.selected_group - 1);
+                return accept;
+            }
+            if event.text == Key.RightArrow {
+                root.state.selected_group = min(root.state.groups.length - 1, root.state.selected_group + 1);
+                return accept;
+            }
+            if event.text == Key.Return {
+                root.state.mode = root.state.mode == 0 ? 1 : 0;
+                return accept;
+            }
+            if event.text == Key.Escape || event.text == Key.UpArrow {
+                root.state.mode = 0;
+                return accept;
+            }
+            if event.text == Key.DownArrow {
+                root.state.mode = 1;
+                return accept;
+            }
+            if event.text == " " {
+                root.state.is_playing = !root.state.is_playing;
+                return accept;
+            }
+            reject
+        }
+    }
+
+    if root.DEBUG: TouchArea {
+        scroll-event(event) => {
+            if event.delta-y < 0px {
+                root.state.selected_group = min(root.state.groups.length - 1, root.state.selected_group + 1);
+            }
+            if event.delta-y > 0px {
+                root.state.selected_group = max(0, root.state.selected_group - 1);
+            }
+            accept
+        }
+    }
 
     // =========================================================================
     // Mode 0: Speaker Group Selector (Level 1 - Full Screen per Group)
     // =========================================================================
     if state.mode == 0: Rectangle {
-        width: parent.width;
-        height: parent.height;
-
         // Top Category Header
         Text {
             y: 42px;
             width: parent.width;
-            text: "SONOS ROOMS";
+            text: "SONOS GROUPS";
             color: #718096;
             font-size: 14px;
             font-weight: 700;
@@ -53,62 +103,54 @@ export component Sonos inherits Rectangle {
             horizontal-alignment: center;
         }
 
-        // Active Group Full-Page Display
-        for group[i] in state.groups: Rectangle {
-            visible: i == state.selected_group;
+        // Carousel strip: translates horizontally as selected_group changes
+        Rectangle {
             width: parent.width;
             height: parent.height;
+            x: - state.selected_group * parent.width;
+            animate x { duration: 250ms; easing: ease-out; }
 
-            VerticalLayout {
-                y: 85px;
-                x: 35px;
-                width: parent.width - 70px;
-                height: 180px;
-                alignment: center;
-                spacing: 12px;
+            for group[i] in state.groups: Rectangle {
+                x: i * parent.width;
+                width: parent.width;
+                height: parent.height;
 
-                // Group Name (e.g. "Kitchen", "Living Room")
-                Text {
-                    width: parent.width;
-                    text: group.name;
-                    color: #ffffff;
-                    font-size: 30px;
-                    font-weight: 800;
-                    horizontal-alignment: center;
-                    overflow: elide;
-                }
+                VerticalLayout {
+                    y: 90px;
+                    x: 35px;
+                    width: parent.width - 70px;
+                    height: 210px;
+                    alignment: center;
+                    spacing: 12px;
 
-                // Member Rooms List
-                Text {
-                    width: parent.width;
-                    text: group.members;
-                    color: #a0aec0;
-                    font-size: 16px;
-                    font-weight: 500;
-                    horizontal-alignment: center;
-                    overflow: elide;
-                }
+                    // Member Rooms List
+                    for member in group.members: Text {
+                        width: parent.width;
+                        text: member;
+                        color: #a0aec0;
+                        font-size: 26px;
+                        font-weight: 800;
+                        horizontal-alignment: center;
+                        overflow: elide;
+                    }
 
-                // Now Playing Status Pill
-                Rectangle {
-                    height: 40px;
-                    border-radius: 20px;
-                    background: #12151c;
-                    border-width: 1.5px;
-                    border-color: group.is_playing ? state.accent : #2d3748;
+                    // Now Playing Status Pill
+                    Rectangle {
+                        height: 40px;
 
-                    HorizontalLayout {
-                        padding-left: 16px;
-                        padding-right: 16px;
-                        alignment: center;
+                        HorizontalLayout {
+                            padding-left: 16px;
+                            padding-right: 16px;
+                            alignment: center;
 
-                        Text {
-                            text: (group.is_playing ? "▶  " : "") + (group.playing_summary != "" ? group.playing_summary : "Not Playing");
-                            color: group.is_playing ? state.accent : #a0aec0;
-                            font-size: 15px;
-                            font-weight: 600;
-                            vertical-alignment: center;
-                            overflow: elide;
+                            Text {
+                                text: (group.is_playing ? "▶  " : "") + (group.playing_summary != "" ? group.playing_summary : "Not Playing");
+                                color: group.is_playing ? state.accent : #a0aec0;
+                                font-size: 16px;
+                                font-weight: 600;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
                         }
                     }
                 }
@@ -122,11 +164,15 @@ export component Sonos inherits Rectangle {
             spacing: 8px;
 
             for group[i] in state.groups: Rectangle {
-                width: i == state.selected_group ? 18px : 8px;
+                width: 8px;
                 height: 8px;
                 border-radius: 4px;
-                background: i == state.selected_group ? state.accent : #2d3748;
-                animate width, background { duration: 180ms; easing: ease-out; }
+                background: i == state.selected_group ? state.accent : #ffffff.with-alpha(0.3);
+                animate background { duration: 180ms; easing: ease-out; }
+
+                if root.DEBUG: TouchArea {
+                    clicked => { root.state.selected_group = i; }
+                }
             }
         }
 
@@ -134,11 +180,15 @@ export component Sonos inherits Rectangle {
         Text {
             y: 344px;
             width: parent.width;
-            text: "Press knob to control";
+            text: "PRESS TO CONTROL";
             color: #718096;
             font-size: 14px;
             font-weight: 500;
             horizontal-alignment: center;
+
+            if root.DEBUG: TouchArea {
+                clicked => { root.state.mode = 1; }
+            }
         }
     }
 
@@ -146,17 +196,27 @@ export component Sonos inherits Rectangle {
     // Mode 1: Now Playing (Level 2 - Option A Layout)
     // =========================================================================
     if state.mode == 1: Rectangle {
-        width: parent.width;
-        height: parent.height;
-
-        // 1. Progress Ring (60 background segments)
-        for seg[i] in RingBgData.segments: Image {
-            x: seg.x;
-            y: seg.y;
-            source: seg.img;
+        Image {
+            source: @image-url("../assets/album-art-mock.png");
+            width: 100%;
+            height: 100%;
         }
 
-        // 2. Progress Ring (60 lit orange segments)
+        // Dark scrim overlay for high contrast readability
+        Rectangle {
+            width: 100%;
+            height: 100%;
+            background: #000000.with-alpha(0.35);
+        }
+
+        // 1. Static full-screen background ring
+        Image {
+            source: @image-url("../assets/ring_bg.png");
+            width: 100%;
+            height: 100%;
+        }
+
+        // 2. Lit progress segments (60 slices)
         for seg[i] in RingData.segments: Image {
             x: seg.x;
             y: seg.y;
@@ -164,25 +224,27 @@ export component Sonos inherits Rectangle {
             visible: (i / 60.0) <= state.progress_ratio;
         }
 
-        // 3. Round Start Cap (12 o'clock, 12px diameter circle at x:189, y:8)
+        // 3. Round Start Cap (12 o'clock, 22px diameter circle at x: 184px, y: 6px)
         Rectangle {
-            width: 12px;
-            height: 12px;
-            border-radius: 6px;
-            background: state.accent;
-            x: 189px;
-            y: 8px;
+            width: 22px;
+            height: 22px;
+            border-radius: 11px;
+            background: state.accent.with-alpha(0.7);
+            x: 184px;
+            y: 6px;
             visible: state.progress_ratio > 0.008;
         }
 
-        // 4. Round Tip Cap (at progress tip, R=181px centerline)
+        // 4. Round Tip Cap (22px diameter circle at the leading edge of the active slice)
         Rectangle {
-            width: 12px;
-            height: 12px;
-            border-radius: 6px;
-            background: state.accent;
-            x: 189px + 181px * sin(state.progress_ratio * 360deg);
-            y: 189px - 181px * cos(state.progress_ratio * 360deg);
+            private property <float> tip_slice: min(59.0, floor(state.progress_ratio * 60.0));
+            private property <angle> tip_angle: (self.tip_slice + 1) * 6deg;
+            width: 22px;
+            height: 22px;
+            border-radius: 11px;
+            background: state.accent.with-alpha(0.7);
+            x: 184px + 178px * sin(self.tip_angle);
+            y: 184px - 178px * cos(self.tip_angle);
             visible: state.progress_ratio > 0.008;
         }
 
@@ -195,16 +257,28 @@ export component Sonos inherits Rectangle {
             spacing: 3px;
             alignment: center;
 
-            // Track Title with Marquee container
-            Rectangle {
+            // Track Title with native Slint Marquee
+            rect := Rectangle {
                 clip: true;
                 width: parent.width;
                 height: 30px;
 
-                Text {
-                    x: state.title_scroll_active ? -state.title_scroll_offset : 0px;
-                    width: state.title_scroll_active ? self.preferred-width : parent.width;
-                    horizontal-alignment: state.title_scroll_active ? left : center;
+                private property <length> max_scroll: max(0px, txt.preferred-width - self.width);
+                private property <bool> overflow: max_scroll > 0px;
+                private property <length> scroll_offset: (root.marquee_scroll && overflow) ? max_scroll : 0px;
+
+                animate scroll_offset {
+                    duration: max(2s, max_scroll / 30px * 1s);
+                    delay: 1.5s;
+                    iteration-count: -1;
+                    direction: alternate;
+                    easing: linear;
+                }
+
+                txt := Text {
+                    x: rect.overflow ? -rect.scroll_offset : 0px;
+                    width: rect.overflow ? self.preferred-width : parent.width;
+                    horizontal-alignment: rect.overflow ? left : center;
                     text: state.track_title != "" ? state.track_title : "No Track";
                     color: #ffffff;
                     font-size: 24px;
@@ -242,9 +316,13 @@ export component Sonos inherits Rectangle {
             width: 68px;
             height: 68px;
             border-radius: 34px;
-            background: #ffffff.with-alpha(0.06);
+            background: #ffffff.with-alpha(0.25);
             border-width: 1.5px;
-            border-color: #ffffff.with-alpha(0.28);
+            border-color: #000000.with-alpha(0.2);
+
+            if root.DEBUG: TouchArea {
+                clicked => { root.state.is_playing = !root.state.is_playing; }
+            }
 
             // Pause icon: two vertical bars
             if state.is_playing: Rectangle {
@@ -282,27 +360,15 @@ export component Sonos inherits Rectangle {
             }
         }
 
-        // 7. Lower Deck: Timestamps
-        HorizontalLayout {
-            y: 252px;
-            x: 65px;
-            width: parent.width - 130px;
-
-            Text {
-                text: state.elapsed_str != "" ? state.elapsed_str : "00:00";
-                color: #ffffff;
-                font-size: 15px;
-                font-weight: 600;
-                horizontal-alignment: left;
-            }
-
-            Text {
-                text: state.duration_str != "" ? state.duration_str : "00:00";
-                color: #a0aec0;
-                font-size: 15px;
-                font-weight: 500;
-                horizontal-alignment: right;
-            }
+        // 7. Lower Deck: Remaining Time
+        Text {
+            y: 248px;
+            width: parent.width;
+            text: state.remaining_str != "" ? state.remaining_str : "--:--";
+            color: #ffffff;
+            font-size: 16px;
+            font-weight: 600;
+            horizontal-alignment: center;
         }
 
         // 8. Temporary Volume HUD overlay (when volume is changing)
@@ -329,14 +395,18 @@ export component Sonos inherits Rectangle {
         }
 
         // 9. Navigation hint (when volume HUD is not visible)
-        if !state.volume_visible: Text {
+        if !state.volume_visible: navigation := Text {
             y: 298px;
             width: parent.width;
-            text: "Swipe up for rooms";
-            color: #718096;
+            text: "SWIPE UP FOR GROUPS";
+            color: white;
             font-size: 14px;
-            font-weight: 500;
+            font-weight: 400;
             horizontal-alignment: center;
+
+            if root.DEBUG: TouchArea {
+                clicked => { root.state.mode = 0; }
+            }
         }
     }
 }

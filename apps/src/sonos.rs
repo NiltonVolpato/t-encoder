@@ -32,7 +32,7 @@ pub enum SonosCommand {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GroupSummary {
     pub name: heapless::String<32>,
-    pub members: heapless::String<64>,
+    pub members: heapless::Vec<heapless::String<32>, 8>,
     pub playing_summary: heapless::String<64>,
     pub is_playing: bool,
 }
@@ -40,16 +40,20 @@ pub struct GroupSummary {
 impl GroupSummary {
     /// Creates a new group summary card.
     #[must_use]
-    pub fn new(name: &str, members: &str, playing_summary: &str, is_playing: bool) -> Self {
+    pub fn new(name: &str, members: &[&str], playing_summary: &str, is_playing: bool) -> Self {
         let mut n = heapless::String::new();
         let _ = n.push_str(name);
-        let mut m = heapless::String::new();
-        let _ = m.push_str(members);
+        let mut m_vec = heapless::Vec::new();
+        for m in members {
+            let mut s = heapless::String::new();
+            let _ = s.push_str(m);
+            let _ = m_vec.push(s);
+        }
         let mut p = heapless::String::new();
         let _ = p.push_str(playing_summary);
         Self {
             name: n,
-            members: m,
+            members: m_vec,
             playing_summary: p,
             is_playing,
         }
@@ -83,7 +87,7 @@ impl Default for NowPlayingData {
 }
 
 /// Thread-safe snapshot shared from the background network worker to the UI.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct SonosSnapshot {
     pub groups: Vec<GroupSummary>,
     pub active_now_playing: NowPlayingData,
@@ -175,10 +179,7 @@ pub struct Sonos {
     optimistic_playing: bool,
     volume_toast_expires_at_ms: u64,
     last_revision: u32,
-    marquee_start_ms: u64,
-    last_title: heapless::String<64>,
-    title_scroll_offset: f32,
-    title_scroll_active: bool,
+    groups_model: slint::ModelRc<SonosGroupCard>,
 }
 
 impl Sonos {
@@ -193,6 +194,7 @@ impl Sonos {
         let volume = snapshot.active_now_playing.volume;
         let is_playing = snapshot.active_now_playing.is_playing;
         let last_revision = snapshot.revision;
+        let groups_model = create_groups_model(&snapshot.groups);
         Self {
             shell,
             mode: Mode::GroupSelector,
@@ -204,10 +206,7 @@ impl Sonos {
             optimistic_playing: is_playing,
             volume_toast_expires_at_ms: 0,
             last_revision,
-            marquee_start_ms: 0,
-            last_title: heapless::String::new(),
-            title_scroll_offset: 0.0,
-            title_scroll_active: false,
+            groups_model,
         }
     }
 
@@ -308,62 +307,38 @@ impl App for Sonos {
 
         let fresh = (self.get_snapshot)();
         if fresh.revision != self.last_revision {
+            let groups_changed = fresh.groups != self.snapshot.groups;
+            if groups_changed {
+                self.groups_model = create_groups_model(&fresh.groups);
+                if !fresh.groups.is_empty() {
+                    self.selected_group = self
+                        .selected_group
+                        .min(fresh.groups.len().saturating_sub(1));
+                }
+            }
+
             if self.volume_toast_expires_at_ms == 0 {
                 self.optimistic_volume = fresh.active_now_playing.volume;
             }
             self.optimistic_playing = fresh.active_now_playing.is_playing;
+
+            match self.mode {
+                Mode::GroupSelector => {
+                    if groups_changed {
+                        changed = true;
+                    }
+                }
+                Mode::NowPlaying(_) => {
+                    if groups_changed
+                        || fresh.active_now_playing != self.snapshot.active_now_playing
+                    {
+                        changed = true;
+                    }
+                }
+            }
+
             self.snapshot = fresh;
             self.last_revision = self.snapshot.revision;
-            if !self.snapshot.groups.is_empty() {
-                self.selected_group = self
-                    .selected_group
-                    .min(self.snapshot.groups.len().saturating_sub(1));
-            }
-            changed = true;
-        }
-
-        // Track title marquee calculation
-        let title = &self.snapshot.active_now_playing.track_title;
-        if title.as_str() != self.last_title.as_str() {
-            self.last_title = title.clone();
-            self.marquee_start_ms = ctx.now_ms;
-            self.title_scroll_offset = 0.0;
-        }
-
-        let char_count = title.chars().count();
-        if char_count > 14 {
-            self.title_scroll_active = true;
-            let char_width_px = 15;
-            let total_width = char_count.saturating_mul(char_width_px);
-            let max_scroll = u32::try_from(total_width.saturating_sub(230)).unwrap_or(0);
-
-            let scroll_ms = u64::from(max_scroll).saturating_mul(28);
-            let cycle_ms = 2000 + scroll_ms + 2000 + 500;
-
-            let elapsed = ctx.now_ms.saturating_sub(self.marquee_start_ms);
-            let pos_in_cycle = elapsed % cycle_ms;
-
-            let new_offset = if pos_in_cycle < 2000 {
-                0.0
-            } else if pos_in_cycle < 2000 + scroll_ms {
-                let scroll_elapsed = pos_in_cycle - 2000;
-                let fraction = f32::from(u16::try_from(scroll_elapsed).unwrap_or(u16::MAX))
-                    / f32::from(u16::try_from(scroll_ms).unwrap_or(1).max(1));
-                fraction * f32::from(u16::try_from(max_scroll).unwrap_or(0))
-            } else if pos_in_cycle < 2000 + scroll_ms + 2000 {
-                f32::from(u16::try_from(max_scroll).unwrap_or(0))
-            } else {
-                0.0
-            };
-
-            if (new_offset - self.title_scroll_offset).abs() > 0.5 {
-                self.title_scroll_offset = new_offset;
-                changed = true;
-            }
-        } else if self.title_scroll_active {
-            self.title_scroll_active = false;
-            self.title_scroll_offset = 0.0;
-            changed = true;
         }
 
         if changed {
@@ -377,18 +352,6 @@ impl App for Sonos {
         let Some(shell) = self.shell.upgrade() else {
             return;
         };
-
-        let group_cards: Vec<SonosGroupCard> = self
-            .snapshot
-            .groups
-            .iter()
-            .map(|g| SonosGroupCard {
-                name: g.name.as_str().into(),
-                members: g.members.as_str().into(),
-                playing_summary: g.playing_summary.as_str().into(),
-                is_playing: g.is_playing,
-            })
-            .collect();
 
         let active_name = match self.mode {
             Mode::NowPlaying(idx) => self
@@ -412,15 +375,14 @@ impl App for Sonos {
             0.0
         };
 
-        let elapsed_str = format_time(elapsed);
-        let duration_str = format_time(duration);
+        let remaining_str = format_remaining_time(duration, elapsed);
 
         let state = SonosState {
             mode: match self.mode {
                 Mode::GroupSelector => 0,
                 Mode::NowPlaying(_) => 1,
             },
-            groups: slint::ModelRc::new(slint::VecModel::from(group_cards)),
+            groups: self.groups_model.clone(),
             selected_group: i32::try_from(self.selected_group).unwrap_or(0),
             active_group_name: active_name.into(),
             track_title: self.snapshot.active_now_playing.track_title.as_str().into(),
@@ -431,27 +393,49 @@ impl App for Sonos {
                 .as_str()
                 .into(),
             track_album: self.snapshot.active_now_playing.track_album.as_str().into(),
-            elapsed_str: elapsed_str.as_str().into(),
-            duration_str: duration_str.as_str().into(),
+            remaining_str: remaining_str.as_str().into(),
             progress_ratio,
             volume: i32::from(self.optimistic_volume),
             volume_visible: self.volume_toast_expires_at_ms > 0,
             is_playing: self.optimistic_playing,
             accent: slint::Color::from_rgb_u8(0xF8, 0x70, 0x00),
             status: slint::SharedString::new(),
-            title_scroll_offset: self.title_scroll_offset,
-            title_scroll_active: self.title_scroll_active,
         };
 
         shell.set_sonos(state);
     }
 }
 
-fn format_time(total_seconds: u32) -> heapless::String<16> {
-    let minutes = total_seconds / 60;
-    let seconds = total_seconds % 60;
+fn create_groups_model(groups: &[GroupSummary]) -> slint::ModelRc<SonosGroupCard> {
+    let group_cards: Vec<SonosGroupCard> = groups
+        .iter()
+        .map(|g| {
+            let member_strings: Vec<slint::SharedString> = g
+                .members
+                .iter()
+                .map(|m| slint::SharedString::from(m.as_str()))
+                .collect();
+            SonosGroupCard {
+                name: g.name.as_str().into(),
+                members: slint::ModelRc::new(slint::VecModel::from(member_strings)),
+                playing_summary: g.playing_summary.as_str().into(),
+                is_playing: g.is_playing,
+            }
+        })
+        .collect();
+    slint::ModelRc::new(slint::VecModel::from(group_cards))
+}
+
+fn format_remaining_time(duration: u32, elapsed: u32) -> heapless::String<16> {
     let mut s = heapless::String::new();
-    let _ = write!(s, "{minutes:02}:{seconds:02}");
+    if duration > elapsed {
+        let remaining = duration - elapsed;
+        let minutes = remaining / 60;
+        let seconds = remaining % 60;
+        let _ = write!(s, "-{minutes:02}:{seconds:02}");
+    } else {
+        let _ = write!(s, "--:--");
+    }
     s
 }
 
@@ -496,9 +480,9 @@ mod tests {
 
     fn test_snapshot_getter() -> SonosSnapshot {
         let groups = vec![
-            GroupSummary::new("Kitchen", "Kitchen", "NEVER NEVER - Marc Moon", true),
-            GroupSummary::new("Office", "Office", "Paused", false),
-            GroupSummary::new("Living Room", "Living Room", "", false),
+            GroupSummary::new("Kitchen", &["Kitchen"], "NEVER NEVER - Marc Moon", true),
+            GroupSummary::new("Office", &["Office"], "Paused", false),
+            GroupSummary::new("Living Room", &["Living Room"], "", false),
         ];
 
         let mut title = heapless::String::new();
@@ -647,14 +631,38 @@ mod tests {
     }
 
     #[test]
-    fn test_format_time() {
-        assert_eq!(format_time(0).as_str(), "00:00");
-        assert_eq!(format_time(65).as_str(), "01:05");
-        assert_eq!(format_time(3600).as_str(), "60:00");
+    fn test_format_remaining_time() {
+        assert_eq!(format_remaining_time(290, 168).as_str(), "-02:02");
+        assert_eq!(format_remaining_time(60, 0).as_str(), "-01:00");
+        assert_eq!(format_remaining_time(0, 0).as_str(), "--:--");
+        assert_eq!(format_remaining_time(100, 120).as_str(), "--:--");
     }
 
     #[test]
-    fn test_marquee_scrolling() {
+    fn test_tick_idle_when_snapshot_unchanged() {
+        let mut app = Sonos::new(
+            slint::Weak::default(),
+            test_snapshot_getter,
+            test_command_sink,
+        );
+        app.mode = Mode::NowPlaying(0);
+        let mut ctx = Ctx {
+            now_ms: 1000,
+            ble_linked: false,
+        };
+
+        // Snapshot has not changed: tick() is idle (changed: false)
+        let outcome = app.tick(&ctx);
+        assert!(!outcome.changed);
+
+        // Advance time: still idle
+        ctx.now_ms = 3500;
+        let outcome = app.tick(&ctx);
+        assert!(!outcome.changed);
+    }
+
+    #[test]
+    fn test_group_selector_idle_when_only_now_playing_advances() {
         let mut app = Sonos::new(
             slint::Weak::default(),
             test_snapshot_getter,
@@ -665,25 +673,18 @@ mod tests {
             ble_linked: false,
         };
 
-        // Short title "NEVER NEVER" has 11 chars, so marquee is inactive
-        let _ = app.tick(&ctx);
-        assert!(!app.title_scroll_active);
-        assert!(app.title_scroll_offset.abs() < f32::EPSILON);
-
-        // Update to long track title (> 14 chars)
+        // Long track title in snapshot
         let mut long_title = heapless::String::new();
         let _ = long_title.push_str("A Very Long Track Title That Definitely Exceeds The Limit");
         app.snapshot.active_now_playing.track_title = long_title;
 
-        // At t = 1000ms: cycle start, pause at 0
-        let _ = app.tick(&ctx);
-        assert!(app.title_scroll_active);
-        assert!(app.title_scroll_offset.abs() < f32::EPSILON);
+        // In Mode::GroupSelector, tick does not report changes
+        let outcome = app.tick(&ctx);
+        assert!(!outcome.changed);
 
-        // At t = 3500ms: midway through scroll
+        // Advance time: remains inactive and does not trigger changed
         ctx.now_ms = 3500;
         let outcome = app.tick(&ctx);
-        assert!(outcome.changed);
-        assert!(app.title_scroll_offset > 0.0);
+        assert!(!outcome.changed);
     }
 }

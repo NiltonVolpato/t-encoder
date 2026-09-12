@@ -36,6 +36,10 @@ export component Shell inherits Window {
 
     in property <int> view: Views.launcher;
 
+    // Ensures Slint's MCU glyph scanner embeds Latin-1 accented characters (e.g. Ç, é, ñ)
+    private property <string> _latin_glyph_coverage:
+        "ÁÀÂÃÄÅÆÇÉÈÊËÍÌÎÏÐÑÓÒÔÕÖØÚÙÛÜÝÞßáàâãäåæçéèêëíìîïðñóòôõöøúùûüýþÿŒœŠšŸŽž";
+
     // Launcher state.
     in property <[CardData]> cards;
     in property <int> selected: 0;
