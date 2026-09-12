@@ -10,6 +10,8 @@ import { Macropad, MacropadState } from "apps/macropad.slint";
 import { Simon, SimonState } from "apps/simon.slint";
 import { Magic8, Magic8State } from "apps/magic8.slint";
 import { Sonos, SonosState, SonosGroupCard } from "apps/sonos.slint";
+import "./assets/fonts/Inter-Regular.otf";
+import "./assets/fonts/Inter-Bold.otf";
 
 export { CardData, PomodoroState, MacropadState, SimonState, Magic8State, SonosState, SonosGroupCard }
 
@@ -28,6 +30,8 @@ export global Views {
 }
 
 export component Shell inherits Window {
+    default-font-family: "Inter";
+
     // The board is a 390x390 round AMOLED.
     width: 390px;
     height: 390px;
@@ -36,9 +40,13 @@ export component Shell inherits Window {
 
     in property <int> view: Views.launcher;
 
-    // Ensures Slint's MCU glyph scanner embeds Latin-1 accented characters (e.g. Ç, é, ñ)
-    private property <string> _latin_glyph_coverage:
-        "ÁÀÂÃÄÅÆÇÉÈÊËÍÌÎÏÐÑÓÒÔÕÖØÚÙÛÜÝÞßáàâãäåæçéèêëíìîïðñóòôõöøúùûüýþÿŒœŠšŸŽž";
+    // Ensures Slint's MCU glyph scanner embeds Latin-1 accented characters (e.g. Ç, é, ñ, Ü)
+    Text {
+        visible: false;
+        width: 0px;
+        height: 0px;
+        text: "ÁÀÂÃÄÅÆÇÉÈÊËÍÌÎÏÐÑÓÒÔÕÖØÚÙÛÜÝÞßáàâãäåæçéèêëíìîïðñóòôõöøúùûüýþÿŒœŠšŸŽž";
+    }
 
     // Launcher state.
     in property <[CardData]> cards;

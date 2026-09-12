@@ -96,13 +96,13 @@ export component Magic8 inherits Rectangle {
             border-radius: 80px;
             background: #ffffff;
 
-            Text {
-                text: "8";
-                color: #0c0c12;
-                font-size: 100px;
-                font-weight: 900;
-                horizontal-alignment: center;
-                vertical-alignment: center;
+            Image {
+                source: @image-url("../assets/inter-8.svg");
+                width: 56px;
+                height: 75px;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                colorize: #0c0c12;
             }
         }
 

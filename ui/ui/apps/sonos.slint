@@ -26,14 +26,54 @@ export struct SonosState {
     status: string,
 }
 
+component MarqueeText inherits Rectangle {
+    in property <string> text;
+    in property <color> text_color: #ffffff;
+    in property <length> font_size: 24px;
+    in property <int> font_weight: 800;
+
+    clip: true;
+
+    private property <length> text_width: txt.preferred-width;
+    private property <length> max_scroll: max(0px, text_width - self.width);
+    private property <bool> overflow: max_scroll > 0px;
+    private property <length> offset: 0px;
+
+    animate offset {
+        duration: max(2s, max_scroll / 30px * 1s);
+        delay: 1.5s;
+        iteration-count: -1;
+        direction: alternate;
+        easing: linear;
+    }
+
+    init => {
+        if self.overflow {
+            self.offset = self.max_scroll;
+        }
+    }
+
+    changed text => {
+        self.offset = 0px;
+        if self.overflow {
+            self.offset = self.max_scroll;
+        }
+    }
+
+    txt := Text {
+        x: root.overflow ? -root.offset : 0px;
+        width: root.overflow ? self.preferred-width : parent.width;
+        horizontal-alignment: root.overflow ? left : center;
+        text: root.text;
+        color: root.text_color;
+        font-size: root.font_size;
+        font-weight: root.font_weight;
+    }
+}
+
 export component Sonos inherits Rectangle {
     in property <bool> DEBUG;
     in-out property <SonosState> state;
-
-    private property <bool> marquee_scroll: false;
-    init => {
-        marquee_scroll = true;
-    }
 
     background: #000000;
     width: 390px;
@@ -258,39 +298,20 @@ export component Sonos inherits Rectangle {
             alignment: center;
 
             // Track Title with native Slint Marquee
-            rect := Rectangle {
-                clip: true;
+            MarqueeText {
                 width: parent.width;
                 height: 30px;
-
-                private property <length> max_scroll: max(0px, txt.preferred-width - self.width);
-                private property <bool> overflow: max_scroll > 0px;
-                private property <length> scroll_offset: (root.marquee_scroll && overflow) ? max_scroll : 0px;
-
-                animate scroll_offset {
-                    duration: max(2s, max_scroll / 30px * 1s);
-                    delay: 1.5s;
-                    iteration-count: -1;
-                    direction: alternate;
-                    easing: linear;
-                }
-
-                txt := Text {
-                    x: rect.overflow ? -rect.scroll_offset : 0px;
-                    width: rect.overflow ? self.preferred-width : parent.width;
-                    horizontal-alignment: rect.overflow ? left : center;
-                    text: state.track_title != "" ? state.track_title : "No Track";
-                    color: #ffffff;
-                    font-size: 24px;
-                    font-weight: 800;
-                }
+                text: state.track_title != "" ? state.track_title : "No Track";
+                text_color: #ffffff;
+                font-size: 24px;
+                font-weight: 800;
             }
 
             // Artist Name
             Text {
                 width: parent.width;
                 text: state.track_artist != "" ? state.track_artist : "Unknown Artist";
-                color: state.accent;
+                color: #ffffff;
                 font-size: 16px;
                 font-weight: 600;
                 horizontal-alignment: center;
@@ -301,7 +322,7 @@ export component Sonos inherits Rectangle {
             if state.track_album != "": Text {
                 width: parent.width;
                 text: state.track_album;
-                color: #a0aec0;
+                color: #ffffff;
                 font-size: 14px;
                 font-weight: 500;
                 horizontal-alignment: center;
@@ -309,55 +330,21 @@ export component Sonos inherits Rectangle {
             }
         }
 
-        // 6. Dead-Center Play / Pause Button (x: 161, y: 161, 68x68)
-        Rectangle {
-            x: (parent.width - 68px) / 2;
-            y: (parent.height - 68px) / 2;
-            width: 68px;
-            height: 68px;
-            border-radius: 34px;
-            background: #ffffff.with-alpha(0.25);
-            border-width: 1.5px;
-            border-color: #000000.with-alpha(0.2);
+        // 6. Center Play Indicator (Visible only when paused)
+        if !state.is_playing: Image {
+            source: @image-url("../assets/play.png");
+            x: 128px;
+            y: 106px;
+            width: 178px;
+            height: 178px;
+        }
 
-            if root.DEBUG: TouchArea {
-                clicked => { root.state.is_playing = !root.state.is_playing; }
-            }
-
-            // Pause icon: two vertical bars
-            if state.is_playing: Rectangle {
-                width: 20px;
-                height: 22px;
-                x: (parent.width - 20px) / 2;
-                y: (parent.height - 22px) / 2;
-
-                Rectangle {
-                    x: 0;
-                    width: 6px;
-                    height: parent.height;
-                    border-radius: 3px;
-                    background: #ffffff;
-                }
-                Rectangle {
-                    x: 14px;
-                    width: 6px;
-                    height: parent.height;
-                    border-radius: 3px;
-                    background: #ffffff;
-                }
-            }
-
-            // Play icon: crisp text glyph with optical center
-            if !state.is_playing: Text {
-                x: 3px; // Optical centering for triangle
-                width: parent.width;
-                height: parent.height;
-                text: "▶";
-                color: #ffffff;
-                font-size: 26px;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-            }
+        if root.DEBUG: TouchArea {
+            x: 128px;
+            y: 106px;
+            width: 178px;
+            height: 178px;
+            clicked => { root.state.is_playing = !root.state.is_playing; }
         }
 
         // 7. Lower Deck: Remaining Time
@@ -366,7 +353,7 @@ export component Sonos inherits Rectangle {
             width: parent.width;
             text: state.remaining_str != "" ? state.remaining_str : "--:--";
             color: #ffffff;
-            font-size: 16px;
+            font-size: 22px;
             font-weight: 600;
             horizontal-alignment: center;
         }
