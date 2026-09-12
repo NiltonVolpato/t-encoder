@@ -269,7 +269,7 @@ export component Sonos inherits Rectangle {
             width: 22px;
             height: 22px;
             border-radius: 11px;
-            background: state.accent.with-alpha(0.7);
+            background: state.accent;
             x: 184px;
             y: 6px;
             visible: state.progress_ratio > 0.008;
@@ -282,7 +282,7 @@ export component Sonos inherits Rectangle {
             width: 22px;
             height: 22px;
             border-radius: 11px;
-            background: state.accent.with-alpha(0.7);
+            background: state.accent;
             x: 184px + 178px * sin(self.tip_angle);
             y: 184px - 178px * cos(self.tip_angle);
             visible: state.progress_ratio > 0.008;
@@ -352,7 +352,7 @@ export component Sonos inherits Rectangle {
             y: 248px;
             width: parent.width;
             text: state.remaining_str != "" ? state.remaining_str : "--:--";
-            color: #ffffff;
+            color: state.accent;
             font-size: 22px;
             font-weight: 600;
             horizontal-alignment: center;
