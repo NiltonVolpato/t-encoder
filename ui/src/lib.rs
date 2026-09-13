@@ -106,6 +106,64 @@ pub struct DirtyRect {
     pub h: u16,
 }
 
+impl DirtyRect {
+    /// Smallest bounding box enclosing both rectangles.
+    #[must_use]
+    pub fn bounding_box(self, other: Self) -> Self {
+        let x = self.x.min(other.x);
+        let y = self.y.min(other.y);
+        let right = (self.x.saturating_add(self.w)).max(other.x.saturating_add(other.w));
+        let bottom = (self.y.saturating_add(self.h)).max(other.y.saturating_add(other.h));
+        Self {
+            x,
+            y,
+            w: right.saturating_sub(x),
+            h: bottom.saturating_sub(y),
+        }
+    }
+
+    /// Rectangle area in pixels.
+    #[must_use]
+    pub fn area(self) -> usize {
+        usize::from(self.w).saturating_mul(usize::from(self.h))
+    }
+}
+
+/// Maximum extra pixels we are willing to transmit in order to merge two dirty
+/// rectangles and avoid a separate SPI transaction.
+const COALESCE_THRESHOLD_PIXELS: usize = 200;
+
+/// Merges spatially close dirty rectangles to minimize SPI transaction overhead.
+///
+/// Rectangles are sorted by `(y, x)` and evaluated against the cost difference:
+/// `area(bbox) - (area(last) + area(next)) <= threshold`.
+fn coalesce_dirty_rects(mut dirty_rects: alloc::vec::Vec<DirtyRect>) -> alloc::vec::Vec<DirtyRect> {
+    if dirty_rects.len() <= 1 {
+        return dirty_rects;
+    }
+
+    dirty_rects.sort_by_key(|r| (r.y, r.x));
+
+    let mut coalesced = alloc::vec::Vec::with_capacity(dirty_rects.len());
+    coalesced.push(dirty_rects[0]);
+
+    for next in dirty_rects.into_iter().skip(1) {
+        let last = coalesced.last_mut().expect("coalesced is not empty");
+        let merged = last.bounding_box(next);
+        let extra_pixels = merged
+            .area()
+            .saturating_sub(last.area().saturating_add(next.area()));
+
+        if extra_pixels <= COALESCE_THRESHOLD_PIXELS {
+            *last = merged;
+        } else {
+            coalesced.push(next);
+        }
+    }
+
+    coalesced
+}
+
 /// Where a rendered frame goes — the panel, as much of it as rendering needs.
 ///
 /// A trait because `ui` cannot name the firmware's display type and should not
@@ -207,27 +265,41 @@ impl Ui {
         let stride = usize::try_from(WIDTH).unwrap_or(0);
         let window = &self.window;
 
-        let mut dirty = None;
+        let mut dirty_rects = alloc::vec::Vec::new();
+        let mut bounding_box = None;
         let drawn = window.draw_if_needed(|renderer| {
             let pixels = as_pixels(framebuffer);
             let region = renderer.render(pixels, stride);
-            // Only the bounding box: `PhysicalRegion` can hold up to three
-            // disjoint rectangles, and unioning them over-sends whenever the
-            // changes are scattered. Flushing them separately is a real
-            // improvement and a deliberate separate change — it alters the
-            // burst pattern on the wire, which is the variable A2 is measuring.
             let (origin, size) = (region.bounding_box_origin(), region.bounding_box_size());
-            dirty = Some(DirtyRect {
+            bounding_box = Some(DirtyRect {
                 x: u16::try_from(origin.x).unwrap_or(0),
                 y: u16::try_from(origin.y).unwrap_or(0),
                 w: u16::try_from(size.width).unwrap_or(0),
                 h: u16::try_from(size.height).unwrap_or(0),
             });
+            for (pos, sz) in region.iter() {
+                if let (Ok(x), Ok(y), Ok(w), Ok(h)) = (
+                    u16::try_from(pos.x),
+                    u16::try_from(pos.y),
+                    u16::try_from(sz.width),
+                    u16::try_from(sz.height),
+                ) {
+                    dirty_rects.push(DirtyRect { x, y, w, h });
+                }
+            }
         });
 
-        match dirty.filter(|_| drawn) {
-            Some(rect) => panel.flush(rect, framebuffer).map(|()| Some(rect)),
-            None => Ok(None),
+        if drawn {
+            let dirty_rects = coalesce_dirty_rects(dirty_rects);
+            if dirty_rects.is_empty() {
+                log::error!("no dirty rects but drawn = true");
+            }
+            for rect in dirty_rects {
+                panel.flush(rect, framebuffer)?;
+            }
+            Ok(bounding_box)
+        } else {
+            Ok(None)
         }
     }
 
@@ -257,4 +329,157 @@ fn as_pixels(bytes: &mut [u8]) -> &mut [BigEndianRgb565] {
     // framebuffer base is page-aligned, so the `u16` alignment requirement
     // holds, and `len` is floored so the slice cannot run past the end.
     unsafe { core::slice::from_raw_parts_mut(bytes.as_mut_ptr().cast::<BigEndianRgb565>(), len) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_coalesce_empty_and_single() {
+        assert_eq!(coalesce_dirty_rects(alloc::vec![]), alloc::vec![]);
+
+        let single = alloc::vec![DirtyRect {
+            x: 10,
+            y: 20,
+            w: 30,
+            h: 40
+        }];
+        assert_eq!(coalesce_dirty_rects(single.clone()), single);
+    }
+
+    #[test]
+    fn test_coalesce_adjacent_horizontal_bars() {
+        // 4 equalizer bars at y=200, height 10, separated by 4px gaps
+        let bars = alloc::vec![
+            DirtyRect {
+                x: 170,
+                y: 200,
+                w: 9,
+                h: 10
+            },
+            DirtyRect {
+                x: 183,
+                y: 200,
+                w: 9,
+                h: 10
+            },
+            DirtyRect {
+                x: 196,
+                y: 200,
+                w: 9,
+                h: 10
+            },
+            DirtyRect {
+                x: 209,
+                y: 200,
+                w: 9,
+                h: 10
+            },
+        ];
+        let coalesced = coalesce_dirty_rects(bars);
+        assert_eq!(coalesced.len(), 1);
+        assert_eq!(
+            coalesced[0],
+            DirtyRect {
+                x: 170,
+                y: 200,
+                w: 48,
+                h: 10
+            }
+        );
+    }
+
+    #[test]
+    fn test_coalesce_vertical_separation_not_merged() {
+        // Marquee near top, equalizer in middle
+        let rects = alloc::vec![
+            DirtyRect {
+                x: 105,
+                y: 95,
+                w: 180,
+                h: 20
+            },
+            DirtyRect {
+                x: 170,
+                y: 200,
+                w: 50,
+                h: 20
+            },
+        ];
+        let coalesced = coalesce_dirty_rects(rects);
+        assert_eq!(coalesced.len(), 2);
+    }
+
+    #[test]
+    fn test_coalesce_mixed_clusters() {
+        // Marquee + 4 equalizer bars (scrambled order) + progress ring
+        let rects = alloc::vec![
+            DirtyRect {
+                x: 105,
+                y: 95,
+                w: 180,
+                h: 20
+            },
+            DirtyRect {
+                x: 183,
+                y: 200,
+                w: 9,
+                h: 10
+            },
+            DirtyRect {
+                x: 170,
+                y: 200,
+                w: 9,
+                h: 10
+            },
+            DirtyRect {
+                x: 209,
+                y: 200,
+                w: 9,
+                h: 10
+            },
+            DirtyRect {
+                x: 196,
+                y: 200,
+                w: 9,
+                h: 10
+            },
+            DirtyRect {
+                x: 155,
+                y: 344,
+                w: 80,
+                h: 8
+            },
+        ];
+        let coalesced = coalesce_dirty_rects(rects);
+        assert_eq!(coalesced.len(), 3);
+        assert_eq!(
+            coalesced[0],
+            DirtyRect {
+                x: 105,
+                y: 95,
+                w: 180,
+                h: 20
+            }
+        );
+        assert_eq!(
+            coalesced[1],
+            DirtyRect {
+                x: 170,
+                y: 200,
+                w: 48,
+                h: 10
+            }
+        );
+        assert_eq!(
+            coalesced[2],
+            DirtyRect {
+                x: 155,
+                y: 344,
+                w: 80,
+                h: 8
+            }
+        );
+    }
 }

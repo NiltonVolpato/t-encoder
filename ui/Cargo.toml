@@ -16,6 +16,7 @@ slint = { version = "1.17.1", default-features = false, features = [
     "libm",
     "renderer-software",
 ] }
+log = { workspace = true }
 
 [build-dependencies]
 slint-build = "1.17.1"

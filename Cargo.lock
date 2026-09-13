@@ -6806,6 +6806,7 @@ checksum = "e87a2ed6b42ec5e28cc3b94c09982969e9227600b2e3dcbc1db927a84c06bd69"
 name = "ui"
 version = "0.1.0"
 dependencies = [
+ "log",
  "slint",
  "slint-build",
 ]
