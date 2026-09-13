@@ -71,6 +71,80 @@ component MarqueeText inherits Rectangle {
     }
 }
 
+component EqualizerBar inherits Rectangle {
+    in property <length> min_h: 8px;
+    in property <length> max_h: 44px;
+    in property <duration> anim_duration: 400ms;
+    in property <color> bar_color: #F87000;
+
+    width: 8px;
+    border-radius: 4px;
+    background: root.bar_color;
+
+    private property <length> h: min_h;
+    height: h;
+
+    animate h {
+        duration: root.anim_duration;
+        iteration-count: -1;
+        direction: alternate;
+        easing: ease-in-out;
+    }
+
+    init => {
+        self.h = root.max_h;
+    }
+}
+
+component AudioEqualizer inherits Rectangle {
+    in property <color> bar_color: #F87000;
+    width: 50px;
+    height: 50px;
+
+    HorizontalLayout {
+        alignment: space-around;
+        padding: 0px;
+        spacing: 4px;
+
+        VerticalLayout {
+            alignment: end;
+            EqualizerBar {
+                bar_color: root.bar_color;
+                min_h: 10px;
+                max_h: 46px;
+                anim_duration: 480ms;
+            }
+        }
+        VerticalLayout {
+            alignment: end;
+            EqualizerBar {
+                bar_color: root.bar_color;
+                min_h: 8px;
+                max_h: 34px;
+                anim_duration: 350ms;
+            }
+        }
+        VerticalLayout {
+            alignment: end;
+            EqualizerBar {
+                bar_color: root.bar_color;
+                min_h: 14px;
+                max_h: 50px;
+                anim_duration: 570ms;
+            }
+        }
+        VerticalLayout {
+            alignment: end;
+            EqualizerBar {
+                bar_color: root.bar_color;
+                min_h: 10px;
+                max_h: 40px;
+                anim_duration: 410ms;
+            }
+        }
+    }
+}
+
 export component Sonos inherits Rectangle {
     in property <bool> DEBUG;
     in-out property <SonosState> state;
@@ -330,7 +404,13 @@ export component Sonos inherits Rectangle {
             }
         }
 
-        // 6. Center Play Indicator (Visible only when paused)
+        // 6. Center Deck: Audio Equalizer (when playing) or Play Indicator (when paused)
+        if state.is_playing: AudioEqualizer {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            bar_color: state.accent;
+        }
+
         if !state.is_playing: Image {
             source: @image-url("../assets/play.png");
             x: 128px;

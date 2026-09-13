@@ -250,7 +250,12 @@ async fn refresh_now_playing(
         res?
     };
 
-    let is_playing = transport_state == TransportState::Playing;
+    let prev_playing = SNAPSHOT.lock(|c| c.borrow().active_now_playing.is_playing);
+    let is_playing = match transport_state {
+        TransportState::Playing => true,
+        TransportState::Transitioning => prev_playing,
+        TransportState::Stopped | TransportState::PausedPlayback => false,
+    };
 
     let mut title = heapless::String::new();
     let mut artist = heapless::String::new();
