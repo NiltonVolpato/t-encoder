@@ -465,9 +465,27 @@ fmt:
 fmt-check:
     cargo fmt --all -- --check
 
-# Everything CI would run.
+[doc("Typecheck both native crates and device firmware.")]
 [group("verification")]
-check: fmt-check lint test build
+check: check-native check-device
+
+[doc("Typecheck host/pure crates.")]
+[group("verification")]
+check-native *ARGS:
+    #!/bin/sh
+    set -e
+    {{RESET_ENV}}
+    cargo check --workspace --exclude firmware --all-targets {{ARGS}}
+
+[doc("Typecheck the device firmware.")]
+[group("verification")]
+check-device *ARGS:
+    cargo check -p firmware {{ARGS}}
+
+# Everything CI would run.
+[doc("Run all verification steps: formatting check, lints, tests, and build.")]
+[group("verification")]
+verify: fmt-check lint test build
 
 [doc("Generates documentation for a given package in Markdown.")]
 [group("debug")]

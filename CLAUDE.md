@@ -24,7 +24,8 @@ just flash          # build + flash + monitor
 just test           # host tests for our pure crates
 just test-vendor    # host tests for the vendored upstream crates
 just lint           # clippy on pure crates, warnings are errors
-just check          # fmt-check + lint + test + build (what CI runs)
+just check          # typecheck pure crates + device firmware
+just verify         # fmt-check + lint + test + build (what CI runs)
 just qemu           # boot a radio-less build under QEMU (see below)
 ```
 
