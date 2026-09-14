@@ -1,0 +1,15 @@
+[env]
+DEFMT_LOG="info"
+
+[build]
+target = "xtensa-esp32s3-none-elf"
+rustflags = [
+  "-C", "link-arg=-nostartfiles",
+  "-C", "link-arg=-Wl,--no-warn-rwx-segments",
+]
+
+[unstable]
+build-std = ["alloc", "core"]
+
+[target.xtensa-esp32s3-none-elf]
+runner = "probe-rs run --chip=esp32s3 --preverify --always-print-stacktrace --no-location"

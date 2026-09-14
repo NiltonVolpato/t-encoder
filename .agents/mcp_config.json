@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "slint-docs": {
+      "disabled": false,
+      "serverUrl": "https://docs.slint.dev/mcp"
+    }
+  }
+}

@@ -1,0 +1,9 @@
+[workspace]
+resolver = "3"
+members = ["apps/*"]
+exclude = ["devices/lilygo_t_encoder_pro"]
+
+[workspace.package]
+edition = "2024"
+repository = "https://github.com/NiltonVolpato/t-encoder"
+publish = false
