@@ -355,55 +355,28 @@ _qemu-efuse:
         echo "wrote {{QEMU_EFUSE}} (chip revision v0.3)"
     fi
 
-# What the firmware is made of. `bloaty` reads the section table fine but
-# refuses anything symbol-level on this target ("Unknown ELF machine value: 94"
-# — 94 is xtensa), so `-d compileunits` and `-d symbols` are out. The esp
-# toolchain's own `nm` has no such problem.
+# What the firmware is made of using Bloaty.
 #
 # The release profile sets `strip = "symbols"`, so the shipped binary has no
 # symbol table at all; this overrides that for one build via the environment
 # rather than editing the profile. It therefore relinks — expect a minute.
-[doc("Show the top COUNT largest sections in the firmware binary.")]
+[doc("Show firmware size breakdown by sections, compile units, and symbols using bloaty.")]
 [group("debug")]
-size COUNT='25':
+size COUNT='20':
     #!/usr/bin/env bash
     set -euo pipefail
     CARGO_PROFILE_RELEASE_STRIP=none cargo build -p firmware --release 2>&1 \
         | grep -Ev '^(warning|  |$|note:)' || true
     bin=$(cargo metadata --format-version 1 --no-deps \
         | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')/xtensa-esp32s3-none-elf/release/firmware
-    # Skip .debug_*: this build is unstripped, so debug info dwarfs everything
-    # and none of it is flashed.
-    echo "== sections (flashed + RAM; debug info omitted) =="
-    xtensa-esp32s3-elf-size -A "$bin" \
-        | awk '$2 ~ /^[0-9]+$/ && $2 > 0 && $1 !~ /^\.debug/ && $1 != "Total" {
-                 total += $2; printf "%9d  %s\n", $2, $1 }
-               END { printf "%9d  TOTAL\n", total }' \
-        | sort -rn
+    echo "== sections =="
+    bloaty "$bin" -d sections -n {{COUNT}}
     echo
-    echo "== {{COUNT}} largest crates (approximates bloaty -d compileunits) =="
-    # Buckets a demangled symbol by its leading path segment. Handles the two
-    # shapes rustc emits: `crate::path::item` and `<crate::Type as Trait>::item`.
-    xtensa-esp32s3-elf-nm --print-size --size-sort --radix=d -C "$bin" \
-        | awk 'toupper($3) ~ /^[TRDB]$/ && $2 + 0 > 0 {
-                 size = $2 + 0; $1=$2=$3=""; sub(/^ +/, ""); name = $0
-                 gsub(/^[<&*(]+/, "", name)
-                 crate = match(name, /^[A-Za-z_][A-Za-z0-9_]*::/) \
-                       ? substr(name, 1, RLENGTH - 2) : "(C / asm / no path)"
-                 total[crate] += size }
-               END { for (c in total) printf "%9d  %s\n", total[c], c }' \
-        | sort -rn | awk 'NR <= {{COUNT}}'
+    echo "== {{COUNT}} largest compile units =="
+    bloaty "$bin" -d compileunits -n {{COUNT}}
     echo
     echo "== {{COUNT}} largest symbols =="
-    # Column 3 is the symbol type; keep code and data. The positive-size test
-    # drops the linker's own absolutes (`_rwtext_len` reports -12832).
-    # `--size-sort` is ascending, so `tail` takes the largest without closing
-    # the pipe early — `head` here would SIGPIPE `nm` and trip `pipefail`.
-    xtensa-esp32s3-elf-nm --print-size --size-sort --radix=d -C "$bin" \
-        | awk 'toupper($3) ~ /^[TRDB]$/ && $2 + 0 > 0 {
-                 size = $2 + 0; $1=$2=$3=""; sub(/^ +/, "");
-                 printf "%9d  %s\n", size, $0 }' \
-        | tail -{{COUNT}} | sort -rn
+    bloaty "$bin" -d symbols -n {{COUNT}}
 
 # Serial monitor only (no flash).
 [group("deploy")]
