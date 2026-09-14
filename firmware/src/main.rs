@@ -468,17 +468,22 @@ impl Device {
 
         let started = Instant::now();
         match self.slint_ui.render(&mut self.panel) {
-            Ok(None) => false,
-            Ok(Some(rect)) => {
+            Ok(stats) if stats.rectangles == 0 => false,
+            Ok(stats) => {
                 self.frames = self.frames.saturating_add(1);
-                let us = started.elapsed().as_micros();
-                let anim = self.slint_ui.has_active_animations();
-                let (w, h, x, y) = (rect.w, rect.h, rect.x, rect.y);
                 if self.frames <= 5 || self.frames.checked_rem(500) == Some(0) {
+                    let total_us = started.elapsed().as_micros();
+                    let anim = self.slint_ui.has_active_animations();
                     log::info!(
-                        "slint: frame {} @ {}ms ({us}us) anim={anim} {w}x{h}+{x},{y}",
+                        "slint: frame {} @ {}ms ({total_us}us, draw={}us, flush={}us) anim={anim} rects={} px={} [min={}us, max={}us]",
                         self.frames,
-                        ctx.now_ms
+                        ctx.now_ms,
+                        stats.draw_duration_us,
+                        stats.total_flush_duration_us,
+                        stats.rectangles,
+                        stats.total_pixels,
+                        stats.min_flush_duration_us,
+                        stats.max_flush_duration_us,
                     );
                 }
                 true

@@ -6809,6 +6809,7 @@ dependencies = [
  "log",
  "slint",
  "slint-build",
+ "xtensa-lx",
 ]
 
 [[package]]

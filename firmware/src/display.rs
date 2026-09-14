@@ -83,6 +83,7 @@ impl QspiBus {
         // Taken by the first transfer; every later one continues the same
         // transaction with neither command nor address.
         let mut opening = Some((cmd, address));
+        let mut written = 0;
         // Tail of a piece that did not fit in the last buffer-full.
         let mut carry: &[u8] = &[];
         loop {
@@ -93,11 +94,17 @@ impl QspiBus {
             }
             let (cmd, address) = opening.take().unwrap_or((Command::None, Address::None));
             self.transfer(data_mode, cmd, address, filled)?;
+            written += filled;
         }
         // An empty payload is still a transaction: command and address go out
         // on their own (this is how most of the init sequence is written).
         if let Some((cmd, address)) = opening {
             self.transfer(data_mode, cmd, address, 0)?;
+        }
+        if written > 0 {
+            // Fixes a glitching/streaking artifact issue when writing multiple
+            // dirty rectangles in quick succession. Cause: unknown.
+            esp_hal::delay::Delay::new().delay_micros(10);
         }
         Ok(())
     }

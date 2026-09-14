@@ -18,6 +18,9 @@ slint = { version = "1.17.1", default-features = false, features = [
 ] }
 log = { workspace = true }
 
+[target.'cfg(target_arch = "xtensa")'.dependencies]
+xtensa-lx = "0.13"
+
 [build-dependencies]
 slint-build = "1.17.1"
 

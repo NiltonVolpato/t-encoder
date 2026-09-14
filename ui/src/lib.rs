@@ -201,6 +201,101 @@ impl Platform for DevicePlatform {
     }
 }
 
+const CYCLES_PER_MICROSECOND: u32 = 240;
+
+#[inline]
+fn cycle_count() -> u32 {
+    #[cfg(target_arch = "xtensa")]
+    {
+        xtensa_lx::timer::get_cycle_count()
+    }
+    #[cfg(not(target_arch = "xtensa"))]
+    {
+        0
+    }
+}
+
+#[inline]
+fn cycles_to_micros(cycles: u32) -> u32 {
+    cycles / CYCLES_PER_MICROSECOND
+}
+
+struct RenderStatsBuilder {
+    stats: RenderStats,
+    draw_start_cycles: u32,
+    rect_start_cycles: u32,
+}
+
+impl RenderStatsBuilder {
+    fn new() -> Self {
+        Self {
+            stats: RenderStats::default(),
+            draw_start_cycles: 0,
+            rect_start_cycles: 0,
+        }
+    }
+
+    fn record_draw(&mut self, elapsed_cycles: u32) {
+        self.stats.draw_duration_us = cycles_to_micros(elapsed_cycles);
+    }
+
+    fn draw_start(&mut self) {
+        self.draw_start_cycles = cycle_count();
+    }
+
+    fn draw_end(&mut self) {
+        let elapsed = cycle_count().wrapping_sub(self.draw_start_cycles);
+        self.record_draw(elapsed);
+    }
+
+    fn rectangle_start(&mut self, rect: &DirtyRect) {
+        self.stats.rectangles = self.stats.rectangles.saturating_add(1);
+        self.stats.total_pixels = self
+            .stats
+            .total_pixels
+            .saturating_add(u32::try_from(rect.area()).unwrap_or(u32::MAX));
+        self.rect_start_cycles = cycle_count();
+    }
+
+    fn record_rect_flush(&mut self, elapsed_cycles: u32) {
+        let us = cycles_to_micros(elapsed_cycles);
+        self.stats.total_flush_duration_us = self.stats.total_flush_duration_us.saturating_add(us);
+        if self.stats.rectangles == 1 {
+            self.stats.min_flush_duration_us = us;
+            self.stats.max_flush_duration_us = us;
+        } else {
+            self.stats.min_flush_duration_us = self.stats.min_flush_duration_us.min(us);
+            self.stats.max_flush_duration_us = self.stats.max_flush_duration_us.max(us);
+        }
+    }
+
+    fn rectangle_end(&mut self) {
+        let elapsed = cycle_count().wrapping_sub(self.rect_start_cycles);
+        self.record_rect_flush(elapsed);
+    }
+
+    fn build(self) -> RenderStats {
+        self.stats
+    }
+}
+
+/// Performance and geometry metrics collected during a single [`Ui::render`] call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct RenderStats {
+    /// Number of dirty rectangles flushed to the display panel.
+    pub rectangles: u8,
+    /// Total pixel count across all flushed rectangles.
+    pub total_pixels: u32,
+    /// Duration of the Slint draw phase in microseconds.
+    pub draw_duration_us: u32,
+    /// Total duration spent in panel flush operations in microseconds.
+    pub total_flush_duration_us: u32,
+    /// Minimum duration for a single rectangle flush in microseconds (0 if no rectangles).
+    pub min_flush_duration_us: u32,
+    /// Maximum duration for a single rectangle flush in microseconds (0 if no rectangles).
+    pub max_flush_duration_us: u32,
+}
+
 /// The live UI: the Slint window, the root component, and the framebuffer they
 /// render into.
 ///
@@ -247,36 +342,28 @@ impl Ui {
 
     /// Renders one frame and sends what changed to `panel`.
     ///
-    /// Returns the rectangle that went out, or `None` for a frame in which
-    /// nothing changed — Slint decides whether there was anything to draw. That
-    /// is reporting, not a decision: the caller has nothing to do with it but
-    /// count and log, and is free to ignore it entirely.
+    /// Returns [`RenderStats`] describing what was drawn and flushed, or default
+    /// (zeroed) stats for a frame in which nothing changed.
     ///
     /// # Errors
     /// Returns the panel's own error if the transfer fails. The frame is still
     /// rendered; only its delivery failed.
-    pub fn render<P: Panel>(&mut self, panel: &mut P) -> Result<Option<DirtyRect>, P::Error> {
+    pub fn render<P: Panel>(&mut self, panel: &mut P) -> Result<RenderStats, P::Error> {
         slint::platform::update_timers_and_animations();
 
         let Some(framebuffer) = self.framebuffer.as_mut() else {
-            return Ok(None);
+            return Ok(RenderStats::default());
         };
 
         let stride = usize::try_from(WIDTH).unwrap_or(0);
         let window = &self.window;
 
         let mut dirty_rects = alloc::vec::Vec::new();
-        let mut bounding_box = None;
+        let mut stats = RenderStatsBuilder::new();
+        stats.draw_start();
         let drawn = window.draw_if_needed(|renderer| {
             let pixels = as_pixels(framebuffer);
             let region = renderer.render(pixels, stride);
-            let (origin, size) = (region.bounding_box_origin(), region.bounding_box_size());
-            bounding_box = Some(DirtyRect {
-                x: u16::try_from(origin.x).unwrap_or(0),
-                y: u16::try_from(origin.y).unwrap_or(0),
-                w: u16::try_from(size.width).unwrap_or(0),
-                h: u16::try_from(size.height).unwrap_or(0),
-            });
             for (pos, sz) in region.iter() {
                 if let (Ok(x), Ok(y), Ok(w), Ok(h)) = (
                     u16::try_from(pos.x),
@@ -288,6 +375,7 @@ impl Ui {
                 }
             }
         });
+        stats.draw_end();
 
         if drawn {
             let dirty_rects = coalesce_dirty_rects(dirty_rects);
@@ -295,12 +383,12 @@ impl Ui {
                 log::error!("no dirty rects but drawn = true");
             }
             for rect in dirty_rects {
+                stats.rectangle_start(&rect);
                 panel.flush(rect, framebuffer)?;
+                stats.rectangle_end();
             }
-            Ok(bounding_box)
-        } else {
-            Ok(None)
         }
+        Ok(stats.build())
     }
 
     /// Whether an animation is still running, so the caller keeps ticking.
@@ -481,5 +569,95 @@ mod tests {
                 h: 8
             }
         );
+    }
+
+    #[test]
+    fn test_render_stats_default() {
+        let stats = RenderStats::default();
+        assert_eq!(stats.rectangles, 0);
+        assert_eq!(stats.total_pixels, 0);
+        assert_eq!(stats.draw_duration_us, 0);
+        assert_eq!(stats.total_flush_duration_us, 0);
+        assert_eq!(stats.min_flush_duration_us, 0);
+        assert_eq!(stats.max_flush_duration_us, 0);
+    }
+
+    #[test]
+    fn test_cycles_to_micros_and_wrap() {
+        assert_eq!(cycles_to_micros(0), 0);
+        assert_eq!(cycles_to_micros(240), 1);
+        assert_eq!(cycles_to_micros(2400), 10);
+        assert_eq!(cycles_to_micros(240_000), 1000);
+
+        // Test wrapping subtraction across u32::MAX
+        let start = u32::MAX - 239;
+        let end: u32 = 240; // wrapped past u32::MAX (total 480 cycles)
+        let elapsed = end.wrapping_sub(start);
+        assert_eq!(elapsed, 480);
+        assert_eq!(cycles_to_micros(elapsed), 2);
+    }
+
+    #[test]
+    fn test_render_stats_builder_single_rect() {
+        let mut builder = RenderStatsBuilder::new();
+        builder.record_draw(240 * 150); // 150 us
+
+        let rect = DirtyRect {
+            x: 10,
+            y: 20,
+            w: 30,
+            h: 40,
+        }; // area = 1200
+        builder.rectangle_start(&rect);
+        builder.record_rect_flush(240 * 80); // 80 us
+
+        let stats = builder.build();
+        assert_eq!(stats.rectangles, 1);
+        assert_eq!(stats.total_pixels, 1200);
+        assert_eq!(stats.draw_duration_us, 150);
+        assert_eq!(stats.total_flush_duration_us, 80);
+        assert_eq!(stats.min_flush_duration_us, 80);
+        assert_eq!(stats.max_flush_duration_us, 80);
+    }
+
+    #[test]
+    fn test_render_stats_builder_multiple_rects() {
+        let mut builder = RenderStatsBuilder::new();
+        builder.record_draw(240 * 300); // 300 us
+
+        let r1 = DirtyRect {
+            x: 0,
+            y: 0,
+            w: 10,
+            h: 10,
+        }; // area = 100
+        builder.rectangle_start(&r1);
+        builder.record_rect_flush(240 * 50); // 50 us
+
+        let r2 = DirtyRect {
+            x: 50,
+            y: 50,
+            w: 20,
+            h: 20,
+        }; // area = 400
+        builder.rectangle_start(&r2);
+        builder.record_rect_flush(240 * 200); // 200 us
+
+        let r3 = DirtyRect {
+            x: 100,
+            y: 100,
+            w: 10,
+            h: 30,
+        }; // area = 300
+        builder.rectangle_start(&r3);
+        builder.record_rect_flush(240 * 30); // 30 us
+
+        let stats = builder.build();
+        assert_eq!(stats.rectangles, 3);
+        assert_eq!(stats.total_pixels, 800);
+        assert_eq!(stats.draw_duration_us, 300);
+        assert_eq!(stats.total_flush_duration_us, 280);
+        assert_eq!(stats.min_flush_duration_us, 30);
+        assert_eq!(stats.max_flush_duration_us, 200);
     }
 }
