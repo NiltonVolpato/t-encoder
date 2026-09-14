@@ -11,4 +11,4 @@ pub const INTERNAL_HEAP_RECLAIMED: usize = 73_744;
 /// Second internal region (a static `.bss` array in main DRAM) added on top of
 /// the reclaimed RAM — esp-radio Wi-Fi+BLE coex needs more than the reclaimed
 /// region alone (radio task stacks alloc from the global heap via `esp-rtos`).
-pub const INTERNAL_HEAP_EXTRA: usize = 64 * 1024;
+pub const INTERNAL_HEAP_EXTRA: usize = 128 * 1024;
