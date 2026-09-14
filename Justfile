@@ -387,7 +387,7 @@ monitor:
 [doc("Attach to the running device with tio (no reset, exit with Ctrl-T q).")]
 [group("deploy")]
 attach *ARGS:
-    tio --timestamp {{ARGS}} {{FLASH_PORT}}
+    tio --timestamp --map INLCRNL {{ARGS}} {{FLASH_PORT}}
 
 # Everything but `firmware`, which is device-only. `ui` and `apps` are in scope
 # here — they build natively once the device env vars are unset, which is what
