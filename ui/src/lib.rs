@@ -137,6 +137,14 @@ const COALESCE_THRESHOLD_PIXELS: usize = 200;
 ///
 /// Rectangles are sorted by `(y, x)` and evaluated against the cost difference:
 /// `area(bbox) - (area(last) + area(next)) <= threshold`.
+///
+/// # Note on potential overlap
+/// Because this is a single-pass greedy merge on `(y, x)` sorted rectangles, if an
+/// earlier merge expands a bounding box downwards or rightwards past a subsequent
+/// rectangle that does not merge with it, the resulting rectangles in `coalesced` can
+/// partially overlap. Because the framebuffer contains identical pixels across any
+/// overlap, this is visually harmless and only results in redundant SPI transfers for
+/// the overlapping region.
 fn coalesce_dirty_rects(mut dirty_rects: alloc::vec::Vec<DirtyRect>) -> alloc::vec::Vec<DirtyRect> {
     if dirty_rects.len() <= 1 {
         return dirty_rects;
