@@ -1,0 +1,147 @@
+// Copyright © 2026 Nilton Volpato
+// SPDX-License-Identifier: MIT
+
+import { Theme, CircularScreen } from "@theme";
+
+export component ClockApp inherits Window {
+    title: "Clock";
+    width: Theme.screen-size;
+    height: Theme.screen-size;
+    background: Theme.background;
+    default-font-size: 16px;
+
+    in-out property <int> hours: 10;
+    in-out property <int> minutes: 42;
+    in-out property <int> seconds: 35;
+    in-out property <string> date-str: "MON, SEP 14";
+    in-out property <bool> show-seconds: true;
+
+    callback toggle-seconds();
+    callback adjust-minutes(int); // delta
+
+    forward-focus: dial-focus;
+
+    dial-focus := FocusScope {
+        key-pressed(event) => {
+            if event.text == Key.UpArrow || event.text == Key.RightArrow {
+                root.adjust-minutes(1);
+                return accept;
+            }
+            if event.text == Key.DownArrow || event.text == Key.LeftArrow {
+                root.adjust-minutes(-1);
+                return accept;
+            }
+            if event.text == Key.Return || event.text == " " {
+                root.toggle-seconds();
+                return accept;
+            }
+            reject
+        }
+    }
+
+    CircularScreen {
+        TouchArea {
+            clicked => { root.toggle-seconds(); }
+        }
+
+        // Decorative outer border ring
+        Rectangle {
+            width: 374px;
+            height: 374px;
+            border-radius: self.width / 2;
+            border-width: 2px;
+            border-color: Theme.surface-variant;
+        }
+
+        // Inner dial background
+        Rectangle {
+            width: 340px;
+            height: 340px;
+            border-radius: self.width / 2;
+            background: Theme.surface;
+            border-width: 1px;
+            border-color: Theme.surface-variant;
+        }
+
+        // Center content layout
+        VerticalLayout {
+            alignment: center;
+            spacing: 6px;
+
+            // Date readout
+            Text {
+                text: root.date-str;
+                color: Theme.text-secondary;
+                font-size: 15px;
+                font-weight: 500;
+                horizontal-alignment: center;
+                letter-spacing: 1px;
+            }
+
+            // Main digital time readout (Hours : Minutes)
+            HorizontalLayout {
+                alignment: center;
+                spacing: 2px;
+
+                Text {
+                    text: root.hours < 10 ? "0" + root.hours : "" + root.hours;
+                    color: Theme.text-primary;
+                    font-size: 72px;
+                    font-weight: 700;
+                    horizontal-alignment: right;
+                }
+
+                Text {
+                    text: ":";
+                    color: Theme.accent;
+                    font-size: 72px;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                }
+
+                Text {
+                    text: root.minutes < 10 ? "0" + root.minutes : "" + root.minutes;
+                    color: Theme.text-primary;
+                    font-size: 72px;
+                    font-weight: 700;
+                    horizontal-alignment: left;
+                }
+            }
+
+            // Seconds badge / mode indicator
+            if root.show-seconds: HorizontalLayout {
+                alignment: center;
+                Rectangle {
+                    border-radius: 12px;
+                    background: Theme.surface-variant;
+                    horizontal-stretch: 0;
+
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        padding-top: 4px;
+                        padding-bottom: 4px;
+
+                        Text {
+                            text: (root.seconds < 10 ? "0" + root.seconds : "" + root.seconds) + "s";
+                            color: Theme.accent;
+                            font-size: 16px;
+                            font-weight: 600;
+                            horizontal-alignment: center;
+                        }
+                    }
+                }
+            }
+
+            // Focus hint for rotary encoder
+            if dial-focus.has-focus: Text {
+                text: "• ROTATE TO ADJUST •";
+                color: Theme.text-muted;
+                font-size: 11px;
+                font-weight: 600;
+                horizontal-alignment: center;
+                letter-spacing: 1.5px;
+            }
+        }
+    }
+}

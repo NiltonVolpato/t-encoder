@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["apps/*"]
+members = ["apps/*", "crates/*"]
 exclude = ["devices/lilygo_t_encoder_pro"]
 
 [workspace.package]

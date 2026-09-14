@@ -7,73 +7,81 @@
 )]
 #![deny(clippy::large_stack_frames)]
 
-use esp_hal::clock::CpuClock;
-use esp_hal::timer::timg::TimerGroup;
-
-use esp_radio::ble::controller::BleConnector;
-use bt_hci::controller::ExternalController;
-use trouble_host::prelude::*;
-
-use embassy_executor::Spawner;
-use embassy_time::{Duration, Timer};
-
+use app_clock::{ClockApp, Time, setup_clock};
 use defmt::info;
-
+use esp_hal::clock::CpuClock;
+use lilygo_t_encoder_pro::bsp::{Bsp, BspPeripherals, run_event_loop};
 use panic_rtt_target as _;
+use slint::ComponentHandle;
 
 extern crate alloc;
 
-const CONNECTIONS_MAX: usize = 1;
-const L2CAP_CHANNELS_MAX: usize = 1;
-
-// This creates a default app-descriptor required by the esp-idf bootloader.
-// For more information see: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/app_image_format.html#application-description>
+// Creates a default app-descriptor required by the esp-idf bootloader.
 esp_bootloader_esp_idf::esp_app_desc!();
 
-#[allow(
-    clippy::large_stack_frames,
-    reason = "it's not unusual to allocate larger buffers etc. in main"
-)]
-#[esp_rtos::main]
-async fn main(spawner: Spawner) -> ! {
-    // generator version: 1.3.0
-    // generator parameters: --chip esp32s3 -o unstable-hal -o alloc -o wifi -o embassy -o ble-trouble -o probe-rs -o defmt -o panic-rtt-target -o embedded-test -o zed -o vscode -o esp
-
+#[esp_hal::main]
+fn main() -> ! {
     rtt_target::rtt_init_defmt!();
 
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
 
-    
+    // 1. Initialize PSRAM (Region 0 - default general allocator)
+    esp_alloc::psram_allocator!(peripherals.PSRAM, esp_hal::psram);
 
+    // 2. Register internal DRAM heaps (DMA buffers & fast RAM)
     esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: 73744);
-    // COEX needs more RAM - so we've added some more
-    esp_alloc::heap_allocator!(size: 64 * 1024);
+    esp_alloc::heap_allocator!(size: 128 * 1024);
 
-    let timg0 = TimerGroup::new(peripherals.TIMG0);
-    let sw_interrupt =
-        esp_hal::interrupt::software::SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
-    esp_rtos::start(timg0.timer0, sw_interrupt.software_interrupt0);
+    info!("Memory initialized, bringing up BSP...");
 
-    info!("Embassy initialized!");
+    // 3. Initialize BSP (display, touch, rotary, Slint platform)
+    let bsp = Bsp::init(BspPeripherals {
+        spi2: peripherals.SPI2,
+        dma_ch0: peripherals.DMA_CH0,
+        i2c0: peripherals.I2C0,
+        pcnt: peripherals.PCNT,
+        gpio0: peripherals.GPIO0,
+        gpio1: peripherals.GPIO1,
+        gpio2: peripherals.GPIO2,
+        gpio3: peripherals.GPIO3,
+        gpio4: peripherals.GPIO4,
+        gpio5: peripherals.GPIO5,
+        gpio6: peripherals.GPIO6,
+        gpio7: peripherals.GPIO7,
+        gpio8: peripherals.GPIO8,
+        gpio9: peripherals.GPIO9,
+        gpio10: peripherals.GPIO10,
+        gpio11: peripherals.GPIO11,
+        gpio12: peripherals.GPIO12,
+        gpio13: peripherals.GPIO13,
+        gpio14: peripherals.GPIO14,
+    });
 
-    let (mut _wifi_controller, _interfaces) =
-        esp_radio::wifi::new(peripherals.WIFI, Default::default())
-            .expect("Failed to initialize Wi-Fi controller");
-    // find more examples https://github.com/embassy-rs/trouble/tree/main/examples/esp32
-    let transport = BleConnector::new(peripherals.BT, Default::default()).unwrap();
-    let ble_controller = ExternalController::<_, 1>::new(transport);
-    let mut resources: HostResources<DefaultPacketPool, CONNECTIONS_MAX, L2CAP_CHANNELS_MAX> =
-        HostResources::new();
-    let _stack = trouble_host::new(ble_controller, &mut resources);
+    // 4. Create and configure ClockApp
+    let clock = ClockApp::new().expect("Failed to create ClockApp");
+    let initial_time = Time::new(10, 42, 30);
+    setup_clock(&clock, initial_time);
 
-    // TODO: Spawn some tasks
-    let _ = spawner;
+    // 5. Start a Slint timer to tick seconds
+    let weak = clock.as_weak();
+    let mut current_time = initial_time;
+    let timer = slint::Timer::default();
+    timer.start(
+        slint::TimerMode::Repeated,
+        core::time::Duration::from_secs(1),
+        move || {
+            if let Some(app) = weak.upgrade() {
+                current_time.tick();
+                app.set_hours(current_time.hours as i32);
+                app.set_minutes(current_time.minutes as i32);
+                app.set_seconds(current_time.seconds as i32);
+            }
+        },
+    );
 
-    loop {
-        info!("Hello world!");
-        Timer::after(Duration::from_secs(1)).await;
-    }
+    info!("Starting Slint MCU event loop with ClockApp...");
 
-    // for inspiration have a look at the examples at https://github.com/esp-rs/esp-hal/tree/esp-hal-v1.1.0/examples
+    // 6. Enter Slint MCU event loop
+    run_event_loop(bsp.window, bsp.display, bsp.touch, bsp.rotary);
 }
