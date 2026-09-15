@@ -4689,6 +4689,7 @@ name = "ui-theme"
 version = "0.1.0"
 dependencies = [
  "slint",
+ "slint-build",
 ]
 
 [[package]]
