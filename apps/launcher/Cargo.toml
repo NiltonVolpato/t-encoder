@@ -1,6 +1,6 @@
 [package]
-name = "app-clock"
-links = "app_clock"
+name = "app-launcher"
+links = "app_launcher"
 version = "0.1.0"
 edition.workspace = true
 repository.workspace = true
@@ -10,7 +10,7 @@ publish.workspace = true
 path = "src/lib.rs"
 
 [[bin]]
-name = "clock-simulator"
+name = "launcher-simulator"
 path = "src/bin/main.rs"
 
 [features]
@@ -22,11 +22,15 @@ simulator = [
     "slint/std",
     "slint/mcp",
     "theme/std",
+    "app-clock/simulator",
+    "app-clock2/simulator",
 ]
 
 [dependencies]
 slint = { workspace = true }
 theme = { workspace = true }
+app-clock = { path = "../clock", default-features = false }
+app-clock2 = { path = "../clock2", default-features = false }
 
 [build-dependencies]
 slint-build = { workspace = true }

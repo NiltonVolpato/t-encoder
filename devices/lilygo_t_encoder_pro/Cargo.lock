@@ -119,7 +119,27 @@ version = "0.1.0"
 dependencies = [
  "slint",
  "slint-build",
- "ui-theme",
+ "theme",
+]
+
+[[package]]
+name = "app-clock2"
+version = "0.1.0"
+dependencies = [
+ "slint",
+ "slint-build",
+ "theme",
+]
+
+[[package]]
+name = "app-launcher"
+version = "0.1.0"
+dependencies = [
+ "app-clock",
+ "app-clock2",
+ "slint",
+ "slint-build",
+ "theme",
 ]
 
 [[package]]
@@ -3603,7 +3623,7 @@ dependencies = [
 name = "lilygo_t_encoder_pro"
 version = "0.1.0"
 dependencies = [
- "app-clock",
+ "app-launcher",
  "bt-hci",
  "critical-section",
  "defmt 1.1.1",
@@ -3623,8 +3643,8 @@ dependencies = [
  "slint",
  "smoltcp",
  "static_cell",
+ "theme",
  "trouble-host",
- "ui-theme",
 ]
 
 [[package]]
@@ -5922,6 +5942,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f18aa187839b2bdb1ad2fa35ead8c4c2976b64e4363c386d45ac0f7ee85c9233"
 
 [[package]]
+name = "theme"
+version = "0.1.0"
+dependencies = [
+ "slint",
+ "slint-build",
+]
+
+[[package]]
 name = "thiserror"
 version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6227,14 +6255,6 @@ name = "ufmt-write"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e87a2ed6b42ec5e28cc3b94c09982969e9227600b2e3dcbc1db927a84c06bd69"
-
-[[package]]
-name = "ui-theme"
-version = "0.1.0"
-dependencies = [
- "slint",
- "slint-build",
-]
 
 [[package]]
 name = "unicase"

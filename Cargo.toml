@@ -7,3 +7,8 @@ exclude = ["devices/lilygo_t_encoder_pro"]
 edition = "2024"
 repository = "https://github.com/NiltonVolpato/t-encoder"
 publish = false
+
+[workspace.dependencies]
+slint = { version = "1.17.1", default-features = false, features = ["compat-1-2"] }
+slint-build = { version = "1.17.1", features = ["experimental-module-builds"] }
+theme = { path = "crates/theme", default-features = false }

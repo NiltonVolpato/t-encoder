@@ -3,8 +3,6 @@
 
 #![no_std]
 
-extern crate alloc;
-
 slint::include_modules!();
 
 /// Representation of time for the clock app.
@@ -17,7 +15,11 @@ pub struct Time {
 
 impl Time {
     pub const fn new(hours: u8, minutes: u8, seconds: u8) -> Self {
-        Self { hours, minutes, seconds }
+        Self {
+            hours,
+            minutes,
+            seconds,
+        }
     }
 
     /// Advances time by one second, handling minute and hour rollover.
@@ -76,6 +78,8 @@ pub fn setup_clock(app: &ClockApp, initial_time: Time) {
         }
     });
 }
+
+pub fn init(_clock: ClockApp) {}
 
 #[cfg(test)]
 mod tests {
