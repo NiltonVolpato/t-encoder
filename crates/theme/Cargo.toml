@@ -23,4 +23,4 @@ std = [
 slint = { workspace = true }
 
 [build-dependencies]
-slint-build = { workspace = true }
+baker = { workspace = true }

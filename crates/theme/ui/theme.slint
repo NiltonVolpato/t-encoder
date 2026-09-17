@@ -1,13 +1,12 @@
 
-import "../assets/fonts/Inter-Regular.otf";
-import "../assets/fonts/Inter-Bold.otf";
+import "../assets/fonts/InterVariable.ttf";
 
 export global Theme {
-    out property <string> font-family: "Inter";
+    out property <string> font-family: "Inter Variable";
     out property <length> screen-size: 390px;
     out property <length> screen-radius: 195px;
 
-    out property <color> background: #070a13;
+    out property <color> background: #000000; // True black on AMOLED display.
     out property <color> surface: #111827;
     out property <color> surface-variant: #1e293b;
     out property <color> accent: #38bdf8;
@@ -24,7 +23,14 @@ export struct AppInfo {
     icon: image,
 }
 
-component CircularScreen inherits Rectangle {
+export component TextSm inherits Text { font-family: "Inter Variable"; font-size: 14px; font-weight: 400; }
+export component TextBase inherits Text { font-family: "Inter Variable"; font-size: 16px; font-weight: 400; }
+export component TextBaseBold inherits Text { font-family: "Inter Variable"; font-size: 16px; font-weight: 700; }
+export component TextLgBold inherits Text { font-family: "Inter Variable"; font-size: 20px; font-weight: 700; }
+export component TextXlBold inherits Text { font-family: "Inter Variable"; font-size: 26px; font-weight: 700; }
+export component TextDisplayBold inherits Text { font-family: "Inter Variable"; font-size: 72px; font-weight: 700; }
+
+export component CircularScreen inherits Rectangle {
     width: Theme.screen-size;
     height: Theme.screen-size;
     border-radius: Theme.screen-radius;
@@ -32,7 +38,7 @@ component CircularScreen inherits Rectangle {
     background: Theme.background;
 }
 
-component RotaryKnob inherits FocusScope {
+export component RotaryKnob inherits FocusScope {
     in-out property <int> value: 0;
     in property <int> min: 0;
     in property <int> max: 100;
@@ -94,7 +100,7 @@ component RotaryKnob inherits FocusScope {
         width: 100%;
         height: 100%;
         border-radius: self.width / 2;
-        background: Theme.surface;
+        background: Theme.background;
         border-width: root.has-focus ? 3px : 1px;
         border-color: root.has-focus ? Theme.focus : Theme.surface-variant;
 
@@ -105,22 +111,30 @@ component RotaryKnob inherits FocusScope {
             alignment: center;
             spacing: 4px;
 
-            if root.label != "": Text {
+            if root.label != "": TextSm {
                 text: root.label;
                 color: Theme.text-secondary;
-                font-size: 13px;
                 horizontal-alignment: center;
             }
 
-            Text {
+            TextXlBold {
                 text: root.value + (root.unit != "" ? " " + root.unit : "");
                 color: root.has-focus ? Theme.accent : Theme.text-primary;
-                font-size: 28px;
-                font-weight: 700;
                 horizontal-alignment: center;
             }
         }
     }
 }
 
-export { CircularScreen, RotaryKnob }
+// IMPORTANT: Keep this as the last exported element, so Slint use a reasonable default font.
+export component AppWindow inherits Window {
+    width: 390px;
+    height: 390px;
+    background: #000000;  // True black on AMOLED display.
+    default-font-family: "Inter Variable";
+    default-font-size: 16px;
+    default-font-weight: 400;
+
+    // Force Slint's idiosyncratic MCU font embedder to include reasonable default font and glyphs.
+    TextBase { visible: false; width: 0px; height: 0px; text: "ABC"; }
+}

@@ -1,7 +1,7 @@
 // Copyright © 2026 Nilton Volpato
 // SPDX-License-Identifier: MIT
 
-import { Theme, CircularScreen, AppInfo } from "@theme";
+import { AppWindow, Theme, CircularScreen, AppInfo, TextSm, TextXlBold } from "@theme";
 
 export global PomodoroInfo {
     out property <AppInfo> info: {
@@ -11,12 +11,9 @@ export global PomodoroInfo {
     };
 }
 
-export component PomodoroApp inherits Window {
+export component PomodoroApp inherits AppWindow {
     title: "Pomodoro";
-    width: Theme.screen-size;
-    height: Theme.screen-size;
     background: #ef4444;
-    default-font-family: "Inter";
 
     callback exit();
 
@@ -42,22 +39,19 @@ export component PomodoroApp inherits Window {
             alignment: center;
             spacing: 12px;
 
-            Text {
+            TextXlBold {
                 text: "Pomodoro";
                 color: white;
-                font-size: 32px;
-                font-weight: 700;
                 horizontal-alignment: center;
             }
 
-            Text {
+            TextSm {
                 text: "TAP OR ESC TO EXIT";
                 color: white.darker(0.2);
-                font-size: 14px;
-                font-weight: 500;
                 horizontal-alignment: center;
                 letter-spacing: 1.5px;
             }
         }
     }
 }
+

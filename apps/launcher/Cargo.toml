@@ -52,4 +52,4 @@ app-sonos = { path = "../sonos", default-features = false, optional = true }
 slint = { workspace = true }
 
 [build-dependencies]
-slint-build = { workspace = true }
+baker = { workspace = true }

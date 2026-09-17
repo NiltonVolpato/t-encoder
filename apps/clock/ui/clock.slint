@@ -1,7 +1,7 @@
 // Copyright © 2026 Nilton Volpato
 // SPDX-License-Identifier: MIT
 
-import { Theme, CircularScreen, AppInfo } from "@theme";
+import { AppWindow, Theme, CircularScreen, AppInfo, TextBase, TextLgBold, TextDisplayBold } from "@theme";
 
 export global ClockInfo {
     out property <AppInfo> info: {
@@ -11,13 +11,8 @@ export global ClockInfo {
     };
 }
 
-export component ClockApp inherits Window {
+export component ClockApp inherits AppWindow {
     title: "Clock";
-    width: Theme.screen-size;
-    height: Theme.screen-size;
-    background: Theme.background;
-    default-font-family: "Inter";  // TODO: update all windows.
-    default-font-size: 16px;
 
     in-out property <int> hours: 10;
     in-out property <int> minutes: 42;
@@ -83,11 +78,9 @@ export component ClockApp inherits Window {
             spacing: 6px;
 
             // Date readout
-            Text {
+            TextBase {
                 text: root.date-str;
                 color: Theme.text-secondary;
-                font-size: 15px;
-                font-weight: 500;
                 horizontal-alignment: center;
                 letter-spacing: 1px;
             }
@@ -97,27 +90,21 @@ export component ClockApp inherits Window {
                 alignment: center;
                 spacing: 2px;
 
-                Text {
+                TextDisplayBold {
                     text: root.hours < 10 ? "0" + root.hours : "" + root.hours;
                     color: Theme.text-primary;
-                    font-size: 72px;
-                    font-weight: 700;
                     horizontal-alignment: right;
                 }
 
-                Text {
+                TextDisplayBold {
                     text: ":";
                     color: Theme.accent;
-                    font-size: 72px;
-                    font-weight: 700;
                     horizontal-alignment: center;
                 }
 
-                Text {
+                TextDisplayBold {
                     text: root.minutes < 10 ? "0" + root.minutes : "" + root.minutes;
                     color: Theme.text-primary;
-                    font-size: 72px;
-                    font-weight: 700;
                     horizontal-alignment: left;
                 }
             }
@@ -136,11 +123,9 @@ export component ClockApp inherits Window {
                         padding-top: 4px;
                         padding-bottom: 4px;
 
-                        Text {
+                        TextLgBold {
                             text: (root.seconds < 10 ? "0" + root.seconds : "" + root.seconds) + "s";
                             color: Theme.accent;
-                            font-size: 16px;
-                            font-weight: 600;
                             horizontal-alignment: center;
                         }
                     }
@@ -148,11 +133,9 @@ export component ClockApp inherits Window {
             }
 
             // Focus hint for rotary encoder
-            if dial-focus.has-focus: Text {
+            if dial-focus.has-focus: TextBase {
                 text: "• ROTATE TO ADJUST •";
                 color: Theme.text-muted;
-                font-size: 11px;
-                font-weight: 600;
                 horizontal-alignment: center;
                 letter-spacing: 1.5px;
             }

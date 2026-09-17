@@ -1,11 +1,11 @@
 // Copyright © 2026 Nilton Volpato
 // SPDX-License-Identifier: MIT
 
-import { Theme, CircularScreen, AppInfo } from "@theme";
+import { AppWindow, Theme, CircularScreen, AppInfo, TextLgBold, TextXlBold } from "@theme";
 
 global Layout {
     out property <length> pitch: 210px;
-    out property <length> card-w: 180px;
+    out property <length> card-w: 185px;
     out property <length> card-h: 200px;
 }
 
@@ -40,42 +40,21 @@ component Card inherits Rectangle {
             }
         }
 
-        Text {
+        if focused: TextXlBold {
             text: data.name;
             color: white;
-            font-size: focused ? 26px : 20px;
-            font-weight: FontWeight.bold;
+            horizontal-alignment: center;
+        }
+        if !focused: TextLgBold {
+            text: data.name;
+            color: white;
             horizontal-alignment: center;
         }
     }
-
-    // Invisible text so that the embedder includes these fonts.
-    Text {
-        visible: false;
-        width: 0px;
-        max-height: 0px;
-        text: "ABC";
-        font-size: 26px;
-        font-weight: FontWeight.bold;
-        horizontal-alignment: center;
-    }
-    Text {
-        visible: false;
-        width: 0px;
-        max-height: 0px;
-        text: "ABC";
-        font-size: 20px;
-        font-weight: FontWeight.bold;
-        horizontal-alignment: center;
-    }
 }
 
-export component LauncherApp inherits Window {
+export component LauncherApp inherits AppWindow {
     title: "Launcher";
-    width: Theme.screen-size;
-    height: Theme.screen-size;
-    background: Theme.background;
-    default-font-family: "Inter";
 
     in-out property <[AppInfo]> cards;
     in-out property <int> selected: 0;

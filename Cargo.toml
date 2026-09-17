@@ -27,7 +27,8 @@ slint-build = {
     path = "../forks/slint/api/rs/build",
     features = [
         "experimental-module-builds",
-        # "sdf-fonts",
+        "sdf-fonts",
     ],
 }
 theme = { path = "crates/theme", default-features = false }
+baker = { path = "crates/baker" }

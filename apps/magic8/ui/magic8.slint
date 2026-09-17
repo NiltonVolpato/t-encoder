@@ -1,7 +1,7 @@
 // Copyright © 2026 Nilton Volpato
 // SPDX-License-Identifier: MIT
 
-import { Theme, CircularScreen, AppInfo } from "@theme";
+import { AppWindow, Theme, CircularScreen, AppInfo, TextSm, TextXlBold } from "@theme";
 
 export global Magic8Info {
     out property <AppInfo> info: {
@@ -11,12 +11,9 @@ export global Magic8Info {
     };
 }
 
-export component Magic8App inherits Window {
+export component Magic8App inherits AppWindow {
     title: "Magic 8";
-    width: Theme.screen-size;
-    height: Theme.screen-size;
     background: #8b5cf6;
-    default-font-family: "Inter";
 
     callback exit();
 
@@ -42,22 +39,19 @@ export component Magic8App inherits Window {
             alignment: center;
             spacing: 12px;
 
-            Text {
+            TextXlBold {
                 text: "Magic 8";
                 color: white;
-                font-size: 32px;
-                font-weight: 700;
                 horizontal-alignment: center;
             }
 
-            Text {
+            TextSm {
                 text: "TAP OR ESC TO EXIT";
                 color: white.darker(0.2);
-                font-size: 14px;
-                font-weight: 500;
                 horizontal-alignment: center;
                 letter-spacing: 1.5px;
             }
         }
     }
 }
+
