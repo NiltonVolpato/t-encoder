@@ -1,0 +1,13 @@
+{
+  "lsp": {
+    "slint": {
+      "binary": {
+        "path": "slint-lsp",
+        "arguments": [
+          "-L", "theme=crates/theme/ui/theme.slint",
+        ],
+        "env": {}
+      }
+    }
+  }
+}
