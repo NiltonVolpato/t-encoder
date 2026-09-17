@@ -1,4 +1,7 @@
 
+import "../assets/fonts/Inter-Regular.otf";
+import "../assets/fonts/Inter-Bold.otf";
+
 export global Theme {
     out property <string> font-family: "Inter";
     out property <length> screen-size: 390px;
@@ -13,6 +16,12 @@ export global Theme {
     out property <color> text-secondary: #94a3b8;
     out property <color> text-muted: #475569;
     out property <color> focus: #38bdf8;
+}
+
+export struct AppInfo {
+    name: string,
+    accent: color,
+    icon: image,
 }
 
 component CircularScreen inherits Rectangle {

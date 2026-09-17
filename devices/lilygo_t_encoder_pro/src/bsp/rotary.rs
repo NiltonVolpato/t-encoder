@@ -52,10 +52,18 @@ impl Rotary {
         let sig_b = b.peripheral_input();
 
         let ch0 = &unit.channel0;
-        ch0.set_ctrl_signal(sig_a);
-        ch0.set_edge_signal(sig_b);
+        ch0.set_ctrl_signal(sig_a.clone());
+        ch0.set_edge_signal(sig_b.clone());
         ch0.set_ctrl_mode(CtrlMode::Reverse, CtrlMode::Keep);
         ch0.set_input_mode(EdgeMode::Decrement, EdgeMode::Increment);
+
+        let ch1 = &unit.channel1;
+        ch1.set_ctrl_signal(sig_b);
+        ch1.set_edge_signal(sig_a);
+        ch1.set_ctrl_mode(CtrlMode::Reverse, CtrlMode::Keep);
+        ch1.set_input_mode(EdgeMode::Increment, EdgeMode::Decrement);
+
+        unit.resume();
 
         let btn = Input::new(btn_pin, InputConfig::default().with_pull(Pull::Up));
 

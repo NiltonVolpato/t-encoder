@@ -39,7 +39,10 @@ impl EspPlatform {
 impl slint::platform::Platform for EspPlatform {
     fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, slint::PlatformError> {
         let window = MinimalSoftwareWindow::new(RepaintBufferType::ReusedBuffer);
-        window.set_size(PhysicalSize::new(DISPLAY_WIDTH as u32, DISPLAY_HEIGHT as u32));
+        window.set_size(PhysicalSize::new(
+            DISPLAY_WIDTH as u32,
+            DISPLAY_HEIGHT as u32,
+        ));
         self.window.replace(Some(window.clone()));
         Ok(window)
     }
@@ -170,7 +173,11 @@ pub fn run_event_loop(
         // 5. Draw dirty regions
         window.draw_if_needed(|renderer| {
             let region = renderer.render(&mut frame_buffer, DISPLAY_WIDTH as usize);
+            let mut first = true;
             for (origin, size) in region.iter() {
+                if !first {
+                    delay.delay_micros(10); // Delay needed to avoid glitching.
+                }
                 let _ = display.write_region(
                     &frame_buffer,
                     DISPLAY_WIDTH as usize,
@@ -180,6 +187,7 @@ pub fn run_event_loop(
                     size.height as u16,
                     scratch,
                 );
+                first = false;
             }
         });
 

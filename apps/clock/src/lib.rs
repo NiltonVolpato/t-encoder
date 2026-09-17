@@ -3,7 +3,66 @@
 
 #![no_std]
 
+extern crate alloc;
+
+use alloc::boxed::Box;
+use core::any::Any;
+
 slint::include_modules!();
+
+pub struct ClockAppFactory {
+    info: theme::AppInfo,
+}
+
+impl ClockAppFactory {
+    pub fn new() -> Self {
+        let app = ClockApp::new().expect("Failed to create ClockApp");
+        let info = app.global::<ClockInfo>().get_info();
+        Self { info }
+    }
+}
+
+impl Default for ClockAppFactory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl theme::AppFactory for ClockAppFactory {
+    fn info(&self) -> theme::AppInfo {
+        self.info.clone()
+    }
+
+    fn launch(&self, on_exit: Box<dyn Fn() + 'static>) -> Box<dyn Any> {
+        let app = ClockApp::new().expect("Failed to create ClockApp");
+        let initial_time = Time::new(10, 42, 35);
+        setup_clock(&app, initial_time);
+
+        let app_weak = app.as_weak();
+        let timer = slint::Timer::default();
+        let time = alloc::rc::Rc::new(core::cell::RefCell::new(initial_time));
+        let time_clone = time.clone();
+        timer.start(
+            slint::TimerMode::Repeated,
+            core::time::Duration::from_secs(1),
+            move || {
+                if let Some(app) = app_weak.upgrade() {
+                    let mut time = time_clone.borrow_mut();
+                    time.tick();
+                    app.set_hours(time.hours as i32);
+                    app.set_minutes(time.minutes as i32);
+                    app.set_seconds(time.seconds as i32);
+                }
+            },
+        );
+
+        app.on_exit(move || on_exit());
+        let _ = app.show();
+
+        Box::new((app, timer))
+    }
+}
+
 
 /// Representation of time for the clock app.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

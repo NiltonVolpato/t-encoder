@@ -7,12 +7,11 @@
 )]
 #![deny(clippy::large_stack_frames)]
 
-use app_clock::{ClockApp, Time, setup_clock};
+use app_launcher::LauncherManager;
 use defmt::info;
 use esp_hal::clock::CpuClock;
 use lilygo_t_encoder_pro::bsp::{Bsp, BspPeripherals, run_event_loop};
 use panic_rtt_target as _;
-use slint::ComponentHandle;
 
 extern crate alloc;
 
@@ -58,29 +57,8 @@ fn main() -> ! {
         gpio14: peripherals.GPIO14,
     });
 
-    // 4. Create and configure ClockApp
-    let clock = ClockApp::new().expect("Failed to create ClockApp");
-    let initial_time = Time::new(10, 42, 30);
-    setup_clock(&clock, initial_time);
-
-    // 5. Start a Slint timer to tick seconds
-    let weak = clock.as_weak();
-    let mut current_time = initial_time;
-    let timer = slint::Timer::default();
-    timer.start(
-        slint::TimerMode::Repeated,
-        core::time::Duration::from_secs(1),
-        move || {
-            if let Some(app) = weak.upgrade() {
-                current_time.tick();
-                app.set_hours(current_time.hours as i32);
-                app.set_minutes(current_time.minutes as i32);
-                app.set_seconds(current_time.seconds as i32);
-            }
-        },
-    );
-
-    info!("Starting Slint MCU event loop with ClockApp...");
+    info!("Starting Launcher...");
+    let _manager = LauncherManager::new();
 
     // 6. Enter Slint MCU event loop
     run_event_loop(bsp.window, bsp.display, bsp.touch, bsp.rotary);

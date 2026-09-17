@@ -1,0 +1,63 @@
+// Copyright © 2026 Nilton Volpato
+// SPDX-License-Identifier: MIT
+
+import { Theme, CircularScreen, AppInfo } from "@theme";
+
+export global PomodoroInfo {
+    out property <AppInfo> info: {
+        name: "Pomodoro",
+        accent: #ef4444,
+        icon: @image-url("../assets/tomato.svg"),
+    };
+}
+
+export component PomodoroApp inherits Window {
+    title: "Pomodoro";
+    width: Theme.screen-size;
+    height: Theme.screen-size;
+    background: #ef4444;
+    default-font-family: "Inter";
+
+    callback exit();
+
+    forward-focus: dial-focus;
+    dial-focus := FocusScope {
+        key-pressed(event) => {
+            if event.text == Key.Escape {
+                root.exit();
+                return accept;
+            }
+            reject
+        }
+    }
+
+    CircularScreen {
+        background: #ef4444;
+
+        TouchArea {
+            clicked => { root.exit(); }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            spacing: 12px;
+
+            Text {
+                text: "Pomodoro";
+                color: white;
+                font-size: 32px;
+                font-weight: 700;
+                horizontal-alignment: center;
+            }
+
+            Text {
+                text: "TAP OR ESC TO EXIT";
+                color: white.darker(0.2);
+                font-size: 14px;
+                font-weight: 500;
+                horizontal-alignment: center;
+                letter-spacing: 1.5px;
+            }
+        }
+    }
+}

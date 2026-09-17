@@ -1,0 +1,32 @@
+[package]
+name = "app-simon"
+links = "app_simon"
+version = "0.1.0"
+edition.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "simon-simulator"
+path = "src/bin/main.rs"
+
+[features]
+default = ["simulator"]
+simulator = [
+    "slint/renderer-software",
+    "slint/software-renderer-path",
+    "slint/backend-winit",
+    "slint/std",
+    "slint/mcp",
+    "theme/std",
+]
+
+[dependencies]
+slint = { workspace = true }
+theme = { workspace = true }
+
+[build-dependencies]
+slint-build = { workspace = true }

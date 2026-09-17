@@ -5,10 +5,29 @@ exclude = ["devices/lilygo_t_encoder_pro"]
 
 [workspace.package]
 edition = "2024"
+rust-version = "1.97"
 repository = "https://github.com/NiltonVolpato/t-encoder"
 publish = false
 
 [workspace.dependencies]
-slint = { version = "1.17.1", default-features = false, features = ["compat-1-2"] }
-slint-build = { version = "1.17.1", features = ["experimental-module-builds"] }
+slint = {
+    # version = "=1.17.1",
+    path = "../forks/slint/api/rs/slint",
+    default-features = false,
+    features = [
+        "compat-1-2",
+        "unsafe-single-threaded",
+        "libm",
+        "renderer-software",
+        "software-renderer-path",
+    ],
+}
+slint-build = {
+    # version = "=1.17.1",
+    path = "../forks/slint/api/rs/build",
+    features = [
+        "experimental-module-builds",
+        # "sdf-fonts",
+    ],
+}
 theme = { path = "crates/theme", default-features = false }

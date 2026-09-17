@@ -1,0 +1,63 @@
+// Copyright © 2026 Nilton Volpato
+// SPDX-License-Identifier: MIT
+
+import { Theme, CircularScreen, AppInfo } from "@theme";
+
+export global SonosInfo {
+    out property <AppInfo> info: {
+        name: "Sonos",
+        accent: #f59e0b,
+        icon: @image-url("../assets/sonos.svg"),
+    };
+}
+
+export component SonosApp inherits Window {
+    title: "Sonos";
+    width: Theme.screen-size;
+    height: Theme.screen-size;
+    background: #f59e0b;
+    default-font-family: "Inter";
+
+    callback exit();
+
+    forward-focus: dial-focus;
+    dial-focus := FocusScope {
+        key-pressed(event) => {
+            if event.text == Key.Escape {
+                root.exit();
+                return accept;
+            }
+            reject
+        }
+    }
+
+    CircularScreen {
+        background: #f59e0b;
+
+        TouchArea {
+            clicked => { root.exit(); }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            spacing: 12px;
+
+            Text {
+                text: "Sonos";
+                color: white;
+                font-size: 32px;
+                font-weight: 700;
+                horizontal-alignment: center;
+            }
+
+            Text {
+                text: "TAP OR ESC TO EXIT";
+                color: white.darker(0.2);
+                font-size: 14px;
+                font-weight: 500;
+                horizontal-alignment: center;
+                letter-spacing: 1.5px;
+            }
+        }
+    }
+}

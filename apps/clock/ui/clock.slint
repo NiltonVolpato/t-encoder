@@ -1,14 +1,22 @@
 // Copyright © 2026 Nilton Volpato
 // SPDX-License-Identifier: MIT
 
-import { Theme, CircularScreen } from "@theme";
+import { Theme, CircularScreen, AppInfo } from "@theme";
+
+export global ClockInfo {
+    out property <AppInfo> info: {
+        name: "Clock",
+        accent: #3b82f6,
+        icon: @image-url("../assets/clock.svg"),
+    };
+}
 
 export component ClockApp inherits Window {
     title: "Clock";
     width: Theme.screen-size;
     height: Theme.screen-size;
     background: Theme.background;
-    default-font-family: Theme.font-family;
+    default-font-family: "Inter";  // TODO: update all windows.
     default-font-size: 16px;
 
     in-out property <int> hours: 10;
@@ -19,11 +27,16 @@ export component ClockApp inherits Window {
 
     callback toggle-seconds();
     callback adjust-minutes(int); // delta
+    callback exit();
 
     forward-focus: dial-focus;
 
     dial-focus := FocusScope {
         key-pressed(event) => {
+            if event.text == Key.Escape {
+                root.exit();
+                return accept;
+            }
             if event.text == Key.UpArrow || event.text == Key.RightArrow {
                 root.adjust-minutes(1);
                 return accept;

@@ -1,10 +1,166 @@
 // Copyright © 2026 Nilton Volpato
 // SPDX-License-Identifier: MIT
 
-import "../assets/fonts/Inter-Regular.otf";
-import "../assets/fonts/Inter-Bold.otf";
+import { Theme, CircularScreen, AppInfo } from "@theme";
 
-import { ClockApp } from "@app_clock";
-import { Clock2App } from "@app_clock2";
+global Layout {
+    out property <length> pitch: 210px;
+    out property <length> card-w: 180px;
+    out property <length> card-h: 200px;
+}
 
-export { ClockApp, Clock2App }
+component Card inherits Rectangle {
+    in property <AppInfo> data;
+    in property <bool> focused;
+
+    width: focused ? Layout.card-w : 140px;
+    height: focused ? Layout.card-h : 160px;
+    y: (Layout.card-h - self.height) / 2;
+    border-radius: 24px;
+    background: data.accent.darker(0.88);
+    border-width: focused ? 3px : 1px;
+    border-color: focused ? data.accent : data.accent.darker(0.55);
+
+    opacity: focused ? 1.0 : 0.40;
+    animate opacity, border-color, width, height { duration: 250ms; easing: ease-out; }
+
+    VerticalLayout {
+        padding: focused ? 26px : 18px;
+        spacing: focused ? 14px : 10px;
+        alignment: center;
+
+        HorizontalLayout {
+            alignment: center;
+            Image {
+                width: focused ? 88px : 68px;
+                height: focused ? 88px : 68px;
+                source: data.icon;
+                image-fit: contain;
+                animate width, height { duration: 250ms; easing: ease-out; }
+            }
+        }
+
+        Text {
+            text: data.name;
+            color: white;
+            font-size: focused ? 26px : 20px;
+            font-weight: FontWeight.bold;
+            horizontal-alignment: center;
+        }
+    }
+
+    // Invisible text so that the embedder includes these fonts.
+    Text {
+        visible: false;
+        width: 0px;
+        max-height: 0px;
+        text: "ABC";
+        font-size: 26px;
+        font-weight: FontWeight.bold;
+        horizontal-alignment: center;
+    }
+    Text {
+        visible: false;
+        width: 0px;
+        max-height: 0px;
+        text: "ABC";
+        font-size: 20px;
+        font-weight: FontWeight.bold;
+        horizontal-alignment: center;
+    }
+}
+
+export component LauncherApp inherits Window {
+    title: "Launcher";
+    width: Theme.screen-size;
+    height: Theme.screen-size;
+    background: Theme.background;
+    default-font-family: "Inter";
+
+    in-out property <[AppInfo]> cards;
+    in-out property <int> selected: 0;
+
+    callback launch(int);
+
+    public function select-next() {
+        if root.cards.length > 0 {
+            if root.selected + 1 < root.cards.length {
+                root.selected += 1;
+            } else {
+                root.selected = 0;
+            }
+        }
+    }
+
+    public function select-prev() {
+        if root.cards.length > 0 {
+            if root.selected > 0 {
+                root.selected -= 1;
+            } else {
+                root.selected = root.cards.length - 1;
+            }
+        }
+    }
+
+    forward-focus: dial-focus;
+    dial-focus := FocusScope {
+        key-pressed(event) => {
+            if event.text == Key.UpArrow || event.text == Key.RightArrow {
+                root.select-next();
+                return accept;
+            }
+            if event.text == Key.DownArrow || event.text == Key.LeftArrow {
+                root.select-prev();
+                return accept;
+            }
+            if event.text == Key.Return || event.text == " " {
+                root.launch(root.selected);
+                return accept;
+            }
+            reject
+        }
+    }
+
+    CircularScreen {
+        background: Theme.background;
+
+        // Card strip
+        Rectangle {
+            y: (parent.height - Layout.card-h) / 2;
+            height: Layout.card-h;
+            x: (parent.width - Layout.card-w) / 2 - root.selected * Layout.pitch;
+            animate x { duration: 250ms; easing: ease-out; }
+
+            for card[i] in root.cards: Card {
+                x: i * Layout.pitch + (Layout.card-w - self.width) / 2;
+                data: card;
+                focused: i == root.selected;
+            }
+        }
+
+        // Tap on active center area launches the app
+        TouchArea {
+            x: (parent.width - Layout.card-w) / 2;
+            y: (parent.height - Layout.card-h) / 2;
+            width: Layout.card-w;
+            height: Layout.card-h;
+            clicked => { root.launch(root.selected); }
+        }
+
+        // Page indicator dots
+        HorizontalLayout {
+            y: parent.height - 46px;
+            height: 8px;
+            spacing: 10px;
+            alignment: center;
+
+            for card[i] in root.cards: Rectangle {
+                width: 8px;
+                height: 8px;
+                border-radius: 4px;
+                background: i == root.selected ? white : #202a20;
+                animate background { duration: 200ms; }
+            }
+        }
+    }
+}
