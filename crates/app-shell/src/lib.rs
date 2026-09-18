@@ -129,11 +129,15 @@ mod tests {
         clear_feedback();
         assert_eq!(try_receive_feedback(), None);
 
-        signal_feedback(Feedback::Beep);
+        signal_feedback(Feedback::DialStepForward);
+        signal_feedback(Feedback::DialStepBackward);
+        signal_feedback(Feedback::Click);
         signal_feedback(Feedback::Haptic);
         signal_feedback(Feedback::Tone { hz: 440, ms: 100 });
 
-        assert_eq!(try_receive_feedback(), Some(Feedback::Beep));
+        assert_eq!(try_receive_feedback(), Some(Feedback::DialStepForward));
+        assert_eq!(try_receive_feedback(), Some(Feedback::DialStepBackward));
+        assert_eq!(try_receive_feedback(), Some(Feedback::Click));
         assert_eq!(try_receive_feedback(), Some(Feedback::Haptic));
         assert_eq!(
             try_receive_feedback(),

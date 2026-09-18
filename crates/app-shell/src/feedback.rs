@@ -12,8 +12,12 @@ const MAX_QUEUE_CAPACITY: usize = 16;
 /// Audible and haptic feedback requests.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Feedback {
-    /// Two-tone audible click/chirp (e.g., dial rotation detent, short press).
-    Beep,
+    /// Forward / clockwise dial rotation detent (523 Hz -> 659 Hz).
+    DialStepForward,
+    /// Backward / counter-clockwise dial rotation detent (659 Hz -> 523 Hz).
+    DialStepBackward,
+    /// Button click / press (crisp blip: 880 Hz for 15ms).
+    Click,
     /// Low-frequency vibration buzz (e.g., long press, alarm).
     Haptic,
     /// Arbitrary frequency tone for musical or game feedback.

@@ -130,10 +130,8 @@ pub async fn run_event_loop(
 
         // 3. Poll rotary encoder rotation
         let delta = rotary.poll_rotation();
-        if delta != 0 {
-            signal_feedback(Feedback::Beep);
-        }
         if delta > 0 {
+            signal_feedback(Feedback::DialStepForward);
             for _ in 0..delta {
                 let _ = window.dispatch_event_with_result(WindowEvent::KeyPressed {
                     text: Key::UpArrow.into(),
@@ -143,6 +141,7 @@ pub async fn run_event_loop(
                 });
             }
         } else if delta < 0 {
+            signal_feedback(Feedback::DialStepBackward);
             for _ in 0..(-delta) {
                 let _ = window.dispatch_event_with_result(WindowEvent::KeyPressed {
                     text: Key::DownArrow.into(),
@@ -157,7 +156,7 @@ pub async fn run_event_loop(
         if let Some(btn_event) = rotary.poll_button() {
             match btn_event {
                 ButtonEvent::Click => {
-                    signal_feedback(Feedback::Beep);
+                    signal_feedback(Feedback::Click);
                     let _ = window.dispatch_event_with_result(WindowEvent::KeyPressed {
                         text: Key::Return.into(),
                     });

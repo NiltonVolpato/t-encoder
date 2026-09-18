@@ -107,10 +107,19 @@ pub async fn buzzer_task(ledc_periph: LEDC<'static>, pin: GPIO17<'static>) {
     loop {
         while let Some(feedback) = app_shell::try_receive_feedback() {
             match feedback {
-                Feedback::Beep => {
-                    // Two-tone chirp (523 Hz for 25ms, then 659 Hz for 25ms)
+                Feedback::DialStepForward => {
+                    // Ascending two-tone chirp (523 Hz -> 659 Hz)
                     pulse!(523, 50, 25);
                     pulse!(659, 50, 25);
+                }
+                Feedback::DialStepBackward => {
+                    // Descending two-tone chirp (659 Hz -> 523 Hz)
+                    pulse!(659, 50, 25);
+                    pulse!(523, 50, 25);
+                }
+                Feedback::Click => {
+                    // Crisp blip (880 Hz for 15ms)
+                    pulse!(880, 50, 15);
                 }
                 Feedback::Haptic => {
                     // Low-frequency vibration buzz (200 Hz, 70% duty for 250ms)
