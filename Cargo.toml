@@ -31,4 +31,5 @@ slint-build = {
     ],
 }
 theme = { path = "crates/theme", default-features = false }
+app-shell = { path = "crates/app-shell", default-features = false }
 baker = { path = "crates/baker" }

@@ -93,6 +93,7 @@ checksum = "940b3a0ca603d1eade50a4846a2afffd5ef57a9feac2c0e2ec2e14f9ead76000"
 name = "app-clock"
 version = "0.1.0"
 dependencies = [
+ "app-shell",
  "baker",
  "slint",
  "theme",
@@ -106,6 +107,7 @@ dependencies = [
  "app-macropad",
  "app-magic8",
  "app-pomodoro",
+ "app-shell",
  "app-simon",
  "app-sonos",
  "baker",
@@ -117,6 +119,7 @@ dependencies = [
 name = "app-macropad"
 version = "0.1.0"
 dependencies = [
+ "app-shell",
  "baker",
  "slint",
  "theme",
@@ -126,6 +129,7 @@ dependencies = [
 name = "app-magic8"
 version = "0.1.0"
 dependencies = [
+ "app-shell",
  "baker",
  "slint",
  "theme",
@@ -135,8 +139,17 @@ dependencies = [
 name = "app-pomodoro"
 version = "0.1.0"
 dependencies = [
+ "app-shell",
  "baker",
  "slint",
+ "theme",
+]
+
+[[package]]
+name = "app-shell"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
  "theme",
 ]
 
@@ -144,6 +157,7 @@ dependencies = [
 name = "app-simon"
 version = "0.1.0"
 dependencies = [
+ "app-shell",
  "baker",
  "slint",
  "theme",
@@ -153,6 +167,7 @@ dependencies = [
 name = "app-sonos"
 version = "0.1.0"
 dependencies = [
+ "app-shell",
  "baker",
  "slint",
  "theme",
@@ -3634,6 +3649,7 @@ name = "lilygo_t_encoder_pro"
 version = "0.1.0"
 dependencies = [
  "app-launcher",
+ "app-shell",
  "bt-hci",
  "critical-section",
  "defmt 1.1.1",

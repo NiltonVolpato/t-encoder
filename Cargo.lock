@@ -113,6 +113,7 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 name = "app-clock"
 version = "0.1.0"
 dependencies = [
+ "app-shell",
  "baker",
  "slint",
  "theme",
@@ -126,6 +127,7 @@ dependencies = [
  "app-macropad",
  "app-magic8",
  "app-pomodoro",
+ "app-shell",
  "app-simon",
  "app-sonos",
  "baker",
@@ -137,6 +139,7 @@ dependencies = [
 name = "app-macropad"
 version = "0.1.0"
 dependencies = [
+ "app-shell",
  "baker",
  "slint",
  "theme",
@@ -146,6 +149,7 @@ dependencies = [
 name = "app-magic8"
 version = "0.1.0"
 dependencies = [
+ "app-shell",
  "baker",
  "slint",
  "theme",
@@ -155,7 +159,17 @@ dependencies = [
 name = "app-pomodoro"
 version = "0.1.0"
 dependencies = [
+ "app-shell",
  "baker",
+ "slint",
+ "theme",
+]
+
+[[package]]
+name = "app-shell"
+version = "0.1.0"
+dependencies = [
+ "critical-section",
  "slint",
  "theme",
 ]
@@ -164,6 +178,7 @@ dependencies = [
 name = "app-simon"
 version = "0.1.0"
 dependencies = [
+ "app-shell",
  "baker",
  "slint",
  "theme",
@@ -173,6 +188,7 @@ dependencies = [
 name = "app-sonos"
 version = "0.1.0"
 dependencies = [
+ "app-shell",
  "baker",
  "slint",
  "theme",

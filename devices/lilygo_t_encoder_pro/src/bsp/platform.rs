@@ -102,7 +102,7 @@ pub fn run_event_loop(
                         }
                         TouchEvent::Up => {
                             last_touch = None;
-                            let _ = window.try_dispatch_event(WindowEvent::PointerReleased {
+                            let _ = window.dispatch_event_with_result(WindowEvent::PointerReleased {
                                 position,
                                 button: PointerEventButton::Left,
                             });
@@ -110,16 +110,16 @@ pub fn run_event_loop(
                         }
                     };
                     if let Some(event) = event {
-                        let _ = window.try_dispatch_event(event);
+                        let _ = window.dispatch_event_with_result(event);
                     }
                 }
                 Ok(None) => {
                     if let Some(position) = last_touch.take() {
-                        let _ = window.try_dispatch_event(WindowEvent::PointerReleased {
+                        let _ = window.dispatch_event_with_result(WindowEvent::PointerReleased {
                             position,
                             button: PointerEventButton::Left,
                         });
-                        let _ = window.try_dispatch_event(WindowEvent::PointerExited);
+                        let _ = window.dispatch_event_with_result(WindowEvent::PointerExited);
                     }
                 }
                 Err(_e) => {}
@@ -130,19 +130,19 @@ pub fn run_event_loop(
         let delta = rotary.poll_rotation();
         if delta > 0 {
             for _ in 0..delta {
-                let _ = window.try_dispatch_event(WindowEvent::KeyPressed {
+                let _ = window.dispatch_event_with_result(WindowEvent::KeyPressed {
                     text: Key::UpArrow.into(),
                 });
-                let _ = window.try_dispatch_event(WindowEvent::KeyReleased {
+                let _ = window.dispatch_event_with_result(WindowEvent::KeyReleased {
                     text: Key::UpArrow.into(),
                 });
             }
         } else if delta < 0 {
             for _ in 0..(-delta) {
-                let _ = window.try_dispatch_event(WindowEvent::KeyPressed {
+                let _ = window.dispatch_event_with_result(WindowEvent::KeyPressed {
                     text: Key::DownArrow.into(),
                 });
-                let _ = window.try_dispatch_event(WindowEvent::KeyReleased {
+                let _ = window.dispatch_event_with_result(WindowEvent::KeyReleased {
                     text: Key::DownArrow.into(),
                 });
             }
@@ -152,18 +152,18 @@ pub fn run_event_loop(
         if let Some(btn_event) = rotary.poll_button() {
             match btn_event {
                 ButtonEvent::Click => {
-                    let _ = window.try_dispatch_event(WindowEvent::KeyPressed {
+                    let _ = window.dispatch_event_with_result(WindowEvent::KeyPressed {
                         text: Key::Return.into(),
                     });
-                    let _ = window.try_dispatch_event(WindowEvent::KeyReleased {
+                    let _ = window.dispatch_event_with_result(WindowEvent::KeyReleased {
                         text: Key::Return.into(),
                     });
                 }
                 ButtonEvent::LongPress => {
-                    let _ = window.try_dispatch_event(WindowEvent::KeyPressed {
+                    let _ = window.dispatch_event_with_result(WindowEvent::KeyPressed {
                         text: Key::Escape.into(),
                     });
-                    let _ = window.try_dispatch_event(WindowEvent::KeyReleased {
+                    let _ = window.dispatch_event_with_result(WindowEvent::KeyReleased {
                         text: Key::Escape.into(),
                     });
                 }

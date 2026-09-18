@@ -10,8 +10,9 @@ use core::any::Any;
 
 slint::include_modules!();
 
+#[derive(Clone)]
 pub struct ClockAppFactory {
-    info: theme::AppInfo,
+    info: app_shell::AppInfo,
 }
 
 impl ClockAppFactory {
@@ -22,12 +23,18 @@ impl ClockAppFactory {
     }
 }
 
-impl theme::AppFactory for ClockAppFactory {
-    fn info(&self) -> theme::AppInfo {
+impl Default for ClockAppFactory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl app_shell::AppFactory for ClockAppFactory {
+    fn info(&self) -> app_shell::AppInfo {
         self.info.clone()
     }
 
-    fn launch(&self, on_exit: Box<dyn Fn() + 'static>) -> Box<dyn Any> {
+    fn launch(&self, context: app_shell::ShellContext) -> Box<dyn Any> {
         let app = ClockApp::new().expect("Failed to create ClockApp");
         let initial_time = Time::new(10, 42, 35);
         setup_clock(&app, &initial_time);
@@ -50,10 +57,14 @@ impl theme::AppFactory for ClockAppFactory {
             },
         );
 
-        app.on_exit(move || on_exit());
+        app.on_exit(move || context.exit());
         let _ = app.show();
 
         Box::new((app, timer))
+    }
+
+    fn clone_box(&self) -> Box<dyn app_shell::AppFactory> {
+        Box::new(self.clone())
     }
 }
 

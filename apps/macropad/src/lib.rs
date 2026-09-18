@@ -10,8 +10,9 @@ use core::any::Any;
 
 slint::include_modules!();
 
+#[derive(Clone)]
 pub struct MacropadAppFactory {
-    info: theme::AppInfo,
+    info: app_shell::AppInfo,
 }
 
 impl MacropadAppFactory {
@@ -28,16 +29,20 @@ impl Default for MacropadAppFactory {
     }
 }
 
-impl theme::AppFactory for MacropadAppFactory {
-    fn info(&self) -> theme::AppInfo {
+impl app_shell::AppFactory for MacropadAppFactory {
+    fn info(&self) -> app_shell::AppInfo {
         self.info.clone()
     }
 
-    fn launch(&self, on_exit: Box<dyn Fn() + 'static>) -> Box<dyn Any> {
+    fn launch(&self, context: app_shell::ShellContext) -> Box<dyn Any> {
         let app = MacropadApp::new().expect("Failed to create MacropadApp");
-        app.on_exit(move || on_exit());
+        app.on_exit(move || context.exit());
         let _ = app.show();
         Box::new(app)
+    }
+
+    fn clone_box(&self) -> Box<dyn app_shell::AppFactory> {
+        Box::new(self.clone())
     }
 }
 

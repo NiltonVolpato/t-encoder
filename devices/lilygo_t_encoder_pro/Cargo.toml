@@ -30,6 +30,7 @@ slint = {
     ]
 }
 app-launcher = { path = "../../apps/launcher", default-features = false, features = ["apps"] }
+app-shell = { path = "../../crates/app-shell", default-features = false }
 
 esp-hal = { version = "~1.1.0", features = ["defmt", "esp32s3", "unstable"] }
 

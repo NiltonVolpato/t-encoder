@@ -22,11 +22,13 @@ simulator = [
     "slint/std",
     "slint/mcp",
     "theme/std",
+    "app-shell/std",
 ]
 
 [dependencies]
 slint = { workspace = true }
 theme = { workspace = true }
+app-shell = { workspace = true }
 
 [build-dependencies]
 baker = { workspace = true }

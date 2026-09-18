@@ -30,6 +30,7 @@ simulator = [
     "slint/std",
     "slint/mcp",
     "theme/std",
+    "app-shell/std",
     "app-clock?/simulator",
     "app-pomodoro?/simulator",
     "app-macropad?/simulator",
@@ -41,6 +42,7 @@ simulator = [
 [dependencies]
 slint = { workspace = true }
 theme = { workspace = true }
+app-shell = { workspace = true }
 app-clock = { path = "../clock", default-features = false, optional = true }
 app-pomodoro = { path = "../pomodoro", default-features = false, optional = true }
 app-macropad = { path = "../macropad", default-features = false, optional = true }

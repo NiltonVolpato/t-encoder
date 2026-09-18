@@ -7,7 +7,9 @@
 )]
 #![deny(clippy::large_stack_frames)]
 
-use app_launcher::LauncherManager;
+use alloc::boxed::Box;
+use app_launcher::LauncherAppFactory;
+use app_shell::AppShell;
 use defmt::info;
 use esp_hal::clock::CpuClock;
 use lilygo_t_encoder_pro::bsp::{Bsp, BspPeripherals, run_event_loop};
@@ -57,8 +59,10 @@ fn main() -> ! {
         gpio14: peripherals.GPIO14,
     });
 
-    info!("Starting Launcher...");
-    let _manager = LauncherManager::new();
+    info!("Starting AppShell with Launcher...");
+    let launcher = LauncherAppFactory::default_apps();
+    let shell = AppShell::new(Box::new(launcher));
+    AppShell::start(&shell);
 
     // 6. Enter Slint MCU event loop
     run_event_loop(bsp.window, bsp.display, bsp.touch, bsp.rotary);

@@ -12,19 +12,29 @@ use core::any::Any;
 use core::cell::RefCell;
 use slint::ComponentHandle;
 
-use theme::{AppFactory, AppInfo};
+pub use app_shell::{AppFactory, AppInfo, AppShell, ShellContext};
 
 slint::include_modules!();
 
-pub struct LauncherManager {
-    launcher: Option<LauncherApp>,
+/// Application factory for the launcher carousel interface.
+#[derive(Clone)]
+pub struct LauncherAppFactory {
     factories: Vec<Box<dyn AppFactory>>,
-    current_index: usize,
-    active_app: Option<Box<dyn Any>>,
+    selected_index: Rc<RefCell<usize>>,
 }
 
-impl LauncherManager {
-    pub fn new() -> Rc<RefCell<Self>> {
+impl LauncherAppFactory {
+    /// Creates a new `LauncherAppFactory` that presents the given list of applications.
+    pub fn new(factories: Vec<Box<dyn AppFactory>>) -> Self {
+        Self {
+            factories,
+            selected_index: Rc::new(RefCell::new(0)),
+        }
+    }
+
+    /// Creates a new `LauncherAppFactory` configured with the default suite of applications.
+    #[cfg(feature = "apps")]
+    pub fn default_apps() -> Self {
         let factories: Vec<Box<dyn AppFactory>> = alloc::vec![
             Box::new(app_clock::ClockAppFactory::new()),
             Box::new(app_pomodoro::PomodoroAppFactory::new()),
@@ -33,68 +43,44 @@ impl LauncherManager {
             Box::new(app_magic8::Magic8AppFactory::new()),
             Box::new(app_sonos::SonosAppFactory::new()),
         ];
-        Self::new_with_factories(factories)
+        Self::new(factories)
+    }
+}
+
+impl AppFactory for LauncherAppFactory {
+    fn info(&self) -> AppInfo {
+        AppInfo {
+            name: "Launcher".into(),
+            accent: slint::Color::from_argb_u8(255, 255, 255, 255),
+            icon: slint::Image::default(),
+        }
     }
 
-    pub fn new_with_factories(factories: Vec<Box<dyn AppFactory>>) -> Rc<RefCell<Self>> {
-        let manager = Rc::new(RefCell::new(Self {
-            launcher: None,
-            factories,
-            current_index: 0,
-            active_app: None,
-        }));
-        Self::show_launcher(manager.clone());
-        manager
-    }
-
-    pub fn show_launcher(manager: Rc<RefCell<Self>>) {
-        manager.borrow_mut().active_app = None;
-
+    fn launch(&self, context: ShellContext) -> Box<dyn Any> {
         let launcher = LauncherApp::new().expect("Failed to create LauncherApp");
-        let current_index = manager.borrow().current_index;
-        launcher.set_selected(current_index as i32);
+        let selected = *self.selected_index.borrow();
+        launcher.set_selected(selected as i32);
 
-        let cards: Vec<AppInfo> = manager
-            .borrow()
-            .factories
-            .iter()
-            .map(|f| f.info())
-            .collect();
+        let cards: Vec<AppInfo> = self.factories.iter().map(|f| f.info()).collect();
         launcher.set_cards(Rc::new(slint::VecModel::from(cards)).into());
 
-        let mgr = manager.clone();
+        let factories = self.factories.clone();
+        let selected_index = self.selected_index.clone();
         launcher.on_launch(move |idx| {
-            mgr.borrow_mut().launch_app(idx as usize, mgr.clone());
+            let idx = idx as usize;
+            if let Some(target_factory) = factories.get(idx) {
+                selected_index.replace(idx);
+                context.set_next_app(target_factory.clone_box());
+                context.exit();
+            }
         });
 
         let _ = launcher.show();
-
-        manager.borrow_mut().launcher = Some(launcher);
+        Box::new(launcher)
     }
 
-    pub fn launch_app(&mut self, index: usize, manager: Rc<RefCell<Self>>) {
-        if index >= self.factories.len() {
-            return;
-        }
-
-        self.current_index = index;
-
-        if let Some(ref l) = self.launcher {
-            let _ = l.hide();
-        }
-        self.launcher = None;
-
-        let mgr = manager.clone();
-        let on_exit: Box<dyn Fn() + 'static> = Box::new(move || {
-            Self::show_launcher(mgr.clone());
-        });
-
-        let app_instance = self.factories[index].launch(on_exit);
-        self.active_app = Some(app_instance);
-    }
-
-    pub fn launcher(&self) -> Option<&LauncherApp> {
-        self.launcher.as_ref()
+    fn clone_box(&self) -> Box<dyn AppFactory> {
+        Box::new(self.clone())
     }
 }
 
@@ -103,6 +89,7 @@ mod tests {
     use super::*;
     use slint::Model;
 
+    #[derive(Clone)]
     struct MockAppFactory(&'static str);
 
     impl AppFactory for MockAppFactory {
@@ -114,8 +101,12 @@ mod tests {
             }
         }
 
-        fn launch(&self, _on_exit: Box<dyn Fn() + 'static>) -> Box<dyn Any> {
+        fn launch(&self, _context: ShellContext) -> Box<dyn Any> {
             Box::new(())
+        }
+
+        fn clone_box(&self) -> Box<dyn AppFactory> {
+            Box::new(self.clone())
         }
     }
 
@@ -128,7 +119,7 @@ mod tests {
     }
 
     #[test]
-    fn test_launcher() {
+    fn test_launcher_factory() {
         if std::env::var("SLINT_BACKEND").is_err() {
             unsafe {
                 std::env::set_var("SLINT_BACKEND", "headless");
@@ -141,19 +132,10 @@ mod tests {
         assert_eq!(launcher.get_cards().row_count(), 3);
         drop(launcher);
 
-        let manager = LauncherManager::new_with_factories(test_factories());
-        assert!(manager.borrow().launcher().is_some());
-        assert_eq!(manager.borrow().current_index, 0);
+        let launcher_factory = LauncherAppFactory::new(test_factories());
+        let shell = AppShell::new(Box::new(launcher_factory));
+        AppShell::start(&shell);
 
-        // Launch first app
-        manager.borrow_mut().launch_app(0, manager.clone());
-        assert!(manager.borrow().launcher().is_none());
-        assert!(manager.borrow().active_app.is_some());
-
-        // Return to launcher
-        LauncherManager::show_launcher(manager.clone());
-        assert!(manager.borrow().launcher().is_some());
-        assert!(manager.borrow().active_app.is_none());
-        assert_eq!(manager.borrow().current_index, 0);
+        assert!(shell.borrow().has_active_app());
     }
 }

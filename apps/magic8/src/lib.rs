@@ -10,8 +10,9 @@ use core::any::Any;
 
 slint::include_modules!();
 
+#[derive(Clone)]
 pub struct Magic8AppFactory {
-    info: theme::AppInfo,
+    info: app_shell::AppInfo,
 }
 
 impl Magic8AppFactory {
@@ -28,16 +29,20 @@ impl Default for Magic8AppFactory {
     }
 }
 
-impl theme::AppFactory for Magic8AppFactory {
-    fn info(&self) -> theme::AppInfo {
+impl app_shell::AppFactory for Magic8AppFactory {
+    fn info(&self) -> app_shell::AppInfo {
         self.info.clone()
     }
 
-    fn launch(&self, on_exit: Box<dyn Fn() + 'static>) -> Box<dyn Any> {
+    fn launch(&self, context: app_shell::ShellContext) -> Box<dyn Any> {
         let app = Magic8App::new().expect("Failed to create Magic8App");
-        app.on_exit(move || on_exit());
+        app.on_exit(move || context.exit());
         let _ = app.show();
         Box::new(app)
+    }
+
+    fn clone_box(&self) -> Box<dyn app_shell::AppFactory> {
+        Box::new(self.clone())
     }
 }
 
