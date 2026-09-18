@@ -5,6 +5,7 @@
 
 use alloc::rc::Rc;
 use core::cell::RefCell;
+use embassy_time::{Duration, Timer};
 use esp_hal::delay::Delay;
 use esp_hal::time::Instant;
 use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType, Rgb565Pixel};
@@ -12,6 +13,7 @@ use slint::platform::{Key, PointerEventButton, WindowAdapter, WindowEvent};
 use slint::{LogicalPosition, PhysicalPosition, PhysicalSize};
 use static_cell::StaticCell;
 
+use super::buzzer::{Feedback, signal_feedback};
 use super::display::{Co5300, DISPLAY_HEIGHT, DISPLAY_WIDTH, DMA_CHUNK_SIZE};
 use super::rotary::{ButtonEvent, Rotary};
 use super::touch::{Chsc5816, TouchEvent};
@@ -53,7 +55,7 @@ impl slint::platform::Platform for EspPlatform {
 }
 
 /// Runs the main Slint event loop: polling inputs, updating timers, and flushing display updates.
-pub fn run_event_loop(
+pub async fn run_event_loop(
     window_holder: WindowHolder,
     mut display: Co5300,
     mut touch: Option<Chsc5816>,
@@ -78,7 +80,7 @@ pub fn run_event_loop(
         slint::platform::update_timers_and_animations();
 
         let Some(window) = window_holder.borrow().clone() else {
-            delay.delay_millis(10);
+            Timer::after(Duration::from_millis(10)).await;
             continue;
         };
 
@@ -128,6 +130,9 @@ pub fn run_event_loop(
 
         // 3. Poll rotary encoder rotation
         let delta = rotary.poll_rotation();
+        if delta != 0 {
+            signal_feedback(Feedback::Beep);
+        }
         if delta > 0 {
             for _ in 0..delta {
                 let _ = window.dispatch_event_with_result(WindowEvent::KeyPressed {
@@ -152,6 +157,7 @@ pub fn run_event_loop(
         if let Some(btn_event) = rotary.poll_button() {
             match btn_event {
                 ButtonEvent::Click => {
+                    signal_feedback(Feedback::Beep);
                     let _ = window.dispatch_event_with_result(WindowEvent::KeyPressed {
                         text: Key::Return.into(),
                     });
@@ -160,6 +166,7 @@ pub fn run_event_loop(
                     });
                 }
                 ButtonEvent::LongPress => {
+                    signal_feedback(Feedback::Haptic);
                     let _ = window.dispatch_event_with_result(WindowEvent::KeyPressed {
                         text: Key::Escape.into(),
                     });
@@ -191,9 +198,11 @@ pub fn run_event_loop(
             }
         });
 
-        // 6. Sleep briefly when idle to save CPU cycles
+        // 6. Sleep briefly when idle to save CPU cycles, yielding to background tasks
         if !window.has_active_animations() {
-            delay.delay_millis(10);
+            Timer::after(Duration::from_millis(10)).await;
+        } else {
+            Timer::after(Duration::from_millis(1)).await;
         }
     }
 }

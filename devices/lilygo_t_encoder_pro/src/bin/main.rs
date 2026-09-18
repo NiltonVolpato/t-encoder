@@ -11,7 +11,11 @@ use alloc::boxed::Box;
 use app_launcher::LauncherAppFactory;
 use app_shell::AppShell;
 use defmt::info;
+use embassy_executor::Spawner;
 use esp_hal::clock::CpuClock;
+use esp_hal::interrupt::software::SoftwareInterruptControl;
+use esp_hal::timer::timg::TimerGroup;
+use lilygo_t_encoder_pro::bsp::buzzer::buzzer_task;
 use lilygo_t_encoder_pro::bsp::{Bsp, BspPeripherals, run_event_loop};
 use panic_rtt_target as _;
 
@@ -20,8 +24,8 @@ extern crate alloc;
 // Creates a default app-descriptor required by the esp-idf bootloader.
 esp_bootloader_esp_idf::esp_app_desc!();
 
-#[esp_hal::main]
-fn main() -> ! {
+#[esp_rtos::main]
+async fn main(spawner: Spawner) -> ! {
     rtt_target::rtt_init_defmt!();
 
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
@@ -34,9 +38,14 @@ fn main() -> ! {
     esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: 73744);
     esp_alloc::heap_allocator!(size: 128 * 1024);
 
-    info!("Memory initialized, bringing up BSP...");
+    // 3. Initialize RTOS & Embassy tick driver
+    let timg0 = TimerGroup::new(peripherals.TIMG0);
+    let sw_int = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
+    esp_rtos::start(timg0.timer0, sw_int.software_interrupt0);
 
-    // 3. Initialize BSP (display, touch, rotary, Slint platform)
+    info!("Memory & RTOS initialized, bringing up BSP...");
+
+    // 4. Initialize BSP (display, touch, rotary, Slint platform)
     let bsp = Bsp::init(BspPeripherals {
         spi2: peripherals.SPI2,
         dma_ch0: peripherals.DMA_CH0,
@@ -59,11 +68,17 @@ fn main() -> ! {
         gpio14: peripherals.GPIO14,
     });
 
+    // 5. Spawn background buzzer & haptics task on GPIO17
+    spawner.spawn(
+        buzzer_task(peripherals.LEDC, peripherals.GPIO17)
+            .expect("Failed to create buzzer task"),
+    );
+
     info!("Starting AppShell with Launcher...");
     let launcher = LauncherAppFactory::default_apps();
     let shell = AppShell::new(Box::new(launcher));
     AppShell::start(&shell);
 
     // 6. Enter Slint MCU event loop
-    run_event_loop(bsp.window, bsp.display, bsp.touch, bsp.rotary);
+    run_event_loop(bsp.window, bsp.display, bsp.touch, bsp.rotary).await;
 }

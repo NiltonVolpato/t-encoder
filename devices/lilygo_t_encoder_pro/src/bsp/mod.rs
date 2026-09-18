@@ -3,10 +3,13 @@
 
 //! Board Support Package (BSP) for LilyGO T-Encoder Pro (ESP32-S3).
 
+pub mod buzzer;
 pub mod display;
 pub mod platform;
 pub mod rotary;
 pub mod touch;
+
+pub use buzzer::signal_feedback;
 
 use esp_hal::delay::Delay;
 use esp_hal::dma::{DmaRxBuf, DmaTxBuf};
