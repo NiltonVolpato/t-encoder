@@ -75,10 +75,10 @@ export component ClockApp inherits AppWindow {
         // Center content layout
         VerticalLayout {
             alignment: center;
-            spacing: 6px;
+            spacing: 16px;
 
             // Date readout
-            TextBase {
+            TextLgBold {
                 text: root.date-str;
                 color: Theme.text-secondary;
                 horizontal-alignment: center;
@@ -88,7 +88,7 @@ export component ClockApp inherits AppWindow {
             // Main digital time readout (Hours : Minutes)
             HorizontalLayout {
                 alignment: center;
-                spacing: 2px;
+                spacing: 6px;
 
                 TextDisplayBold {
                     text: root.hours < 10 ? "0" + root.hours : "" + root.hours;
@@ -97,6 +97,7 @@ export component ClockApp inherits AppWindow {
                 }
 
                 TextDisplayBold {
+                    y: -8px;
                     text: ":";
                     color: Theme.accent;
                     horizontal-alignment: center;
@@ -111,6 +112,7 @@ export component ClockApp inherits AppWindow {
 
             // Seconds badge / mode indicator
             if root.show-seconds: HorizontalLayout {
+                padding-bottom: 10px;
                 alignment: center;
                 Rectangle {
                     border-radius: 12px;
@@ -137,7 +139,6 @@ export component ClockApp inherits AppWindow {
                 text: "• ROTATE TO ADJUST •";
                 color: Theme.text-muted;
                 horizontal-alignment: center;
-                letter-spacing: 1.5px;
             }
         }
     }

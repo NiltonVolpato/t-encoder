@@ -22,12 +22,6 @@ impl ClockAppFactory {
     }
 }
 
-impl Default for ClockAppFactory {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl theme::AppFactory for ClockAppFactory {
     fn info(&self) -> theme::AppInfo {
         self.info.clone()
@@ -36,7 +30,7 @@ impl theme::AppFactory for ClockAppFactory {
     fn launch(&self, on_exit: Box<dyn Fn() + 'static>) -> Box<dyn Any> {
         let app = ClockApp::new().expect("Failed to create ClockApp");
         let initial_time = Time::new(10, 42, 35);
-        setup_clock(&app, initial_time);
+        setup_clock(&app, &initial_time);
 
         let app_weak = app.as_weak();
         let timer = slint::Timer::default();
@@ -63,9 +57,8 @@ impl theme::AppFactory for ClockAppFactory {
     }
 }
 
-
 /// Representation of time for the clock app.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(test, derive(Debug, Clone, Copy, PartialEq, Eq))]
 pub struct Time {
     pub hours: u8,
     pub minutes: u8,
@@ -110,7 +103,7 @@ impl Time {
 }
 
 /// Binds default reactive controller logic to a `ClockApp` instance.
-pub fn setup_clock(app: &ClockApp, initial_time: Time) {
+pub fn setup_clock(app: &ClockApp, initial_time: &Time) {
     app.set_hours(initial_time.hours as i32);
     app.set_minutes(initial_time.minutes as i32);
     app.set_seconds(initial_time.seconds as i32);
@@ -137,8 +130,6 @@ pub fn setup_clock(app: &ClockApp, initial_time: Time) {
         }
     });
 }
-
-pub fn init(_clock: ClockApp) {}
 
 #[cfg(test)]
 mod tests {

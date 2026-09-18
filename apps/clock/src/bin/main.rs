@@ -7,7 +7,7 @@ use slint::ComponentHandle;
 fn main() -> Result<(), slint::PlatformError> {
     let app = ClockApp::new()?;
     let mut time = Time::new(10, 42, 30);
-    setup_clock(&app, time);
+    setup_clock(&app, &time);
 
     let weak = app.as_weak();
     let timer = slint::Timer::default();
