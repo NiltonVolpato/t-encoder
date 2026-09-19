@@ -86,6 +86,21 @@ impl Co5300 {
         Ok(())
     }
 
+    /// Sets display brightness level (0..255).
+    pub fn set_brightness(&mut self, level: u8) -> Result<(), esp_hal::spi::Error> {
+        self.command(0x51, &[level])
+    }
+
+    /// Turns the display on.
+    pub fn display_on(&mut self) -> Result<(), esp_hal::spi::Error> {
+        self.command(0x29, &[])
+    }
+
+    /// Turns the display off.
+    pub fn display_off(&mut self) -> Result<(), esp_hal::spi::Error> {
+        self.command(0x28, &[])
+    }
+
     pub fn set_window(
         &mut self,
         x: u16,

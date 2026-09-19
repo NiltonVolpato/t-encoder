@@ -149,8 +149,10 @@ pub async fn run_event_loop(window_holder: WindowHolder, mut display: Co5300) ->
     let scratch = PIXEL_SCRATCH.init([0u8; DMA_CHUNK_SIZE]);
 
     let mut pending_event: Option<InputEvent> = None;
+    let mut power_manager = app_shell::ScreenPowerManager::new();
+    let mut last_activity = Instant::now();
 
-    defmt::info!("Entering interrupt-driven Slint MCU event loop");
+    defmt::info!("Entering interrupt-driven Slint MCU event loop with power management");
 
     loop {
         // 1. Advance Slint animations and timers first thing in the loop
@@ -161,48 +163,95 @@ pub async fn run_event_loop(window_holder: WindowHolder, mut display: Co5300) ->
             continue;
         };
 
-        // 2. Handle at most ONE input event before drawing
-        if let Some(event) = pending_event.take() {
-            dispatch_input_event(&window, event);
-        } else if let Ok(event) = INPUT_EVENTS.try_receive() {
-            dispatch_input_event(&window, event);
+        // 2. Update screen power state machine based on idle duration
+        let idle_micros = (Instant::now() - last_activity).as_micros();
+        let idle_duration = core::time::Duration::from_micros(idle_micros);
+        match power_manager.update(idle_duration) {
+            app_shell::PowerTransition::DimTo(level) => {
+                defmt::info!("Screen idle: dimming to brightness {}", level);
+                let _ = display.set_brightness(level);
+            }
+            app_shell::PowerTransition::Sleep => {
+                defmt::info!("Screen idle: entering screen sleep");
+                let _ = display.display_off();
+            }
+            _ => {}
         }
 
-        // 3. Render dirty regions
-        window.draw_if_needed(|renderer| {
-            let region = renderer.render(&mut frame_buffer, DISPLAY_WIDTH as usize);
-            let mut first = true;
-            for (origin, size) in region.iter() {
-                if !first {
-                    delay.delay_micros(10); // Delay needed to avoid glitching.
+        // 3. Handle at most ONE input event before drawing
+        let event = pending_event.take().or_else(|| INPUT_EVENTS.try_receive().ok());
+        if let Some(event) = event {
+            let (wake_action, transition) = power_manager.handle_input();
+            match transition {
+                app_shell::PowerTransition::WakeFromSleep(level) => {
+                    defmt::info!("Waking from sleep to brightness {}", level);
+                    let _ = display.display_on();
+                    let _ = display.set_brightness(level);
+                    window.request_redraw();
                 }
-                let _ = display.write_region(
-                    &frame_buffer,
-                    DISPLAY_WIDTH as usize,
-                    origin.x as u16,
-                    origin.y as u16,
-                    size.width as u16,
-                    size.height as u16,
-                    scratch,
-                );
-                first = false;
+                app_shell::PowerTransition::WakeFromDim(level) => {
+                    defmt::info!("Restoring full brightness from dim: {}", level);
+                    let _ = display.set_brightness(level);
+                }
+                _ => {}
             }
-        });
+            last_activity = Instant::now();
 
-        // 4. Check if animations are actively running right after drawing
-        let animating = window.has_active_animations();
+            if wake_action == app_shell::WakeAction::DispatchEvent {
+                dispatch_input_event(&window, event);
+            } else {
+                defmt::info!("Wake touch swallowed while sleeping");
+            }
+        }
 
-        // 5. Determine sleep timeout
+        // 4. Render dirty regions (skip DMA transfers if screen is sleeping)
+        if !power_manager.is_sleeping() {
+            window.draw_if_needed(|renderer| {
+                let region = renderer.render(&mut frame_buffer, DISPLAY_WIDTH as usize);
+                let mut first = true;
+                for (origin, size) in region.iter() {
+                    if !first {
+                        delay.delay_micros(10); // Delay needed to avoid glitching.
+                    }
+                    let _ = display.write_region(
+                        &frame_buffer,
+                        DISPLAY_WIDTH as usize,
+                        origin.x as u16,
+                        origin.y as u16,
+                        size.width as u16,
+                        size.height as u16,
+                        scratch,
+                    );
+                    first = false;
+                }
+            });
+        }
+
+        // 5. Check if animations are actively running right after drawing
+        let animating = !power_manager.is_sleeping() && window.has_active_animations();
+
+        // 6. Determine sleep timeout
         let timeout = if animating {
             window.request_redraw();
             Some(Duration::from_hz(60))
-        } else if let Some(timer_duration) = slint::platform::duration_until_next_timer_update() {
-            Some(Duration::from_micros(timer_duration.as_micros() as u64))
         } else {
-            None // Zero polling: sleep indefinitely until next input event
+            let current_idle = core::time::Duration::from_micros((Instant::now() - last_activity).as_micros());
+            let power_timeout = power_manager
+                .time_until_next_transition(current_idle)
+                .map(|d| Duration::from_micros(d.as_micros() as u64));
+
+            let slint_timeout = slint::platform::duration_until_next_timer_update()
+                .map(|d| Duration::from_micros(d.as_micros() as u64));
+
+            match (slint_timeout, power_timeout) {
+                (Some(s), Some(p)) => Some(s.min(p)),
+                (Some(s), None) => Some(s),
+                (None, Some(p)) => Some(p),
+                (None, None) => None,
+            }
         };
 
-        // 6. Await next event or animation/timer tick
+        // 7. Await next event or animation/timer tick
         if let Some(event) = next_input_event(timeout).await {
             pending_event = Some(event);
         }

@@ -9,9 +9,11 @@ extern crate alloc;
 
 pub mod feedback;
 pub mod lifecycle;
+pub mod power;
 
 pub use feedback::{Feedback, clear as clear_feedback, signal as signal_feedback, try_receive as try_receive_feedback};
 pub use lifecycle::{AppFactory, AppInfo, AppShell, ShellContext};
+pub use power::{PowerTransition, ScreenPowerManager, ScreenPowerState, WakeAction};
 
 #[cfg(test)]
 mod tests {
