@@ -178,9 +178,9 @@ pub async fn run_event_loop(window_holder: WindowHolder, mut display: Co5300) ->
             _ => {}
         }
 
-        // 3. Handle at most ONE input event before drawing
-        let event = pending_event.take().or_else(|| INPUT_EVENTS.try_receive().ok());
-        if let Some(event) = event {
+        // 3. Process ALL pending input events before drawing
+        let mut event = pending_event.take().or_else(|| INPUT_EVENTS.try_receive().ok());
+        while let Some(current_event) = event {
             let (wake_action, transition) = power_manager.handle_input();
             match transition {
                 app_shell::PowerTransition::WakeFromSleep(level) => {
@@ -198,10 +198,12 @@ pub async fn run_event_loop(window_holder: WindowHolder, mut display: Co5300) ->
             last_activity = Instant::now();
 
             if wake_action == app_shell::WakeAction::DispatchEvent {
-                dispatch_input_event(&window, event);
+                dispatch_input_event(&window, current_event);
             } else {
                 defmt::info!("Wake touch swallowed while sleeping");
             }
+
+            event = INPUT_EVENTS.try_receive().ok();
         }
 
         // 4. Render dirty regions (skip DMA transfers if screen is sleeping)
