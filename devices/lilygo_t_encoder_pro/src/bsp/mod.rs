@@ -70,7 +70,7 @@ impl Bsp {
         let spi = Spi::new(
             peripherals.spi2,
             SpiConfig::default()
-                .with_frequency(Rate::from_mhz(40))
+                .with_frequency(Rate::from_mhz(80))
                 .with_mode(Mode::_0),
         )
         .unwrap()
