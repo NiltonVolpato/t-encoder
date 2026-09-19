@@ -136,6 +136,18 @@ async fn next_input_event(timeout: Option<Duration>) -> Option<InputEvent> {
     }
 }
 
+#[inline(always)]
+fn cycle_count() -> u32 {
+    #[cfg(target_arch = "xtensa")]
+    {
+        xtensa_lx::timer::get_cycle_count()
+    }
+    #[cfg(not(target_arch = "xtensa"))]
+    {
+        0
+    }
+}
+
 /// Runs the main Slint event loop: awaits interrupt-driven inputs, advances animations, and renders updates.
 pub async fn run_event_loop(window_holder: WindowHolder, mut display: Co5300) -> ! {
     let delay = Delay::new();
@@ -150,7 +162,9 @@ pub async fn run_event_loop(window_holder: WindowHolder, mut display: Co5300) ->
 
     let mut pending_event: Option<InputEvent> = None;
     let mut power_manager = app_shell::ScreenPowerManager::new();
+    let mut perf_tracker = app_shell::PerfTracker::new();
     let mut last_activity = Instant::now();
+    let loop_start_time = Instant::now();
 
     defmt::info!("Entering interrupt-driven Slint MCU event loop with power management");
 
@@ -209,9 +223,17 @@ pub async fn run_event_loop(window_holder: WindowHolder, mut display: Co5300) ->
         // 4. Render dirty regions (skip DMA transfers if screen is sleeping)
         if !power_manager.is_sleeping() {
             window.draw_if_needed(|renderer| {
+                let r_start = cycle_count();
                 let region = renderer.render(&mut frame_buffer, DISPLAY_WIDTH as usize);
+                let render_cycles = cycle_count().wrapping_sub(r_start);
+
+                let t_start = cycle_count();
+                let mut total_pixels = 0u32;
+                let mut rect_count = 0u16;
                 let mut first = true;
                 for (origin, size) in region.iter() {
+                    total_pixels += size.width as u32 * size.height as u32;
+                    rect_count += 1;
                     if !first {
                         delay.delay_micros(10); // Delay needed to avoid glitching.
                     }
@@ -226,10 +248,36 @@ pub async fn run_event_loop(window_holder: WindowHolder, mut display: Co5300) ->
                     );
                     first = false;
                 }
+                let transfer_cycles = cycle_count().wrapping_sub(t_start);
+
+                perf_tracker.record_frame(app_shell::FrameCycles {
+                    render_cycles,
+                    transfer_cycles,
+                    dirty_pixels: total_pixels,
+                    rect_count,
+                });
             });
         }
 
-        // 5. Check if animations are actively running right after drawing
+        // 5. Emit periodic performance summary if window elapsed
+        let now_since_start = core::time::Duration::from_micros(
+            (Instant::now() - loop_start_time).as_micros() as u64,
+        );
+        if let Some(summary) = perf_tracker.take_summary(now_since_start) {
+            defmt::info!(
+                "[PERF] {=f32} FPS | render: avg {=f32}ms (max {=f32}ms) | transfer: avg {=f32}ms (max {=f32}ms) | dirty: {=f32}% ({} rects, {} frames)",
+                summary.fps,
+                summary.avg_render_ms,
+                summary.max_render_ms,
+                summary.avg_transfer_ms,
+                summary.max_transfer_ms,
+                summary.avg_dirty_percent,
+                summary.total_rects,
+                summary.frame_count,
+            );
+        }
+
+        // 6. Check if animations are actively running right after drawing
         let animating = !power_manager.is_sleeping() && window.has_active_animations();
 
         // 6. Determine sleep timeout

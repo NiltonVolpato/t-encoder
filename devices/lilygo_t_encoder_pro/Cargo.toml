@@ -103,6 +103,7 @@ trouble-host = { version = "0.6.0", features = ["gatt"] }
 
 critical-section = "1.2.0"
 static_cell      = "2.1.1"
+xtensa-lx        = "0.13.0"
 
 [dev-dependencies]
 embedded-test = {
