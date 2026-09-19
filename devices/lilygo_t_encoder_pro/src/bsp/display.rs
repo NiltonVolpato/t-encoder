@@ -130,15 +130,23 @@ impl Co5300 {
         height: u16,
         scratch: &mut [u8],
     ) -> Result<(), esp_hal::spi::Error> {
-        if width == 0 || height == 0 {
+        if width == 0 || height == 0 || x >= DISPLAY_WIDTH || y >= DISPLAY_HEIGHT {
             return Ok(());
         }
 
         // CO5300 needs even column and row boundaries.
         let x_aligned = x & !1;
         let y_aligned = y & !1;
+        if x_aligned >= DISPLAY_WIDTH || y_aligned >= DISPLAY_HEIGHT {
+            return Ok(());
+        }
+
         let width = ((width + (x - x_aligned) + 1) & !1).min(DISPLAY_WIDTH - x_aligned);
         let height = ((height + (y - y_aligned) + 1) & !1).min(DISPLAY_HEIGHT - y_aligned);
+        if width == 0 || height == 0 {
+            return Ok(());
+        }
+
         let (x, y) = (x_aligned, y_aligned);
 
         self.set_window(x, y, width, height)?;

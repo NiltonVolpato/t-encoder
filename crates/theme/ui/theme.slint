@@ -169,27 +169,27 @@ export component AppWindow inherits Window {
         width: root.active-edge == 1 ? root.drag-dist : 0px;
         height: 390px;
         background: @linear-gradient(90deg, rgba(255, 255, 255, 0.35) 0%, transparent 100%);
-        visible: root.active-edge == 1;
+        visible: root.active-edge == 1 && root.drag-dist > 0px;
     }
 
     // 2. Right edge gradient expanding towards the left
     Rectangle {
-        x: root.active-edge == 2 ? 390px - root.drag-dist : 390px;
+        x: root.active-edge == 2 ? 390px - root.drag-dist : 0px;
         y: 0px;
         width: root.active-edge == 2 ? root.drag-dist : 0px;
         height: 390px;
         background: @linear-gradient(270deg, rgba(255, 255, 255, 0.35) 0%, transparent 100%);
-        visible: root.active-edge == 2;
+        visible: root.active-edge == 2 && root.drag-dist > 0px;
     }
 
     // 3. Bottom edge gradient expanding towards the top
     Rectangle {
         x: 0px;
-        y: root.active-edge == 3 ? 390px - root.drag-dist : 390px;
+        y: root.active-edge == 3 ? 390px - root.drag-dist : 0px;
         width: 390px;
         height: root.active-edge == 3 ? root.drag-dist : 0px;
         background: @linear-gradient(0deg, rgba(255, 255, 255, 0.35) 0%, transparent 100%);
-        visible: root.active-edge == 3;
+        visible: root.active-edge == 3 && root.drag-dist > 0px;
     }
 
     // Left Edge TouchArea (0px to 45px, middle vertical region)
