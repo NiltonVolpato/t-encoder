@@ -16,7 +16,9 @@ use esp_hal::clock::CpuClock;
 use esp_hal::interrupt::software::SoftwareInterruptControl;
 use esp_hal::timer::timg::TimerGroup;
 use lilygo_t_encoder_pro::bsp::buzzer::buzzer_task;
-use lilygo_t_encoder_pro::bsp::{Bsp, BspPeripherals, run_event_loop};
+use lilygo_t_encoder_pro::bsp::{
+    Bsp, BspPeripherals, button_task, encoder_task, run_event_loop, touch_task,
+};
 use panic_rtt_target as _;
 
 extern crate alloc;
@@ -74,11 +76,27 @@ async fn main(spawner: Spawner) -> ! {
             .expect("Failed to create buzzer task"),
     );
 
+    // 6. Spawn interrupt-driven input tasks
+    spawner.spawn(
+        encoder_task(bsp.encoder_hw)
+            .expect("Failed to create encoder task"),
+    );
+    spawner.spawn(
+        button_task(bsp.button)
+            .expect("Failed to create button task"),
+    );
+    if let Some(touch) = bsp.touch {
+        spawner.spawn(
+            touch_task(touch)
+                .expect("Failed to create touch task"),
+        );
+    }
+
     info!("Starting AppShell with Launcher...");
     let launcher = LauncherAppFactory::default_apps();
     let shell = AppShell::new(Box::new(launcher));
     AppShell::start(&shell);
 
-    // 6. Enter Slint MCU event loop
-    run_event_loop(bsp.window, bsp.display, bsp.touch, bsp.rotary).await;
+    // 7. Enter Slint MCU event loop
+    run_event_loop(bsp.window, bsp.display).await;
 }

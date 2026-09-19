@@ -5,30 +5,33 @@
 
 pub mod buzzer;
 pub mod display;
+pub mod input;
 pub mod platform;
 pub mod rotary;
 pub mod touch;
 
 pub use buzzer::signal_feedback;
+pub use display::{Co5300, DMA_CHUNK_SIZE};
+pub use input::{INPUT_EVENTS, InputEvent, send_input_event};
+pub use platform::{EspPlatform, WindowHolder, run_event_loop};
+pub use rotary::{EncoderHw, button_task, encoder_task};
+pub use touch::{Chsc5816, touch_task};
 
 use esp_hal::delay::Delay;
 use esp_hal::dma::{DmaRxBuf, DmaTxBuf};
 use esp_hal::dma_buffers;
+use esp_hal::gpio::{Input, InputConfig, Pull};
 use esp_hal::i2c::master::{BusTimeout, Config as I2cConfig, I2c};
 use esp_hal::spi::Mode;
 use esp_hal::spi::master::{Config as SpiConfig, Spi};
 use esp_hal::time::Rate;
 
-use display::{Co5300, DMA_CHUNK_SIZE};
-pub use platform::{EspPlatform, WindowHolder, run_event_loop};
-use rotary::Rotary;
-use touch::Chsc5816;
-
 pub struct Bsp {
     pub window: WindowHolder,
     pub display: Co5300,
     pub touch: Option<Chsc5816>,
-    pub rotary: Rotary,
+    pub encoder_hw: EncoderHw,
+    pub button: Input<'static>,
 }
 
 /// Hardware peripherals required to initialize the Board Support Package (display, touch, rotary).
@@ -87,7 +90,7 @@ impl Bsp {
             defmt::info!("CO5300 display initialized successfully");
         }
 
-        // 2. Initialize I2C0 for CHSC5816 touch controller
+        // 2. Initialize async I2C0 for CHSC5816 touch controller
         let touch = match I2c::new(
             peripherals.i2c0,
             I2cConfig::default()
@@ -95,26 +98,26 @@ impl Bsp {
                 .with_timeout(BusTimeout::Maximum),
         ) {
             Ok(i2c) => {
-                let i2c = i2c.with_sda(peripherals.gpio5).with_scl(peripherals.gpio6);
-                let mut touch_dev = Chsc5816::new(i2c, peripherals.gpio9, peripherals.gpio8);
-                if let Err(_e) = touch_dev.init(&mut delay) {
-                    defmt::warn!("CHSC5816 touch init failed");
-                    None
-                } else {
-                    defmt::info!("CHSC5816 touch initialized successfully");
-                    Some(touch_dev)
-                }
+                let i2c = i2c
+                    .with_sda(peripherals.gpio5)
+                    .with_scl(peripherals.gpio6)
+                    .into_async();
+                let touch_dev = Chsc5816::new(i2c, peripherals.gpio9, peripherals.gpio8);
+                Some(touch_dev)
             }
-            Err(_) => None,
+            Err(e) => {
+                defmt::error!("I2C0 initialization failed: {:?}", defmt::Debug2Format(&e));
+                None
+            }
         };
 
         // 3. Initialize PCNT quadrature rotary encoder and button
-        let rotary = Rotary::new(
+        let encoder_hw = EncoderHw::new(
             peripherals.pcnt,
             peripherals.gpio1,
             peripherals.gpio2,
-            peripherals.gpio0,
         );
+        let button = Input::new(peripherals.gpio0, InputConfig::default().with_pull(Pull::Up));
 
         // 4. Set Slint platform
         let (platform, window) = EspPlatform::new();
@@ -125,7 +128,8 @@ impl Bsp {
             window,
             display,
             touch,
-            rotary,
+            encoder_hw,
+            button,
         }
     }
 }
