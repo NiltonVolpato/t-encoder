@@ -231,7 +231,7 @@ pub async fn run_event_loop(window_holder: WindowHolder, mut display: Co5300) ->
                 let mut total_pixels = 0u32;
                 let mut rect_count = 0u16;
                 let mut first = true;
-                for (origin, size) in region.iter() {
+                for (origin, size) in region.iter_box() {
                     total_pixels += size.width as u32 * size.height as u32;
                     rect_count += 1;
                     if !first {
@@ -240,8 +240,8 @@ pub async fn run_event_loop(window_holder: WindowHolder, mut display: Co5300) ->
                     let _ = display.write_region(
                         &frame_buffer,
                         DISPLAY_WIDTH as usize,
-                        origin.x as u16,
-                        origin.y as u16,
+                        origin.x.max(0) as u16,
+                        origin.y.max(0) as u16,
                         size.width as u16,
                         size.height as u16,
                         scratch,

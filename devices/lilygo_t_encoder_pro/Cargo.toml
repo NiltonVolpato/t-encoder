@@ -124,7 +124,7 @@ opt-level = "z"
 debug = "full"
 
 [profile.release]
-opt-level = "z"
+opt-level = 3
 codegen-units = 1
 debug = "full"
 lto = "fat"
