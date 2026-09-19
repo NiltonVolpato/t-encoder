@@ -9,13 +9,12 @@ use embassy_futures::select::{Either, select};
 use embassy_time::{Duration, Timer};
 use esp_hal::delay::Delay;
 use esp_hal::time::Instant;
-use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType, Rgb565Pixel};
+use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType};
 use slint::platform::{Key, PointerEventButton, WindowAdapter, WindowEvent};
 use slint::{PhysicalPosition, PhysicalSize};
-use static_cell::StaticCell;
 
 use super::buzzer::{Feedback, signal_feedback};
-use super::display::{Co5300, DISPLAY_HEIGHT, DISPLAY_WIDTH, DMA_CHUNK_SIZE};
+use super::display::{BigEndianRgb565, Co5300, DISPLAY_HEIGHT, DISPLAY_WIDTH};
 use super::input::{INPUT_EVENTS, InputEvent};
 use super::touch::TouchEvent;
 
@@ -154,11 +153,7 @@ pub async fn run_event_loop(window_holder: WindowHolder, mut display: Co5300) ->
 
     // Framebuffer in external PSRAM (390 * 390 * 2 bytes = ~297 KiB)
     let mut frame_buffer =
-        alloc::vec![Rgb565Pixel(0); DISPLAY_WIDTH as usize * DISPLAY_HEIGHT as usize];
-
-    // Scratch buffer in fast internal DRAM for DMA transfers
-    static PIXEL_SCRATCH: StaticCell<[u8; DMA_CHUNK_SIZE]> = StaticCell::new();
-    let scratch = PIXEL_SCRATCH.init([0u8; DMA_CHUNK_SIZE]);
+        alloc::vec![BigEndianRgb565(0); DISPLAY_WIDTH as usize * DISPLAY_HEIGHT as usize];
 
     let mut pending_event: Option<InputEvent> = None;
     let mut power_manager = app_shell::ScreenPowerManager::new();
@@ -193,7 +188,9 @@ pub async fn run_event_loop(window_holder: WindowHolder, mut display: Co5300) ->
         }
 
         // 3. Process ALL pending input events before drawing
-        let mut event = pending_event.take().or_else(|| INPUT_EVENTS.try_receive().ok());
+        let mut event = pending_event
+            .take()
+            .or_else(|| INPUT_EVENTS.try_receive().ok());
         while let Some(current_event) = event {
             let (wake_action, transition) = power_manager.handle_input();
             match transition {
@@ -244,7 +241,6 @@ pub async fn run_event_loop(window_holder: WindowHolder, mut display: Co5300) ->
                         origin.y.max(0) as u16,
                         size.width as u16,
                         size.height as u16,
-                        scratch,
                     );
                     first = false;
                 }
@@ -285,7 +281,8 @@ pub async fn run_event_loop(window_holder: WindowHolder, mut display: Co5300) ->
             window.request_redraw();
             Some(Duration::from_hz(60))
         } else {
-            let current_idle = core::time::Duration::from_micros((Instant::now() - last_activity).as_micros());
+            let current_idle =
+                core::time::Duration::from_micros((Instant::now() - last_activity).as_micros());
             let power_timeout = power_manager
                 .time_until_next_transition(current_idle)
                 .map(|d| Duration::from_micros(d.as_micros() as u64));

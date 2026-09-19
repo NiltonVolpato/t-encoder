@@ -11,15 +11,14 @@ pub mod rotary;
 pub mod touch;
 
 pub use buzzer::signal_feedback;
-pub use display::{Co5300, DMA_CHUNK_SIZE};
+pub use display::{BigEndianRgb565, Co5300, TX_BUF_BYTES};
 pub use input::{INPUT_EVENTS, InputEvent, send_input_event};
 pub use platform::{EspPlatform, WindowHolder, run_event_loop};
 pub use rotary::{EncoderHw, button_task, encoder_task};
 pub use touch::{Chsc5816, touch_task};
 
 use esp_hal::delay::Delay;
-use esp_hal::dma::{DmaRxBuf, DmaTxBuf};
-use esp_hal::dma_buffers;
+use esp_hal::dma_tx_buffer;
 use esp_hal::gpio::{Input, InputConfig, Pull};
 use esp_hal::i2c::master::{BusTimeout, Config as I2cConfig, I2c};
 use esp_hal::spi::Mode;
@@ -63,10 +62,6 @@ impl Bsp {
         let mut delay = Delay::new();
 
         // 1. Initialize SPI2 with QSPI mode and DMA for CO5300 AMOLED
-        let (rx_buffer, rx_descriptors, tx_buffer, tx_descriptors) = dma_buffers!(DMA_CHUNK_SIZE);
-        let dma_rx_buf = DmaRxBuf::new(rx_descriptors, rx_buffer).unwrap();
-        let dma_tx_buf = DmaTxBuf::new(tx_descriptors, tx_buffer).unwrap();
-
         let spi = Spi::new(
             peripherals.spi2,
             SpiConfig::default()
@@ -80,10 +75,10 @@ impl Bsp {
         .with_sio3(peripherals.gpio14)
         .with_cs(peripherals.gpio10)
         .with_sck(peripherals.gpio12)
-        .with_dma(peripherals.dma_ch0)
-        .with_buffers(dma_rx_buf, dma_tx_buf);
+        .with_dma(peripherals.dma_ch0);
 
-        let mut display = Co5300::new(spi, peripherals.gpio3, peripherals.gpio4);
+        let tx = dma_tx_buffer!(TX_BUF_BYTES).unwrap();
+        let mut display = Co5300::new(spi, tx, peripherals.gpio3, peripherals.gpio4);
         if let Err(e) = display.init(&mut delay) {
             defmt::error!("Failed to initialize CO5300 display: {:?}", defmt::Debug2Format(&e));
         } else {

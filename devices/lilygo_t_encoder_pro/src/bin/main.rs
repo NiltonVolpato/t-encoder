@@ -72,24 +72,14 @@ async fn main(spawner: Spawner) -> ! {
 
     // 5. Spawn background buzzer & haptics task on GPIO17
     spawner.spawn(
-        buzzer_task(peripherals.LEDC, peripherals.GPIO17)
-            .expect("Failed to create buzzer task"),
+        buzzer_task(peripherals.LEDC, peripherals.GPIO17).expect("Failed to create buzzer task"),
     );
 
     // 6. Spawn interrupt-driven input tasks
-    spawner.spawn(
-        encoder_task(bsp.encoder_hw)
-            .expect("Failed to create encoder task"),
-    );
-    spawner.spawn(
-        button_task(bsp.button)
-            .expect("Failed to create button task"),
-    );
+    spawner.spawn(encoder_task(bsp.encoder_hw).expect("Failed to create encoder task"));
+    spawner.spawn(button_task(bsp.button).expect("Failed to create button task"));
     if let Some(touch) = bsp.touch {
-        spawner.spawn(
-            touch_task(touch)
-                .expect("Failed to create touch task"),
-        );
+        spawner.spawn(touch_task(touch).expect("Failed to create touch task"));
     }
 
     info!("Starting AppShell with Launcher...");
