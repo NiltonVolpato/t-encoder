@@ -110,9 +110,8 @@ fn dispatch_input_event(window: &Rc<MinimalSoftwareWindow>, event: InputEvent) {
                     });
                 }
                 TouchEvent::Move => {
-                    let _ = window.dispatch_event_with_result(WindowEvent::PointerMoved {
-                        position,
-                    });
+                    let _ =
+                        window.dispatch_event_with_result(WindowEvent::PointerMoved { position });
                 }
                 TouchEvent::Up => {
                     let _ = window.dispatch_event_with_result(WindowEvent::PointerReleased {
@@ -123,6 +122,17 @@ fn dispatch_input_event(window: &Rc<MinimalSoftwareWindow>, event: InputEvent) {
                 }
             }
         }
+    }
+}
+
+/// Waits for at most `timeout` for an input event, or indefinitely if `timeout` is `None`.
+async fn next_input_event(timeout: Option<Duration>) -> Option<InputEvent> {
+    let Some(timeout) = timeout else {
+        return Some(INPUT_EVENTS.receive().await);
+    };
+    match select(INPUT_EVENTS.receive(), Timer::after(timeout)).await {
+        Either::First(event) => Some(event),
+        Either::Second(()) => None,
     }
 }
 
@@ -185,7 +195,7 @@ pub async fn run_event_loop(window_holder: WindowHolder, mut display: Co5300) ->
         // 5. Determine sleep timeout
         let timeout = if animating {
             window.request_redraw();
-            Some(Duration::from_millis(1))
+            Some(Duration::from_hz(60))
         } else if let Some(timer_duration) = slint::platform::duration_until_next_timer_update() {
             Some(Duration::from_micros(timer_duration.as_micros() as u64))
         } else {
@@ -193,19 +203,8 @@ pub async fn run_event_loop(window_holder: WindowHolder, mut display: Co5300) ->
         };
 
         // 6. Await next event or animation/timer tick
-        match timeout {
-            Some(duration) => {
-                match select(INPUT_EVENTS.receive(), Timer::after(duration)).await {
-                    Either::First(event) => {
-                        pending_event = Some(event);
-                    }
-                    Either::Second(()) => {}
-                }
-            }
-            None => {
-                let event = INPUT_EVENTS.receive().await;
-                pending_event = Some(event);
-            }
+        if let Some(event) = next_input_event(timeout).await {
+            pending_event = Some(event);
         }
     }
 }

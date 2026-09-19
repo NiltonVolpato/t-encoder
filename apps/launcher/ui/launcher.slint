@@ -11,42 +11,39 @@ global Layout {
 
 component Card inherits Rectangle {
     in property <AppInfo> data;
-    in property <bool> focused;
+    in property <length> expand-w: 0px;
+    in property <length> expand-h: 0px;
 
-    width: focused ? Layout.card-w : 140px;
-    height: focused ? Layout.card-h : 160px;
+    width: 140px + root.expand-w;
+    height: 160px + root.expand-h;
     y: (Layout.card-h - self.height) / 2;
     border-radius: 24px;
     background: data.accent.darker(0.88);
-    border-width: focused ? 3px : 1px;
-    border-color: focused ? data.accent : data.accent.darker(0.55);
+    border-width: 1px + root.expand-w * 2 / 45;
+    border-color: data.accent;
 
-    opacity: focused ? 1.0 : 0.40;
-    animate opacity, border-color, width, height { duration: 250ms; easing: ease-out; }
+    opacity: (40 + root.expand-w * 60 / 45px) / 100;
 
     VerticalLayout {
-        padding: focused ? 26px : 18px;
-        spacing: focused ? 14px : 10px;
+        padding: 18px + root.expand-w * 8 / 45;
+        spacing: 10px + root.expand-w * 4 / 45;
         alignment: center;
 
         HorizontalLayout {
             alignment: center;
             Image {
-                width: focused ? 88px : 68px;
-                height: focused ? 88px : 68px;
+                width: 68px + root.expand-w * 20 / 45;
+                height: 68px + root.expand-h * 20 / 40;
                 source: data.icon;
                 image-fit: contain;
-                animate width, height { duration: 250ms; easing: ease-out; }
             }
         }
 
-        if focused: TextXlBold {
+        Text {
             text: data.name;
-            color: white;
-            horizontal-alignment: center;
-        }
-        if !focused: TextLgBold {
-            text: data.name;
+            font-family: Theme.font-family;
+            font-size: 20px + root.expand-w * 6 / 45;
+            font-weight: 700;
             color: white;
             horizontal-alignment: center;
         }
@@ -58,26 +55,20 @@ export component LauncherApp inherits AppWindow {
 
     in-out property <[AppInfo]> cards;
     in-out property <int> selected: 0;
+    in-out property <length> drag-offset: 0px;
+    in-out property <bool> is-dragging: false;
 
     callback launch(int);
 
     public function select-next() {
-        if root.cards.length > 0 {
-            if root.selected + 1 < root.cards.length {
-                root.selected += 1;
-            } else {
-                root.selected = 0;
-            }
+        if root.cards.length > 0 && root.selected + 1 < root.cards.length {
+            root.selected += 1;
         }
     }
 
     public function select-prev() {
-        if root.cards.length > 0 {
-            if root.selected > 0 {
-                root.selected -= 1;
-            } else {
-                root.selected = root.cards.length - 1;
-            }
+        if root.cards.length > 0 && root.selected > 0 {
+            root.selected -= 1;
         }
     }
 
@@ -104,26 +95,73 @@ export component LauncherApp inherits AppWindow {
         background: Theme.background;
 
         // Card strip
-        Rectangle {
+        strip := Rectangle {
             y: (parent.height - Layout.card-h) / 2;
             height: Layout.card-h;
-            x: (parent.width - Layout.card-w) / 2 - root.selected * Layout.pitch;
-            animate x { duration: 250ms; easing: ease-out; }
+            x: (parent.width - Layout.card-w) / 2 - root.selected * Layout.pitch + root.drag-offset;
+            animate x {
+                duration: 250ms;
+                easing: ease-out;
+                enabled: !root.is-dragging;
+            }
 
             for card[i] in root.cards: Card {
                 x: i * Layout.pitch + (Layout.card-w - self.width) / 2;
                 data: card;
-                focused: i == root.selected;
+                expand-w: Math.max(0px, 45px - Math.abs(strip.x + i * Layout.pitch + Layout.card-w / 2 - root.width / 2) * 45 / 210);
+                expand-h: Math.max(0px, 40px - Math.abs(strip.x + i * Layout.pitch + Layout.card-w / 2 - root.width / 2) * 40 / 210);
             }
         }
 
-        // Tap on active center area launches the app
-        TouchArea {
-            x: (parent.width - Layout.card-w) / 2;
+        // Carousel touch area: handles horizontal drag and taps on center or adjacent cards
+        carousel-touch := TouchArea {
             y: (parent.height - Layout.card-h) / 2;
-            width: Layout.card-w;
             height: Layout.card-h;
-            clicked => { root.launch(root.selected); }
+            width: parent.width;
+
+            pointer-event(event) => {
+                if event.button == PointerEventButton.left && event.kind == PointerEventKind.down {
+                    root.is-dragging = false;
+                    root.drag-offset = 0px;
+                }
+                if event.button == PointerEventButton.left && (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
+                    if root.is-dragging {
+                        root.is-dragging = false;
+                        if root.drag-offset < -Layout.pitch / 3 && root.selected + 1 < root.cards.length {
+                            root.select-next();
+                        } else if root.drag-offset > Layout.pitch / 3 && root.selected > 0 {
+                            root.select-prev();
+                        }
+                        root.drag-offset = 0px;
+                    } else if event.kind == PointerEventKind.up {
+                        if self.pressed-x < (parent.width - Layout.card-w) / 2 {
+                            root.select-prev();
+                        } else if self.pressed-x > (parent.width + Layout.card-w) / 2 {
+                            root.select-next();
+                        } else {
+                            root.launch(root.selected);
+                        }
+                    }
+                }
+            }
+
+            moved => {
+                if self.enabled && self.pressed {
+                    let delta = self.mouse-x - self.pressed-x;
+                    if Math.abs(delta) > 8px {
+                        root.is-dragging = true;
+                    }
+                    if root.is-dragging {
+                        if root.selected == 0 && delta > 0px {
+                            root.drag-offset = Math.min(delta / 3, 40px);
+                        } else if root.selected == root.cards.length - 1 && delta < 0px {
+                            root.drag-offset = Math.max(delta / 3, -40px);
+                        } else {
+                            root.drag-offset = delta;
+                        }
+                    }
+                }
+            }
         }
 
         // Page indicator dots

@@ -130,6 +130,27 @@ mod tests {
         let cards: Vec<AppInfo> = test_factories().iter().map(|f| f.info()).collect();
         launcher.set_cards(Rc::new(slint::VecModel::from(cards)).into());
         assert_eq!(launcher.get_cards().row_count(), 3);
+
+        // Clamping at lower bound: cannot regress before 0
+        launcher.set_selected(0);
+        launcher.invoke_select_prev();
+        assert_eq!(launcher.get_selected(), 0);
+
+        // Stepping forward
+        launcher.invoke_select_next();
+        assert_eq!(launcher.get_selected(), 1);
+
+        launcher.invoke_select_next();
+        assert_eq!(launcher.get_selected(), 2);
+
+        // Clamping at upper bound: cannot advance past 2
+        launcher.invoke_select_next();
+        assert_eq!(launcher.get_selected(), 2);
+
+        // Stepping backward
+        launcher.invoke_select_prev();
+        assert_eq!(launcher.get_selected(), 1);
+
         drop(launcher);
 
         let launcher_factory = LauncherAppFactory::new(test_factories());
