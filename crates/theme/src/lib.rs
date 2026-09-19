@@ -6,10 +6,11 @@ use slint::ComponentHandle;
 
 slint::include_modules!();
 
-pub fn init<T>(_ui: &T)
+/// Configures default exit navigation for an application.
+pub fn setup_navigation<T: ComponentHandle + 'static>(app: &T, on_exit: impl Fn() + 'static)
 where
-    T: ComponentHandle + 'static,
-    for<'a> Theme<'a>: slint::Global<'a, T>,
+    for<'a> Navigation<'a>: slint::Global<'a, T>,
 {
+    Navigation::get(app).on_exit(on_exit);
 }
 

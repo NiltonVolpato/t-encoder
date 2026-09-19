@@ -52,6 +52,7 @@ component Card inherits Rectangle {
 
 export component LauncherApp inherits AppWindow {
     title: "Launcher";
+    enable-gestures: false;
 
     in-out property <[AppInfo]> cards;
     in-out property <int> selected: 0;

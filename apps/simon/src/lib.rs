@@ -36,6 +36,8 @@ impl app_shell::AppFactory for SimonAppFactory {
 
     fn launch(&self, context: app_shell::ShellContext) -> Box<dyn Any> {
         let app = SimonApp::new().expect("Failed to create SimonApp");
+        let ctx = context.clone();
+        theme::setup_navigation(&app, move || ctx.exit());
         app.on_exit(move || context.exit());
         let _ = app.show();
         Box::new(app)

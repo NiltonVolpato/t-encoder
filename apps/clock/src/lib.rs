@@ -57,6 +57,8 @@ impl app_shell::AppFactory for ClockAppFactory {
             },
         );
 
+        let ctx = context.clone();
+        theme::setup_navigation(&app, move || ctx.exit());
         app.on_exit(move || context.exit());
         let _ = app.show();
 

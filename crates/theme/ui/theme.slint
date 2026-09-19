@@ -126,6 +126,24 @@ export component RotaryKnob inherits FocusScope {
     }
 }
 
+export global Navigation {
+    callback back() -> bool;
+    callback quit() -> bool;
+    callback exit();
+
+    public function trigger-back() {
+        if !self.back() {
+            self.exit();
+        }
+    }
+
+    public function trigger-quit() {
+        if !self.quit() {
+            self.exit();
+        }
+    }
+}
+
 // IMPORTANT: Keep this as the last exported element, so Slint use a reasonable default font.
 export component AppWindow inherits Window {
     width: 390px;
@@ -134,6 +152,138 @@ export component AppWindow inherits Window {
     default-font-family: "Inter Variable";
     default-font-size: 16px;
     default-font-weight: 400;
+
+    in-out property <bool> enable-gestures: true;
+
+    // 0: None, 1: Left-to-Right (Back), 2: Right-to-Left (Back), 3: Bottom-to-Top (Quit)
+    private property <int> active-edge: 0;
+    private property <length> drag-dist: 0px;
+
+    @children
+
+    // Gesture feedback: atmospheric white gradients expanding from the trailing edge
+    // 1. Left edge gradient expanding towards the right
+    Rectangle {
+        x: 0px;
+        y: 0px;
+        width: root.active-edge == 1 ? root.drag-dist : 0px;
+        height: 390px;
+        background: @linear-gradient(90deg, rgba(255, 255, 255, 0.35) 0%, transparent 100%);
+        visible: root.active-edge == 1;
+    }
+
+    // 2. Right edge gradient expanding towards the left
+    Rectangle {
+        x: root.active-edge == 2 ? 390px - root.drag-dist : 390px;
+        y: 0px;
+        width: root.active-edge == 2 ? root.drag-dist : 0px;
+        height: 390px;
+        background: @linear-gradient(270deg, rgba(255, 255, 255, 0.35) 0%, transparent 100%);
+        visible: root.active-edge == 2;
+    }
+
+    // 3. Bottom edge gradient expanding towards the top
+    Rectangle {
+        x: 0px;
+        y: root.active-edge == 3 ? 390px - root.drag-dist : 390px;
+        width: 390px;
+        height: root.active-edge == 3 ? root.drag-dist : 0px;
+        background: @linear-gradient(0deg, rgba(255, 255, 255, 0.35) 0%, transparent 100%);
+        visible: root.active-edge == 3;
+    }
+
+    // Left Edge TouchArea (0px to 45px, middle vertical region)
+    if root.enable-gestures: TouchArea {
+        x: 0px;
+        y: 60px;
+        width: 45px;
+        height: 270px;
+
+        pointer-event(event) => {
+            if event.button == PointerEventButton.left && event.kind == PointerEventKind.down {
+                root.active-edge = 1;
+                root.drag-dist = 0px;
+            }
+            if event.button == PointerEventButton.left && (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
+                if root.active-edge == 1 {
+                    if root.drag-dist >= 350px { // ~90% of 390px
+                        Navigation.trigger-back();
+                    }
+                    root.active-edge = 0;
+                    root.drag-dist = 0px;
+                }
+            }
+        }
+
+        moved => {
+            if self.enabled && self.pressed && root.active-edge == 1 {
+                let d = self.mouse-x - self.pressed-x;
+                root.drag-dist = Math.max(0px, Math.min(390px, d));
+            }
+        }
+    }
+
+    // Right Edge TouchArea (345px to 390px, middle vertical region)
+    if root.enable-gestures: TouchArea {
+        x: 345px;
+        y: 60px;
+        width: 45px;
+        height: 270px;
+
+        pointer-event(event) => {
+            if event.button == PointerEventButton.left && event.kind == PointerEventKind.down {
+                root.active-edge = 2;
+                root.drag-dist = 0px;
+            }
+            if event.button == PointerEventButton.left && (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
+                if root.active-edge == 2 {
+                    if root.drag-dist >= 350px { // ~90% of 390px
+                        Navigation.trigger-back();
+                    }
+                    root.active-edge = 0;
+                    root.drag-dist = 0px;
+                }
+            }
+        }
+
+        moved => {
+            if self.enabled && self.pressed && root.active-edge == 2 {
+                let d = self.pressed-x - self.mouse-x;
+                root.drag-dist = Math.max(0px, Math.min(390px, d));
+            }
+        }
+    }
+
+    // Bottom Edge TouchArea (345px to 390px, middle horizontal region)
+    if root.enable-gestures: TouchArea {
+        x: 60px;
+        y: 345px;
+        width: 270px;
+        height: 45px;
+
+        pointer-event(event) => {
+            if event.button == PointerEventButton.left && event.kind == PointerEventKind.down {
+                root.active-edge = 3;
+                root.drag-dist = 0px;
+            }
+            if event.button == PointerEventButton.left && (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
+                if root.active-edge == 3 {
+                    if root.drag-dist >= 350px { // ~90% of 390px
+                        Navigation.trigger-quit();
+                    }
+                    root.active-edge = 0;
+                    root.drag-dist = 0px;
+                }
+            }
+        }
+
+        moved => {
+            if self.enabled && self.pressed && root.active-edge == 3 {
+                let d = self.pressed-y - self.mouse-y;
+                root.drag-dist = Math.max(0px, Math.min(390px, d));
+            }
+        }
+    }
 
     // Force Slint's idiosyncratic MCU font embedder to include reasonable default font and glyphs.
     TextBase { visible: false; width: 0px; height: 0px; text: "ABC"; }
