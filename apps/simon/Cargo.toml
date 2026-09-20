@@ -32,3 +32,6 @@ app-shell = { workspace = true }
 
 [build-dependencies]
 baker = { workspace = true }
+
+[lints]
+workspace = true

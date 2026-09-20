@@ -8,3 +8,6 @@ publish.workspace = true
 
 [dependencies]
 slint-build = { workspace = true }
+
+[lints]
+workspace = true

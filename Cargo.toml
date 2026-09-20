@@ -33,3 +33,11 @@ slint-build = {
 theme = { path = "crates/theme", default-features = false }
 app-shell = { path = "crates/app-shell", default-features = false }
 baker = { path = "crates/baker" }
+
+[workspace.lints.clippy]
+complexity = { level = "warn", priority = -1 }
+correctness = { level = "warn", priority = -1 }
+perf = { level = "warn", priority = -1 }
+
+# TODO: Enable later.
+# pedantic = { level = "warn", priority = -1 }

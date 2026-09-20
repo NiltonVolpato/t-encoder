@@ -55,3 +55,6 @@ slint = { workspace = true }
 
 [build-dependencies]
 baker = { workspace = true }
+
+[lints]
+workspace = true
