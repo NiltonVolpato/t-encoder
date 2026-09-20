@@ -4,18 +4,18 @@
 //! CO5300 AMOLED controller on QSPI for LilyGO T-Encoder Pro (390x390).
 //! Adapted from Slint's m5stack_stopwatch board support and t-encoder review.
 
-use core::cell::RefCell;
-use critical_section::Mutex;
+use super::board::DisplayPeripherals;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
-use embassy_sync::signal::Signal;
-use esp_hal::Blocking;
+use embassy_time::Timer;
+use esp_hal::Async;
 use esp_hal::delay::Delay;
 use esp_hal::dma::DmaTxBuf;
+use esp_hal::dma_tx_buffer;
 use esp_hal::gpio::{Level, Output, OutputConfig};
-use esp_hal::interrupt::{InterruptHandler, Priority};
-use esp_hal::peripherals::{GPIO3, GPIO4};
-use esp_hal::spi::master::{Address, Command, DataMode, SpiDma, SpiDmaTransfer, SpiInterrupt};
+use esp_hal::spi::Mode;
+use esp_hal::spi::master::{Address, Command, Config as SpiConfig, DataMode, Spi, SpiDma};
+use esp_hal::time::Rate;
 use slint::platform::software_renderer::{PremultipliedRgbaColor, Rgb565Pixel, TargetPixel};
 
 pub const DISPLAY_WIDTH: u16 = 390;
@@ -24,10 +24,6 @@ pub const RENDER_WIDTH: u16 = 195;
 pub const RENDER_HEIGHT: u16 = 195;
 pub const RENDER_STRIDE: usize = 200;
 pub const BUFFER_HEIGHT: usize = 196;
-
-const X_OFFSET: u16 = 0;
-const Y_OFFSET: u16 = 0;
-
 pub const TX_BUF_BYTES: usize = 16 * 1024;
 
 const QSPI_CONTROL_OPCODE: u16 = 0x02;
@@ -173,400 +169,76 @@ fn cycle_count() -> u32 {
 
 /// The SPI peripheral and the TX DMA buffer it writes from.
 pub struct Port {
-    pub spi: SpiDma<'static, Blocking>,
+    pub spi: SpiDma<'static, Async>,
     pub tx: DmaTxBuf,
 }
-
-struct ActiveTransfer {
-    job: FlushJob,
-    rect_idx: usize,
-    current_row: u16,
-    first_chunk_of_rect: bool,
-    t_start: u32,
-    transfer: SpiDmaTransfer<'static, Blocking, DmaTxBuf>,
+pub struct Session<'a> {
+    display: &'a mut Co5300,
+    port: Option<Port>,
+    first_chunk: bool,
 }
 
-enum TransferState {
-    Empty,
-    Idle(Port),
-    Active(ActiveTransfer),
-}
-
-static TRANSFER_STATE: Mutex<RefCell<TransferState>> =
-    Mutex::new(RefCell::new(TransferState::Empty));
-
-static TRANSFER_DONE_SIGNAL: Signal<CriticalSectionRawMutex, ()> = Signal::new();
-
-#[esp_hal::ram]
-fn raw_command(
-    spi: SpiDma<'static, Blocking>,
-    mut tx: DmaTxBuf,
-    command: u8,
-    parameters: &[u8],
-) -> Result<(SpiDma<'static, Blocking>, DmaTxBuf), (esp_hal::spi::Error, SpiDma<'static, Blocking>, DmaTxBuf)> {
-    let len = parameters.len();
-    if len > 0 {
-        tx.as_mut_slice()[..len].copy_from_slice(parameters);
-    }
-    let transfer = spi.half_duplex_write(
-        DataMode::Single,
-        Command::_8Bit(QSPI_CONTROL_OPCODE, DataMode::Single),
-        Address::_24Bit((command as u32) << 8, DataMode::Single),
-        0,
-        len,
-        tx,
-    );
-    match transfer {
-        Ok(t) => {
-            let (s, tx_back) = t.wait();
-            Ok((s, tx_back))
-        }
-        Err((e, s, tx_back)) => Err((e, s, tx_back)),
-    }
-}
-
-#[esp_hal::ram]
-fn raw_set_window(
-    spi: SpiDma<'static, Blocking>,
-    tx: DmaTxBuf,
-    x: u16,
-    y: u16,
-    width: u16,
-    height: u16,
-) -> Result<(SpiDma<'static, Blocking>, DmaTxBuf), (esp_hal::spi::Error, SpiDma<'static, Blocking>, DmaTxBuf)> {
-    let x_start = x + X_OFFSET;
-    let x_end = x_start + width - 1;
-    let (spi, tx) = raw_command(
-        spi,
-        tx,
-        0x2a,
-        &[
-            (x_start >> 8) as u8,
-            x_start as u8,
-            (x_end >> 8) as u8,
-            x_end as u8,
-        ],
-    )?;
-
-    let y_start = y + Y_OFFSET;
-    let y_end = y_start + height - 1;
-    raw_command(
-        spi,
-        tx,
-        0x2b,
-        &[
-            (y_start >> 8) as u8,
-            y_start as u8,
-            (y_end >> 8) as u8,
-            y_end as u8,
-        ],
-    )
-}
-
-#[esp_hal::ram]
-extern "C" fn spi_dma_isr() {
-    critical_section::with(|cs| {
-        let mut state_ref = TRANSFER_STATE.borrow(cs).borrow_mut();
-        let state = core::mem::replace(&mut *state_ref, TransferState::Empty);
-
-        match state {
-            TransferState::Active(mut active) => {
-                let (mut spi, mut tx) = active.transfer.wait();
-                spi.clear_interrupts(SpiInterrupt::TransferDone);
-
-                loop {
-                    let rect = &active.job.rects[active.rect_idx];
-                    let x = rect.x;
-                    let y = rect.y;
-                    let width = rect.width.min(RENDER_WIDTH.saturating_sub(x));
-                    let height = rect.height.min(RENDER_HEIGHT.saturating_sub(y));
-
-                    if active.current_row < y + height {
-                        let logical_row_bytes = width as usize * 8;
-                        let logical_rows_per_chunk = (TX_BUF_BYTES / logical_row_bytes).max(1);
-                        let remaining_rows = (y + height - active.current_row) as usize;
-                        let logical_rows = logical_rows_per_chunk.min(remaining_rows);
-
-                        let used = expand_2x2_chunk(
-                            &active.job.fb.0[..],
-                            RENDER_STRIDE,
-                            x as usize,
-                            active.current_row as usize,
-                            width as usize,
-                            logical_rows,
-                            tx.as_mut_slice(),
-                        );
-
-                        let address = if active.first_chunk_of_rect {
-                            CMD_RAMWR
-                        } else {
-                            CMD_RAMWRC
-                        } << 8;
-                        active.first_chunk_of_rect = false;
-                        active.current_row += logical_rows as u16;
-
-                        let transfer = match spi.half_duplex_write(
-                            DataMode::Quad,
-                            Command::_8Bit(QSPI_PIXEL_OPCODE, DataMode::Single),
-                            Address::_24Bit(address, DataMode::Single),
-                            0,
-                            used,
-                            tx,
-                        ) {
-                            Ok(t) => t,
-                            Err((_e, mut s, tx_back)) => {
-                                s.unlisten(SpiInterrupt::TransferDone);
-                                *state_ref = TransferState::Idle(Port { spi: s, tx: tx_back });
-                                TRANSFER_DONE_SIGNAL.signal(());
-                                return;
-                            }
-                        };
-
-                        active.transfer = transfer;
-                        *state_ref = TransferState::Active(active);
-                        return;
-                    }
-
-                    // Move to next rect
-                    active.rect_idx += 1;
-                    if active.rect_idx < active.job.rects.len() {
-                        let next_rect = &active.job.rects[active.rect_idx];
-                        let nx = next_rect.x;
-                        let ny = next_rect.y;
-                        let nw = next_rect.width.min(RENDER_WIDTH.saturating_sub(nx));
-                        let nh = next_rect.height.min(RENDER_HEIGHT.saturating_sub(ny));
-
-                        if nw == 0 || nh == 0 {
-                            continue;
-                        }
-
-                        // Delay needed to avoid CO5300 AMOLED write pointer glitching between rects
-                        Delay::new().delay_micros(10);
-
-                        spi.unlisten(SpiInterrupt::TransferDone);
-                        let (s, t) = match raw_set_window(spi, tx, nx * 2, ny * 2, nw * 2, nh * 2) {
-                            Ok(res) => res,
-                            Err((_e, s, t)) => {
-                                *state_ref = TransferState::Idle(Port { spi: s, tx: t });
-                                TRANSFER_DONE_SIGNAL.signal(());
-                                return;
-                            }
-                        };
-                        spi = s;
-                        tx = t;
-                        spi.listen(SpiInterrupt::TransferDone);
-
-                        active.current_row = ny;
-                        active.first_chunk_of_rect = true;
-                        continue;
-                    }
-
-                    // All rects completed!
-                    spi.unlisten(SpiInterrupt::TransferDone);
-                    let transfer_cycles = cycle_count().wrapping_sub(active.t_start);
-
-                    let _ = FLUSH_RETURN_CHANNEL.try_send(ReturnedBuffer {
-                        fb: active.job.fb,
-                        render_cycles: active.job.render_cycles,
-                        transfer_cycles,
-                        dirty_pixels: active.job.total_pixels,
-                        rect_count: active.job.rect_count,
-                    });
-
-                    *state_ref = TransferState::Idle(Port { spi, tx });
-                    TRANSFER_DONE_SIGNAL.signal(());
-                    return;
-                }
-            }
-            other => {
-                *state_ref = other;
-            }
-        }
-    });
-}
-
-async fn start_flush(job: FlushJob) {
-    let t_start = cycle_count();
-    TRANSFER_DONE_SIGNAL.reset();
-
-    // Check if there is at least one non-empty rect
-    let mut has_valid_rect = false;
-    for rect in &job.rects {
-        let x = rect.x;
-        let y = rect.y;
-        if x < RENDER_WIDTH && y < RENDER_HEIGHT && rect.width > 0 && rect.height > 0 {
-            has_valid_rect = true;
-            break;
+impl<'a> Session<'a> {
+    pub fn new(display: &'a mut Co5300, port: Port) -> Self {
+        Self {
+            display,
+            port: Some(port),
+            first_chunk: true,
         }
     }
 
-    if !has_valid_rect {
-        let _ = FLUSH_RETURN_CHANNEL
-            .send(ReturnedBuffer {
-                fb: job.fb,
-                render_cycles: job.render_cycles,
-                transfer_cycles: 0,
-                dirty_pixels: job.total_pixels,
-                rect_count: job.rect_count,
-            })
-            .await;
-        return;
+    pub fn buffer_mut(&mut self) -> &mut [u8] {
+        self.port
+            .as_mut()
+            .map(|p| p.tx.as_mut_slice())
+            .expect("transfer in progress")
     }
 
-    let mut pending_job = Some(job);
-    let mut started = false;
-    critical_section::with(|cs| {
-        let mut state = TRANSFER_STATE.borrow(cs).borrow_mut();
-        if let TransferState::Idle(mut port) =
-            core::mem::replace(&mut *state, TransferState::Empty)
-        {
-            let job_ref = pending_job.as_ref().unwrap();
-            for rect_idx in 0..job_ref.rects.len() {
-                let rect = &job_ref.rects[rect_idx];
-                let x = rect.x;
-                let y = rect.y;
-                if x >= RENDER_WIDTH || y >= RENDER_HEIGHT || rect.width == 0 || rect.height == 0 {
-                    continue;
-                }
-                let width = rect.width.min(RENDER_WIDTH - x);
-                let height = rect.height.min(RENDER_HEIGHT - y);
-
-                let phys_x = x * 2;
-                let phys_y = y * 2;
-                let phys_width = width * 2;
-                let phys_height = height * 2;
-
-                port.spi.unlisten(SpiInterrupt::TransferDone);
-                let (mut spi, mut tx) = match raw_set_window(
-                    port.spi,
-                    port.tx,
-                    phys_x,
-                    phys_y,
-                    phys_width,
-                    phys_height,
-                ) {
-                    Ok(res) => res,
-                    Err((_e, s, t)) => {
-                        *state = TransferState::Idle(Port { spi: s, tx: t });
-                        return;
-                    }
-                };
-
-                let logical_row_bytes = width as usize * 8;
-                let logical_rows_per_chunk = (TX_BUF_BYTES / logical_row_bytes).max(1);
-                let logical_rows = logical_rows_per_chunk.min(height as usize);
-
-                let used = expand_2x2_chunk(
-                    &job_ref.fb.0[..],
-                    RENDER_STRIDE,
-                    x as usize,
-                    y as usize,
-                    width as usize,
-                    logical_rows,
-                    tx.as_mut_slice(),
-                );
-
-                spi.listen(SpiInterrupt::TransferDone);
-                let transfer = match spi.half_duplex_write(
-                    DataMode::Quad,
-                    Command::_8Bit(QSPI_PIXEL_OPCODE, DataMode::Single),
-                    Address::_24Bit(CMD_RAMWR << 8, DataMode::Single),
-                    0,
-                    used,
-                    tx,
-                ) {
-                    Ok(t) => t,
-                    Err((_e, mut s, tx_back)) => {
-                        s.unlisten(SpiInterrupt::TransferDone);
-                        *state = TransferState::Idle(Port { spi: s, tx: tx_back });
-                        return;
-                    }
-                };
-
-                let active_job = pending_job.take().unwrap();
-                *state = TransferState::Active(ActiveTransfer {
-                    job: active_job,
-                    rect_idx,
-                    current_row: y + logical_rows as u16,
-                    first_chunk_of_rect: false,
-                    t_start,
-                    transfer,
-                });
-                started = true;
-                break;
-            }
+    pub async fn send(&mut self, used_bytes: usize) -> Result<(), esp_hal::spi::Error> {
+        let first = self.first_chunk;
+        self.first_chunk = false;
+        if !first {
+            // Delay needed to avoid CO5300 AMOLED write pointer glitching between rects
+            Delay::new().delay_micros(10);
         }
-    });
+        self.send_bytes(first, used_bytes).await
+    }
 
-    if started {
-        TRANSFER_DONE_SIGNAL.wait().await;
-    } else if let Some(job) = pending_job {
-        let _ = FLUSH_RETURN_CHANNEL
-            .send(ReturnedBuffer {
-                fb: job.fb,
-                render_cycles: job.render_cycles,
-                transfer_cycles: 0,
-                dirty_pixels: job.total_pixels,
-                rect_count: job.rect_count,
-            })
-            .await;
+    async fn send_bytes(
+        &mut self,
+        first: bool,
+        used_bytes: usize,
+    ) -> Result<(), esp_hal::spi::Error> {
+        let Port { spi, tx } = self.port.take().expect("DMA in progress");
+        let address: u32 = if first { CMD_RAMWR } else { CMD_RAMWRC } << 8;
+        let mut transfer = spi
+            .half_duplex_write(
+                DataMode::Quad,
+                Command::_8Bit(QSPI_PIXEL_OPCODE, DataMode::Single),
+                Address::_24Bit(address, DataMode::Single),
+                0,
+                used_bytes,
+                tx,
+            )
+            .map_err(|(e, spi, tx)| {
+                self.port = Some(Port { spi, tx });
+                e
+            })?;
+        transfer.wait_for_done().await;
+        // Sync `.wait()` shouldn't block after transfer is done.
+        let (spi, tx) = transfer.wait();
+        self.port = Some(Port { spi, tx });
+        Ok(())
     }
 }
 
-/// Background worker task that exclusively owns the CO5300 display and processes flush jobs.
-#[embassy_executor::task]
-pub async fn display_task(mut display: Co5300) {
-    critical_section::with(|cs| {
-        if let Some(port) = display.port.take() {
-            *TRANSFER_STATE.borrow(cs).borrow_mut() = TransferState::Idle(port);
-        }
-    });
-
-    loop {
-        match DISPLAY_COMMAND_CHANNEL.receive().await {
-            DisplayCommand::Flush(job) => {
-                start_flush(job).await;
-            }
-            DisplayCommand::SetBrightness(level) => {
-                critical_section::with(|cs| {
-                    let mut state = TRANSFER_STATE.borrow(cs).borrow_mut();
-                    if let TransferState::Idle(port) =
-                        core::mem::replace(&mut *state, TransferState::Empty)
-                    {
-                        match raw_command(port.spi, port.tx, 0x51, &[level]) {
-                            Ok((spi, tx)) => *state = TransferState::Idle(Port { spi, tx }),
-                            Err((_e, spi, tx)) => *state = TransferState::Idle(Port { spi, tx }),
-                        }
-                    }
-                });
-            }
-            DisplayCommand::DisplayOff => {
-                critical_section::with(|cs| {
-                    let mut state = TRANSFER_STATE.borrow(cs).borrow_mut();
-                    if let TransferState::Idle(port) =
-                        core::mem::replace(&mut *state, TransferState::Empty)
-                    {
-                        match raw_command(port.spi, port.tx, 0x28, &[]) {
-                            Ok((spi, tx)) => *state = TransferState::Idle(Port { spi, tx }),
-                            Err((_e, spi, tx)) => *state = TransferState::Idle(Port { spi, tx }),
-                        }
-                    }
-                });
-            }
-            DisplayCommand::DisplayOn => {
-                critical_section::with(|cs| {
-                    let mut state = TRANSFER_STATE.borrow(cs).borrow_mut();
-                    if let TransferState::Idle(port) =
-                        core::mem::replace(&mut *state, TransferState::Empty)
-                    {
-                        match raw_command(port.spi, port.tx, 0x29, &[]) {
-                            Ok((spi, tx)) => *state = TransferState::Idle(Port { spi, tx }),
-                            Err((_e, spi, tx)) => *state = TransferState::Idle(Port { spi, tx }),
-                        }
-                    }
-                });
-            }
-        }
+impl<'a> Drop for Session<'a> {
+    fn drop(&mut self) {
+        self.display.port = Some(
+            self.port
+                .take()
+                .expect("missing port. did the last transfer finish?"),
+        );
     }
 }
 
@@ -576,15 +248,29 @@ pub struct Co5300 {
     pub reset_pin: Output<'static>,
 }
 
+unsafe impl Send for Co5300 {}
+
 impl Co5300 {
-    pub fn new(
-        spi: SpiDma<'static, Blocking>,
-        tx: DmaTxBuf,
-        en: GPIO3<'static>,
-        rst: GPIO4<'static>,
-    ) -> Self {
-        let power_en = Output::new(en, Level::Low, OutputConfig::default());
-        let reset_pin = Output::new(rst, Level::High, OutputConfig::default());
+    pub fn new(p: DisplayPeripherals) -> Self {
+        let spi = Spi::new(
+            p.spi,
+            SpiConfig::default()
+                .with_frequency(Rate::from_mhz(80))
+                .with_mode(Mode::_0),
+        )
+        .unwrap()
+        .with_sio0(p.sio0)
+        .with_sio1(p.sio1)
+        .with_sio2(p.sio2)
+        .with_sio3(p.sio3)
+        .with_cs(p.cs)
+        .with_sck(p.sck)
+        .with_dma(p.dma_channel)
+        .into_async();
+
+        let tx = dma_tx_buffer!(TX_BUF_BYTES).unwrap();
+        let power_en = Output::new(p.power_en, Level::Low, OutputConfig::default());
+        let reset_pin = Output::new(p.reset_pin, Level::High, OutputConfig::default());
         Self {
             port: Some(Port { spi, tx }),
             power_en,
@@ -592,90 +278,117 @@ impl Co5300 {
         }
     }
 
-    pub fn command(&mut self, command: u8, parameters: &[u8]) -> Result<(), esp_hal::spi::Error> {
-        let Port { spi, tx } = self.port.take().unwrap();
-        match raw_command(spi, tx, command, parameters) {
-            Ok((spi, tx)) => {
-                self.port = Some(Port { spi, tx });
-                Ok(())
-            }
-            Err((e, spi, tx)) => {
-                self.port = Some(Port { spi, tx });
-                Err(e)
-            }
-        }
+    pub async fn start_session(
+        &mut self,
+        x: u16,
+        y: u16,
+        width: u16,
+        height: u16,
+    ) -> Result<Session<'_>, esp_hal::spi::Error> {
+        // Send window commands while Co5300 still owns the Port
+        self.set_window(x, y, width, height).await?;
+
+        Ok(self.port.take().map(|p| Session::new(self, p)).unwrap())
     }
 
-    pub fn power_on_and_reset(&mut self, delay: &mut Delay) {
+    pub async fn power_on_and_reset(&mut self) {
         // Enable panel power rail
         self.power_en.set_high();
-        delay.delay_millis(50);
+        Timer::after_millis(50).await;
 
         // Hardware reset sequence
         self.reset_pin.set_low();
-        delay.delay_millis(20);
+        Timer::after_millis(20).await;
         self.reset_pin.set_high();
-        delay.delay_millis(150);
+        Timer::after_millis(150).await;
     }
 
-    pub fn init(&mut self, delay: &mut Delay) -> Result<(), esp_hal::spi::Error> {
-        self.power_on_and_reset(delay);
+    pub async fn init(&mut self) -> Result<(), esp_hal::spi::Error> {
+        self.power_on_and_reset().await;
 
-        self.command(0x11, &[])?; // sleep out
-        delay.delay_millis(120);
-        self.command(0x34, &[0x00])?; // tearing effect off
-        self.command(0xfe, &[0x00])?; // switch to the user command page
-        self.command(0xc4, &[0x80])?; // QSPI mode
-        self.command(0x3a, &[0x55])?; // 16 bits per pixel (RGB565)
-        self.command(0x36, &[0x00])?; // memory access control
-        self.command(0x53, &[0x20])?; // brightness control on
-        self.command(0x63, &[0xff])?; // brightness in high brightness mode
-        self.command(0x29, &[])?; // display on
-        self.command(0x51, &[0xff])?; // brightness in normal mode
-        self.command(0x58, &[0x00])?; // high contrast mode off
-
-        self.port
-            .as_mut()
-            .unwrap()
-            .spi
-            .set_interrupt_handler(InterruptHandler::new(spi_dma_isr, Priority::Priority1));
+        self.command(0x11, &[]).await?; // sleep out
+        Timer::after_millis(120).await;
+        self.command(0x34, &[0x00]).await?; // tearing effect off
+        self.command(0xfe, &[0x00]).await?; // switch to the user command page
+        self.command(0xc4, &[0x80]).await?; // QSPI mode
+        self.command(0x3a, &[0x55]).await?; // 16 bits per pixel (RGB565)
+        self.command(0x36, &[0x00]).await?; // memory access control
+        self.command(0x53, &[0x20]).await?; // brightness control on
+        self.command(0x63, &[0xff]).await?; // brightness in high brightness mode
+        self.command(0x29, &[]).await?; // display on
+        self.command(0x51, &[0xff]).await?; // brightness in normal mode
+        self.command(0x58, &[0x00]).await?; // high contrast mode off
 
         Ok(())
     }
 
     /// Sets display brightness level (0..255).
-    pub fn set_brightness(&mut self, level: u8) -> Result<(), esp_hal::spi::Error> {
-        self.command(0x51, &[level])
+    pub async fn set_brightness(&mut self, level: u8) -> Result<(), esp_hal::spi::Error> {
+        self.command(0x51, &[level]).await
     }
 
     /// Turns the display on.
-    pub fn display_on(&mut self) -> Result<(), esp_hal::spi::Error> {
-        self.command(0x29, &[])
+    pub async fn display_on(&mut self) -> Result<(), esp_hal::spi::Error> {
+        self.command(0x29, &[]).await
     }
 
     /// Turns the display off.
-    pub fn display_off(&mut self) -> Result<(), esp_hal::spi::Error> {
-        self.command(0x28, &[])
+    pub async fn display_off(&mut self) -> Result<(), esp_hal::spi::Error> {
+        self.command(0x28, &[]).await
     }
 
-    pub fn set_window(
+    async fn command<'a>(
+        &'a mut self,
+        command: u8,
+        parameters: &[u8],
+    ) -> Result<(), esp_hal::spi::Error> {
+        let Port { spi, mut tx } = self.port.take().unwrap();
+        let len = parameters.len();
+        if len > 0 {
+            tx.as_mut_slice()[..len].copy_from_slice(parameters);
+        }
+        let mut transfer = spi
+            .half_duplex_write(
+                DataMode::Single,
+                Command::_8Bit(QSPI_CONTROL_OPCODE, DataMode::Single),
+                Address::_24Bit((command as u32) << 8, DataMode::Single),
+                0,
+                len,
+                tx,
+            )
+            .map_err(|(e, spi, tx)| {
+                self.port = Some(Port { spi, tx });
+                e
+            })?;
+        transfer.wait_for_done().await;
+        // Sync `.wait()` shouldn't block after transfer is done.
+        let (spi, tx) = transfer.wait();
+        self.port = Some(Port { spi, tx });
+        Ok(())
+    }
+
+    async fn set_window(
         &mut self,
         x: u16,
         y: u16,
         width: u16,
         height: u16,
     ) -> Result<(), esp_hal::spi::Error> {
-        let Port { spi, tx } = self.port.take().unwrap();
-        match raw_set_window(spi, tx, x, y, width, height) {
-            Ok((spi, tx)) => {
-                self.port = Some(Port { spi, tx });
-                Ok(())
-            }
-            Err((e, spi, tx)) => {
-                self.port = Some(Port { spi, tx });
-                Err(e)
-            }
-        }
+        const CASET: u8 = 0x2A;
+        const RASET: u8 = 0x2B;
+
+        let (x0, x1) = (x, x + width - 1);
+        let (y0, y1) = (y, y + height - 1);
+        self.command(
+            CASET,
+            &[(x0 >> 8) as u8, x0 as u8, (x1 >> 8) as u8, x1 as u8],
+        )
+        .await?;
+        self.command(
+            RASET,
+            &[(y0 >> 8) as u8, y0 as u8, (y1 >> 8) as u8, y1 as u8],
+        )
+        .await
     }
 }
 
@@ -811,14 +524,20 @@ pub fn expand_2x2_chunk(
                 };
 
                 tx_words[row0_start + c] = (e0_0.to_be() as u32) | ((e1_0.to_be() as u32) << 16);
-                tx_words[row0_start + c + 1] = (e0_1.to_be() as u32) | ((e1_1.to_be() as u32) << 16);
-                tx_words[row0_start + c + 2] = (e0_2.to_be() as u32) | ((e1_2.to_be() as u32) << 16);
-                tx_words[row0_start + c + 3] = (e0_3.to_be() as u32) | ((e1_3.to_be() as u32) << 16);
+                tx_words[row0_start + c + 1] =
+                    (e0_1.to_be() as u32) | ((e1_1.to_be() as u32) << 16);
+                tx_words[row0_start + c + 2] =
+                    (e0_2.to_be() as u32) | ((e1_2.to_be() as u32) << 16);
+                tx_words[row0_start + c + 3] =
+                    (e0_3.to_be() as u32) | ((e1_3.to_be() as u32) << 16);
 
                 tx_words[row1_start + c] = (e2_0.to_be() as u32) | ((e3_0.to_be() as u32) << 16);
-                tx_words[row1_start + c + 1] = (e2_1.to_be() as u32) | ((e3_1.to_be() as u32) << 16);
-                tx_words[row1_start + c + 2] = (e2_2.to_be() as u32) | ((e3_2.to_be() as u32) << 16);
-                tx_words[row1_start + c + 3] = (e2_3.to_be() as u32) | ((e3_3.to_be() as u32) << 16);
+                tx_words[row1_start + c + 1] =
+                    (e2_1.to_be() as u32) | ((e3_1.to_be() as u32) << 16);
+                tx_words[row1_start + c + 2] =
+                    (e2_2.to_be() as u32) | ((e3_2.to_be() as u32) << 16);
+                tx_words[row1_start + c + 3] =
+                    (e2_3.to_be() as u32) | ((e3_3.to_be() as u32) << 16);
 
                 c += 4;
             }
@@ -855,4 +574,86 @@ pub fn expand_2x2_chunk(
     }
 
     logical_rows * two_rows_bytes
+}
+
+/// Background worker task that exclusively owns the CO5300 display and processes flush jobs.
+#[embassy_executor::task]
+pub async fn display_task(mut display: Co5300) {
+    if let Err(e) = display.init().await {
+        defmt::error!(
+            "Failed to initialize CO5300 display: {:?}",
+            defmt::Debug2Format(&e)
+        );
+    } else {
+        defmt::info!("CO5300 display initialized successfully");
+    }
+
+    loop {
+        match DISPLAY_COMMAND_CHANNEL.receive().await {
+            DisplayCommand::Flush(job) => {
+                let t_start = cycle_count();
+                for rect in &job.rects {
+                    let phys_x = rect.x * 2;
+                    let phys_y = rect.y * 2;
+                    let phys_width = rect.width * 2;
+                    let phys_height = rect.height * 2;
+
+                    let mut session = match display
+                        .start_session(phys_x, phys_y, phys_width, phys_height)
+                        .await
+                    {
+                        Ok(s) => s,
+                        Err(e) => {
+                            defmt::error!(
+                                "Failed to start session: {:?}",
+                                defmt::Debug2Format(&e)
+                            );
+                            break;
+                        }
+                    };
+
+                    let logical_row_bytes = rect.width as usize * 8;
+                    let logical_rows_per_chunk = (TX_BUF_BYTES / logical_row_bytes).max(1);
+                    let mut row = rect.y;
+                    while row < rect.y + rect.height {
+                        let logical_rows =
+                            logical_rows_per_chunk.min((rect.y + rect.height - row) as usize);
+                        let used = expand_2x2_chunk(
+                            &job.fb.0[..],
+                            RENDER_STRIDE,
+                            rect.x as usize,
+                            row as usize,
+                            rect.width as usize,
+                            logical_rows,
+                            session.buffer_mut(),
+                        );
+                        if let Err(e) = session.send(used).await {
+                            defmt::error!("Session send error: {:?}", defmt::Debug2Format(&e));
+                            break;
+                        }
+                        row += logical_rows as u16;
+                    }
+                }
+                let transfer_cycles = cycle_count().wrapping_sub(t_start);
+                let _ = FLUSH_RETURN_CHANNEL
+                    .send(ReturnedBuffer {
+                        fb: job.fb,
+                        render_cycles: job.render_cycles,
+                        transfer_cycles,
+                        dirty_pixels: job.total_pixels,
+                        rect_count: job.rect_count,
+                    })
+                    .await;
+            }
+            DisplayCommand::SetBrightness(level) => {
+                let _ = display.set_brightness(level).await;
+            }
+            DisplayCommand::DisplayOff => {
+                let _ = display.display_off().await;
+            }
+            DisplayCommand::DisplayOn => {
+                let _ = display.display_on().await;
+            }
+        }
+    }
 }

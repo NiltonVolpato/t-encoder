@@ -3,6 +3,7 @@
 
 //! Board Support Package (BSP) for LilyGO T-Encoder Pro (ESP32-S3).
 
+pub mod board;
 pub mod buzzer;
 pub mod display;
 pub mod input;
@@ -12,6 +13,10 @@ pub mod rotary;
 pub mod simd;
 pub mod touch;
 
+pub use board::{
+    Board, BuzzerPeripherals, Core0Peripherals, Core1Peripherals, DisplayPeripherals,
+    EncoderPeripherals, SystemPeripherals, TouchPeripherals,
+};
 pub use buzzer::signal_feedback;
 pub use display::{
     BigEndianRgb565, Co5300, DISPLAY_HEIGHT, DISPLAY_WIDTH, RENDER_HEIGHT, RENDER_WIDTH,
@@ -22,12 +27,8 @@ pub use platform::{EspPlatform, WindowHolder, run_event_loop};
 pub use rotary::{EncoderHw, button_task, encoder_task};
 pub use touch::{Chsc5816, touch_task};
 
-use esp_hal::delay::Delay;
-use esp_hal::dma_tx_buffer;
 use esp_hal::gpio::{Input, InputConfig, Pull};
 use esp_hal::i2c::master::{BusTimeout, Config as I2cConfig, I2c};
-use esp_hal::spi::Mode;
-use esp_hal::spi::master::{Config as SpiConfig, Spi};
 use esp_hal::time::Rate;
 
 pub struct Bsp {
@@ -36,74 +37,28 @@ pub struct Bsp {
     pub touch: Option<Chsc5816>,
     pub encoder_hw: EncoderHw,
     pub button: Input<'static>,
-}
-
-/// Hardware peripherals required to initialize the Board Support Package (display, touch, rotary).
-pub struct BspPeripherals {
-    pub spi2: esp_hal::peripherals::SPI2<'static>,
-    pub dma_ch0: esp_hal::peripherals::DMA_CH0<'static>,
-    pub i2c0: esp_hal::peripherals::I2C0<'static>,
-    pub pcnt: esp_hal::peripherals::PCNT<'static>,
-    pub gpio0: esp_hal::peripherals::GPIO0<'static>,
-    pub gpio1: esp_hal::peripherals::GPIO1<'static>,
-    pub gpio2: esp_hal::peripherals::GPIO2<'static>,
-    pub gpio3: esp_hal::peripherals::GPIO3<'static>,
-    pub gpio4: esp_hal::peripherals::GPIO4<'static>,
-    pub gpio5: esp_hal::peripherals::GPIO5<'static>,
-    pub gpio6: esp_hal::peripherals::GPIO6<'static>,
-    pub gpio7: esp_hal::peripherals::GPIO7<'static>,
-    pub gpio8: esp_hal::peripherals::GPIO8<'static>,
-    pub gpio9: esp_hal::peripherals::GPIO9<'static>,
-    pub gpio10: esp_hal::peripherals::GPIO10<'static>,
-    pub gpio11: esp_hal::peripherals::GPIO11<'static>,
-    pub gpio12: esp_hal::peripherals::GPIO12<'static>,
-    pub gpio13: esp_hal::peripherals::GPIO13<'static>,
-    pub gpio14: esp_hal::peripherals::GPIO14<'static>,
-    pub timg1: esp_hal::peripherals::TIMG1<'static>,
+    pub buzzer: BuzzerPeripherals,
 }
 
 impl Bsp {
-    /// Initializes display, touch, rotary, and registers the Slint platform.
-    pub fn init(peripherals: BspPeripherals) -> Self {
-        let mut delay = Delay::new();
-
-        // 1. Initialize SPI2 with QSPI mode and DMA for CO5300 AMOLED
-        let spi = Spi::new(
-            peripherals.spi2,
-            SpiConfig::default()
-                .with_frequency(Rate::from_mhz(80))
-                .with_mode(Mode::_0),
-        )
-        .unwrap()
-        .with_sio0(peripherals.gpio11)
-        .with_sio1(peripherals.gpio13)
-        .with_sio2(peripherals.gpio7)
-        .with_sio3(peripherals.gpio14)
-        .with_cs(peripherals.gpio10)
-        .with_sck(peripherals.gpio12)
-        .with_dma(peripherals.dma_ch0);
-
-        let tx = dma_tx_buffer!(TX_BUF_BYTES).unwrap();
-        let mut display = Co5300::new(spi, tx, peripherals.gpio3, peripherals.gpio4);
-        if let Err(e) = display.init(&mut delay) {
-            defmt::error!("Failed to initialize CO5300 display: {:?}", defmt::Debug2Format(&e));
-        } else {
-            defmt::info!("CO5300 display initialized successfully");
-        }
+    /// Initializes display, touch, rotary, profiler, and registers the Slint platform.
+    pub fn init(core0: Core0Peripherals, display_peripherals: DisplayPeripherals) -> Self {
+        // 1. Initialize display
+        let display = Co5300::new(display_peripherals);
 
         // 2. Initialize async I2C0 for CHSC5816 touch controller
         let touch = match I2c::new(
-            peripherals.i2c0,
+            core0.touch.i2c,
             I2cConfig::default()
                 .with_frequency(Rate::from_khz(400))
                 .with_timeout(BusTimeout::Maximum),
         ) {
             Ok(i2c) => {
                 let i2c = i2c
-                    .with_sda(peripherals.gpio5)
-                    .with_scl(peripherals.gpio6)
+                    .with_sda(core0.touch.sda)
+                    .with_scl(core0.touch.scl)
                     .into_async();
-                let touch_dev = Chsc5816::new(i2c, peripherals.gpio9, peripherals.gpio8);
+                let touch_dev = Chsc5816::new(i2c, core0.touch.int, core0.touch.rst);
                 Some(touch_dev)
             }
             Err(e) => {
@@ -113,12 +68,12 @@ impl Bsp {
         };
 
         // 3. Initialize PCNT quadrature rotary encoder and button
-        let encoder_hw = EncoderHw::new(
-            peripherals.pcnt,
-            peripherals.gpio1,
-            peripherals.gpio2,
+        let encoder_hw =
+            EncoderHw::new(core0.encoder.pcnt, core0.encoder.pin_a, core0.encoder.pin_b);
+        let button = Input::new(
+            core0.encoder.button,
+            InputConfig::default().with_pull(Pull::Up),
         );
-        let button = Input::new(peripherals.gpio0, InputConfig::default().with_pull(Pull::Up));
 
         // 4. Set Slint platform
         let (platform, window) = EspPlatform::new();
@@ -126,7 +81,7 @@ impl Bsp {
             .expect("Slint platform already set");
 
         // 5. Initialize statistical sampling profiler
-        profiler::init(peripherals.timg1);
+        profiler::init(core0.profiler_timer);
 
         // 6. Enable PIE SIMD coprocessor
         simd::enable_pie();
@@ -137,6 +92,7 @@ impl Bsp {
             touch,
             encoder_hw,
             button,
+            buzzer: core0.buzzer,
         }
     }
 }
