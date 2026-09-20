@@ -33,7 +33,6 @@ use esp_hal::time::Rate;
 
 pub struct Bsp {
     pub window: WindowHolder,
-    pub display: Co5300,
     pub touch: Option<Chsc5816>,
     pub encoder_hw: EncoderHw,
     pub button: Input<'static>,
@@ -41,12 +40,9 @@ pub struct Bsp {
 }
 
 impl Bsp {
-    /// Initializes display, touch, rotary, profiler, and registers the Slint platform.
-    pub fn init(core0: Core0Peripherals, display_peripherals: DisplayPeripherals) -> Self {
-        // 1. Initialize display
-        let display = Co5300::new(display_peripherals);
-
-        // 2. Initialize async I2C0 for CHSC5816 touch controller
+    /// Initializes touch, rotary, profiler, and registers the Slint platform on Core 0.
+    pub fn init(core0: Core0Peripherals) -> Self {
+        // 1. Initialize async I2C0 for CHSC5816 touch controller
         let touch = match I2c::new(
             core0.touch.i2c,
             I2cConfig::default()
@@ -67,7 +63,7 @@ impl Bsp {
             }
         };
 
-        // 3. Initialize PCNT quadrature rotary encoder and button
+        // 2. Initialize PCNT quadrature rotary encoder and button
         let encoder_hw =
             EncoderHw::new(core0.encoder.pcnt, core0.encoder.pin_a, core0.encoder.pin_b);
         let button = Input::new(
@@ -75,20 +71,19 @@ impl Bsp {
             InputConfig::default().with_pull(Pull::Up),
         );
 
-        // 4. Set Slint platform
+        // 3. Set Slint platform
         let (platform, window) = EspPlatform::new();
         slint::platform::set_platform(alloc::boxed::Box::new(platform))
             .expect("Slint platform already set");
 
-        // 5. Initialize statistical sampling profiler
+        // 4. Initialize statistical sampling profiler
         profiler::init(core0.profiler_timer);
 
-        // 6. Enable PIE SIMD coprocessor
+        // 5. Enable PIE SIMD coprocessor
         simd::enable_pie();
 
         Self {
             window,
-            display,
             touch,
             encoder_hw,
             button,
