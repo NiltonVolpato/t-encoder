@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { AppWindow, Theme, CircularScreen, AppInfo, TextBase, TextLgBold, TextDisplayBold } from "@theme";
+import { TextBaseBold } from "../../../crates/theme/ui/theme.slint";
 
 export global ClockInfo {
     out property <AppInfo> info: {
@@ -135,7 +136,7 @@ export component ClockApp inherits AppWindow {
             }
 
             // Focus hint for rotary encoder
-            if dial-focus.has-focus: TextBase {
+            if dial-focus.has-focus: TextBaseBold {
                 text: "• ROTATE TO ADJUST •";
                 color: Theme.text-muted;
                 horizontal-alignment: center;

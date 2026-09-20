@@ -11,11 +11,13 @@ pub mod feedback;
 pub mod lifecycle;
 pub mod perf;
 pub mod power;
+pub mod profile;
 
 pub use feedback::{Feedback, clear as clear_feedback, signal as signal_feedback, try_receive as try_receive_feedback};
 pub use lifecycle::{AppFactory, AppInfo, AppShell, ShellContext};
 pub use perf::{FrameCycles, PerfSummary, PerfTracker};
 pub use power::{PowerTransition, ScreenPowerManager, ScreenPowerState, WakeAction};
+pub use profile::{DEFAULT_TABLE_CAPACITY, PcSample, SampleTable};
 
 #[cfg(test)]
 mod tests {

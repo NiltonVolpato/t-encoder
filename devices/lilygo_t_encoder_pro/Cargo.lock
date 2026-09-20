@@ -3651,6 +3651,7 @@ dependencies = [
  "app-launcher",
  "app-shell",
  "bt-hci",
+ "cc",
  "critical-section",
  "defmt 1.1.1",
  "embassy-executor",

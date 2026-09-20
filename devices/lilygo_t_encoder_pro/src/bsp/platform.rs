@@ -9,12 +9,14 @@ use embassy_futures::select::{Either, select};
 use embassy_time::{Duration, Timer};
 use esp_hal::delay::Delay;
 use esp_hal::time::Instant;
-use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType};
+use slint::platform::software_renderer::{
+    MinimalSoftwareWindow, RepaintBufferType,
+};
 use slint::platform::{Key, PointerEventButton, WindowAdapter, WindowEvent};
-use slint::{PhysicalPosition, PhysicalSize};
+use slint::PhysicalSize;
 
 use super::buzzer::{Feedback, signal_feedback};
-use super::display::{BigEndianRgb565, Co5300, DISPLAY_HEIGHT, DISPLAY_WIDTH};
+use super::display::{BUFFER_HEIGHT, Co5300, NativeRgb565, RENDER_HEIGHT, RENDER_STRIDE, RENDER_WIDTH};
 use super::input::{INPUT_EVENTS, InputEvent};
 use super::touch::TouchEvent;
 
@@ -41,9 +43,10 @@ impl EspPlatform {
 impl slint::platform::Platform for EspPlatform {
     fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, slint::PlatformError> {
         let window = MinimalSoftwareWindow::new(RepaintBufferType::ReusedBuffer);
+        window.dispatch_event(WindowEvent::ScaleFactorChanged { scale_factor: 0.5 });
         window.set_size(PhysicalSize::new(
-            DISPLAY_WIDTH as u32,
-            DISPLAY_HEIGHT as u32,
+            RENDER_WIDTH as u32,
+            RENDER_HEIGHT as u32,
         ));
         self.window.replace(Some(window.clone()));
         Ok(window)
@@ -99,8 +102,7 @@ fn dispatch_input_event(window: &Rc<MinimalSoftwareWindow>, event: InputEvent) {
             });
         }
         InputEvent::Touch(point) => {
-            let position = PhysicalPosition::new(point.x as i32, point.y as i32)
-                .to_logical(window.scale_factor());
+            let position = slint::LogicalPosition::new(point.x as f32, point.y as f32);
             match point.event {
                 TouchEvent::Down => {
                     let _ = window.dispatch_event_with_result(WindowEvent::PointerPressed {
@@ -151,9 +153,16 @@ fn cycle_count() -> u32 {
 pub async fn run_event_loop(window_holder: WindowHolder, mut display: Co5300) -> ! {
     let delay = Delay::new();
 
-    // Framebuffer in external PSRAM (390 * 390 * 2 bytes = ~297 KiB)
-    let mut frame_buffer =
-        alloc::vec![BigEndianRgb565(0); DISPLAY_WIDTH as usize * DISPLAY_HEIGHT as usize];
+    // Framebuffer in fast internal SRAM (200 * 196 * 2 bytes = ~78.4 KiB)
+    #[repr(align(16))]
+    struct FrameBuffer([NativeRgb565; RENDER_STRIDE * BUFFER_HEIGHT]);
+
+    static FRAME_BUFFER: static_cell::ConstStaticCell<FrameBuffer> =
+        static_cell::ConstStaticCell::new(FrameBuffer(
+            [NativeRgb565::new(0); RENDER_STRIDE * BUFFER_HEIGHT],
+        ));
+
+    let frame_buffer = &mut FRAME_BUFFER.take().0;
 
     let mut pending_event: Option<InputEvent> = None;
     let mut power_manager = app_shell::ScreenPowerManager::new();
@@ -164,6 +173,8 @@ pub async fn run_event_loop(window_holder: WindowHolder, mut display: Co5300) ->
     defmt::info!("Entering interrupt-driven Slint MCU event loop with power management");
 
     loop {
+        super::profiler::poll();
+
         // 1. Advance Slint animations and timers first thing in the loop
         slint::platform::update_timers_and_animations();
 
@@ -192,6 +203,7 @@ pub async fn run_event_loop(window_holder: WindowHolder, mut display: Co5300) ->
             .take()
             .or_else(|| INPUT_EVENTS.try_receive().ok());
         while let Some(current_event) = event {
+            super::profiler::on_input_event();
             let (wake_action, transition) = power_manager.handle_input();
             match transition {
                 app_shell::PowerTransition::WakeFromSleep(level) => {
@@ -221,7 +233,9 @@ pub async fn run_event_loop(window_holder: WindowHolder, mut display: Co5300) ->
         if !power_manager.is_sleeping() {
             window.draw_if_needed(|renderer| {
                 let r_start = cycle_count();
-                let region = renderer.render(&mut frame_buffer, DISPLAY_WIDTH as usize);
+                super::profiler::start_render();
+                let region = renderer.render(frame_buffer, RENDER_STRIDE);
+                super::profiler::stop_render();
                 let render_cycles = cycle_count().wrapping_sub(r_start);
 
                 let t_start = cycle_count();
@@ -229,18 +243,31 @@ pub async fn run_event_loop(window_holder: WindowHolder, mut display: Co5300) ->
                 let mut rect_count = 0u16;
                 let mut first = true;
                 for (origin, size) in region.iter_box() {
-                    total_pixels += size.width as u32 * size.height as u32;
+                    let raw_x = origin.x.max(0) as u16;
+                    let raw_y = origin.y.max(0) as u16;
+
+                    // Inflate dirty rect by 1 logical pixel to refresh bilinear-interpolated
+                    // boundary subpixels on the display and eliminate ghost trails.
+                    let x = raw_x.saturating_sub(1);
+                    let y = raw_y.saturating_sub(1);
+                    let right = (raw_x + size.width as u16 + 1).min(RENDER_WIDTH);
+                    let bottom = (raw_y + size.height as u16 + 1).min(RENDER_HEIGHT);
+
+                    let width = right.saturating_sub(x);
+                    let height = bottom.saturating_sub(y);
+
+                    total_pixels += (width as u32 * 2) * (height as u32 * 2);
                     rect_count += 1;
                     if !first {
                         delay.delay_micros(10); // Delay needed to avoid glitching.
                     }
                     let _ = display.write_region(
-                        &frame_buffer,
-                        DISPLAY_WIDTH as usize,
-                        origin.x.max(0) as u16,
-                        origin.y.max(0) as u16,
-                        size.width as u16,
-                        size.height as u16,
+                        frame_buffer,
+                        RENDER_STRIDE,
+                        x,
+                        y,
+                        width,
+                        height,
                     );
                     first = false;
                 }

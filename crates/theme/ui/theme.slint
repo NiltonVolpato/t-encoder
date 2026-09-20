@@ -159,35 +159,23 @@ export component AppWindow inherits Window {
 
     @children
 
-    // Gesture feedback: atmospheric white gradients expanding from the trailing edge
-    // 1. Left edge gradient expanding towards the right
-    Rectangle {
-        x: 0px;
-        y: 0px;
-        width: root.active-edge == 1 ? root.drag-dist : 0px;
-        height: 390px;
-        background: @linear-gradient(90deg, rgba(255, 255, 255, 0.35) 0%, transparent 100%);
-        visible: root.active-edge == 1 && root.drag-dist > 0px;
-    }
+    // Gesture feedback: circle arrow indicator (similar to Android back/home gesture)
+    Image {
+        source: root.active-edge == 1 ? @image-url("../assets/arrow-circle-right.svg") :
+                root.active-edge == 2 ? @image-url("../assets/arrow-circle-left.svg") :
+                @image-url("../assets/arrow-circle-up.svg");
+        width: 45px;
+        height: 45px;
+        image-fit: contain;
 
-    // 2. Right edge gradient expanding towards the left
-    Rectangle {
-        x: root.active-edge == 2 ? 390px - root.drag-dist : 0px;
-        y: 0px;
-        width: root.active-edge == 2 ? root.drag-dist : 0px;
-        height: 390px;
-        background: @linear-gradient(270deg, rgba(255, 255, 255, 0.35) 0%, transparent 100%);
-        visible: root.active-edge == 2 && root.drag-dist > 0px;
-    }
+        x: root.active-edge == 1 ? 16px + Math.min(24px, root.drag-dist * 0.15) :
+           root.active-edge == 2 ? 390px - 45px - 16px - Math.min(24px, root.drag-dist * 0.15) :
+           (390px - 45px) / 2;
 
-    // 3. Bottom edge gradient expanding towards the top
-    Rectangle {
-        x: 0px;
-        y: root.active-edge == 3 ? 390px - root.drag-dist : 0px;
-        width: 390px;
-        height: root.active-edge == 3 ? root.drag-dist : 0px;
-        background: @linear-gradient(0deg, rgba(255, 255, 255, 0.35) 0%, transparent 100%);
-        visible: root.active-edge == 3 && root.drag-dist > 0px;
+        y: root.active-edge == 3 ? 390px - 45px - 16px - Math.min(24px, root.drag-dist * 0.15) :
+           (390px - 45px) / 2;
+
+        visible: root.active-edge != 0 && root.drag-dist > 15px;
     }
 
     // Left Edge TouchArea (0px to 45px, middle vertical region)

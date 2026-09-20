@@ -7,11 +7,16 @@ pub mod buzzer;
 pub mod display;
 pub mod input;
 pub mod platform;
+pub mod profiler;
 pub mod rotary;
+pub mod simd;
 pub mod touch;
 
 pub use buzzer::signal_feedback;
-pub use display::{BigEndianRgb565, Co5300, TX_BUF_BYTES};
+pub use display::{
+    BigEndianRgb565, Co5300, DISPLAY_HEIGHT, DISPLAY_WIDTH, RENDER_HEIGHT, RENDER_WIDTH,
+    TX_BUF_BYTES,
+};
 pub use input::{INPUT_EVENTS, InputEvent, send_input_event};
 pub use platform::{EspPlatform, WindowHolder, run_event_loop};
 pub use rotary::{EncoderHw, button_task, encoder_task};
@@ -54,6 +59,7 @@ pub struct BspPeripherals {
     pub gpio12: esp_hal::peripherals::GPIO12<'static>,
     pub gpio13: esp_hal::peripherals::GPIO13<'static>,
     pub gpio14: esp_hal::peripherals::GPIO14<'static>,
+    pub timg1: esp_hal::peripherals::TIMG1<'static>,
 }
 
 impl Bsp {
@@ -118,6 +124,12 @@ impl Bsp {
         let (platform, window) = EspPlatform::new();
         slint::platform::set_platform(alloc::boxed::Box::new(platform))
             .expect("Slint platform already set");
+
+        // 5. Initialize statistical sampling profiler
+        profiler::init(peripherals.timg1);
+
+        // 6. Enable PIE SIMD coprocessor
+        simd::enable_pie();
 
         Self {
             window,

@@ -38,7 +38,7 @@ async fn main(spawner: Spawner) -> ! {
 
     // 2. Register internal DRAM heaps (DMA buffers & fast RAM)
     esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: 73744);
-    esp_alloc::heap_allocator!(size: 128 * 1024);
+    esp_alloc::heap_allocator!(size: 64 * 1024);
 
     // 3. Initialize RTOS & Embassy tick driver
     let timg0 = TimerGroup::new(peripherals.TIMG0);
@@ -68,6 +68,7 @@ async fn main(spawner: Spawner) -> ! {
         gpio12: peripherals.GPIO12,
         gpio13: peripherals.GPIO13,
         gpio14: peripherals.GPIO14,
+        timg1: peripherals.TIMG1,
     });
 
     // 5. Spawn background buzzer & haptics task on GPIO17
