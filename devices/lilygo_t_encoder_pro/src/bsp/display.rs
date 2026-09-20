@@ -131,7 +131,7 @@ pub struct DirtyRect {
 /// A display flush request containing the loaned framebuffer and dirty regions.
 pub struct FlushJob {
     pub fb: Framebuffer,
-    pub rects: heapless::Vec<DirtyRect, 16>,
+    pub rects: heapless::Vec<DirtyRect, 3>,
     pub render_cycles: u32,
     pub total_pixels: u32,
     pub rect_count: u16,
@@ -276,12 +276,10 @@ extern "C" fn spi_dma_isr() {
 
                 loop {
                     let rect = &active.job.rects[active.rect_idx];
-                    let x = rect.x.saturating_sub(1);
-                    let y = rect.y.saturating_sub(1);
-                    let right = (rect.x + rect.width + 1).min(RENDER_WIDTH);
-                    let bottom = (rect.y + rect.height + 1).min(RENDER_HEIGHT);
-                    let width = right.saturating_sub(x);
-                    let height = bottom.saturating_sub(y);
+                    let x = rect.x;
+                    let y = rect.y;
+                    let width = rect.width.min(RENDER_WIDTH.saturating_sub(x));
+                    let height = rect.height.min(RENDER_HEIGHT.saturating_sub(y));
 
                     if active.current_row < y + height {
                         let logical_row_bytes = width as usize * 8;
@@ -333,16 +331,17 @@ extern "C" fn spi_dma_isr() {
                     active.rect_idx += 1;
                     if active.rect_idx < active.job.rects.len() {
                         let next_rect = &active.job.rects[active.rect_idx];
-                        let nx = next_rect.x.saturating_sub(1);
-                        let ny = next_rect.y.saturating_sub(1);
-                        let nright = (next_rect.x + next_rect.width + 1).min(RENDER_WIDTH);
-                        let nbottom = (next_rect.y + next_rect.height + 1).min(RENDER_HEIGHT);
-                        let nw = nright.saturating_sub(nx);
-                        let nh = nbottom.saturating_sub(ny);
+                        let nx = next_rect.x;
+                        let ny = next_rect.y;
+                        let nw = next_rect.width.min(RENDER_WIDTH.saturating_sub(nx));
+                        let nh = next_rect.height.min(RENDER_HEIGHT.saturating_sub(ny));
 
                         if nw == 0 || nh == 0 {
                             continue;
                         }
+
+                        // Delay needed to avoid CO5300 AMOLED write pointer glitching between rects
+                        Delay::new().delay_micros(10);
 
                         spi.unlisten(SpiInterrupt::TransferDone);
                         let (s, t) = match raw_set_window(spi, tx, nx * 2, ny * 2, nw * 2, nh * 2) {
@@ -393,11 +392,9 @@ async fn start_flush(job: FlushJob) {
     // Check if there is at least one non-empty rect
     let mut has_valid_rect = false;
     for rect in &job.rects {
-        let x = rect.x.saturating_sub(1);
-        let y = rect.y.saturating_sub(1);
-        let right = (rect.x + rect.width + 1).min(RENDER_WIDTH);
-        let bottom = (rect.y + rect.height + 1).min(RENDER_HEIGHT);
-        if right > x && bottom > y {
+        let x = rect.x;
+        let y = rect.y;
+        if x < RENDER_WIDTH && y < RENDER_HEIGHT && rect.width > 0 && rect.height > 0 {
             has_valid_rect = true;
             break;
         }
@@ -426,15 +423,13 @@ async fn start_flush(job: FlushJob) {
             let job_ref = pending_job.as_ref().unwrap();
             for rect_idx in 0..job_ref.rects.len() {
                 let rect = &job_ref.rects[rect_idx];
-                let x = rect.x.saturating_sub(1);
-                let y = rect.y.saturating_sub(1);
-                let right = (rect.x + rect.width + 1).min(RENDER_WIDTH);
-                let bottom = (rect.y + rect.height + 1).min(RENDER_HEIGHT);
-                let width = right.saturating_sub(x);
-                let height = bottom.saturating_sub(y);
-                if width == 0 || height == 0 {
+                let x = rect.x;
+                let y = rect.y;
+                if x >= RENDER_WIDTH || y >= RENDER_HEIGHT || rect.width == 0 || rect.height == 0 {
                     continue;
                 }
+                let width = rect.width.min(RENDER_WIDTH - x);
+                let height = rect.height.min(RENDER_HEIGHT - y);
 
                 let phys_x = x * 2;
                 let phys_y = y * 2;

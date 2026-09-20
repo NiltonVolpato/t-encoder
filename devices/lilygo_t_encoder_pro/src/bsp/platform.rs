@@ -272,7 +272,7 @@ pub async fn run_event_loop(window_holder: WindowHolder) -> ! {
                 });
             }
 
-            let mut dirty_rects: heapless::Vec<DirtyRect, 16> = heapless::Vec::new();
+            let mut dirty_rects: heapless::Vec<DirtyRect, 3> = heapless::Vec::new();
             let mut total_pixels = 0u32;
             let mut rect_count = 0u16;
             let mut render_cycles = 0u32;
@@ -293,32 +293,12 @@ pub async fn run_event_loop(window_holder: WindowHolder) -> ! {
                     total_pixels += (width as u32 * 2) * (height as u32 * 2);
                     rect_count += 1;
 
-                    let rect = DirtyRect {
+                    let _ = dirty_rects.push(DirtyRect {
                         x: raw_x,
                         y: raw_y,
                         width,
                         height,
-                    };
-                    if dirty_rects.push(rect).is_err() {
-                        // Coalesce into bounding box if capacity reached
-                        let mut min_x = rect.x;
-                        let mut min_y = rect.y;
-                        let mut max_x = rect.x + rect.width;
-                        let mut max_y = rect.y + rect.height;
-                        for r in &dirty_rects {
-                            min_x = min_x.min(r.x);
-                            min_y = min_y.min(r.y);
-                            max_x = max_x.max(r.x + r.width);
-                            max_y = max_y.max(r.y + r.height);
-                        }
-                        dirty_rects.clear();
-                        let _ = dirty_rects.push(DirtyRect {
-                            x: min_x,
-                            y: min_y,
-                            width: max_x - min_x,
-                            height: max_y - min_y,
-                        });
-                    }
+                    });
                 }
             });
 
