@@ -4,6 +4,8 @@
 //! CO5300 AMOLED controller on QSPI for LilyGO T-Encoder Pro (390x390).
 //! Adapted from Slint's m5stack_stopwatch board support and t-encoder review.
 
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use embassy_sync::channel::Channel;
 use esp_hal::Blocking;
 use esp_hal::delay::Delay;
 use esp_hal::dma::DmaTxBuf;
@@ -101,6 +103,126 @@ impl TargetPixel for NativeRgb565 {
     #[inline(always)]
     fn from_rgb(red: u8, green: u8, blue: u8) -> Self {
         Self(Rgb565Pixel::from_rgb(red, green, blue))
+    }
+}
+
+/// A borrowed framebuffer allocation from internal SRAM for baton passing.
+pub struct Framebuffer(pub &'static mut [NativeRgb565; RENDER_STRIDE * BUFFER_HEIGHT]);
+
+impl core::fmt::Debug for Framebuffer {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "Framebuffer({:p})", self.0.as_ptr())
+    }
+}
+
+/// A dirty rectangle in rendered half-resolution coordinates.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, defmt::Format)]
+pub struct DirtyRect {
+    pub x: u16,
+    pub y: u16,
+    pub width: u16,
+    pub height: u16,
+}
+
+/// A display flush request containing the loaned framebuffer and dirty regions.
+pub struct FlushJob {
+    pub fb: Framebuffer,
+    pub rects: heapless::Vec<DirtyRect, 16>,
+    pub render_cycles: u32,
+    pub total_pixels: u32,
+    pub rect_count: u16,
+}
+
+/// Commands sent to the dedicated display worker.
+pub enum DisplayCommand {
+    Flush(FlushJob),
+    SetBrightness(u8),
+    DisplayOff,
+    DisplayOn,
+}
+
+/// A completed frame buffer returned from the display worker with timing metrics.
+pub struct ReturnedBuffer {
+    pub fb: Framebuffer,
+    pub render_cycles: u32,
+    pub transfer_cycles: u32,
+    pub dirty_pixels: u32,
+    pub rect_count: u16,
+}
+
+pub static DISPLAY_COMMAND_CHANNEL: Channel<CriticalSectionRawMutex, DisplayCommand, 4> =
+    Channel::new();
+pub static FLUSH_RETURN_CHANNEL: Channel<CriticalSectionRawMutex, ReturnedBuffer, 2> =
+    Channel::new();
+
+#[inline(always)]
+fn cycle_count() -> u32 {
+    #[cfg(target_arch = "xtensa")]
+    {
+        xtensa_lx::timer::get_cycle_count()
+    }
+    #[cfg(not(target_arch = "xtensa"))]
+    {
+        0
+    }
+}
+
+/// Background worker task that exclusively owns the CO5300 display and processes flush jobs.
+#[embassy_executor::task]
+pub async fn display_task(mut display: Co5300) {
+    let delay = Delay::new();
+    loop {
+        match DISPLAY_COMMAND_CHANNEL.receive().await {
+            DisplayCommand::Flush(job) => {
+                let t_start = cycle_count();
+                let mut first = true;
+                for rect in &job.rects {
+                    let x = rect.x.saturating_sub(1);
+                    let y = rect.y.saturating_sub(1);
+                    let right = (rect.x + rect.width + 1).min(RENDER_WIDTH);
+                    let bottom = (rect.y + rect.height + 1).min(RENDER_HEIGHT);
+                    let width = right.saturating_sub(x);
+                    let height = bottom.saturating_sub(y);
+
+                    if width == 0 || height == 0 {
+                        continue;
+                    }
+
+                    if !first {
+                        delay.delay_micros(10);
+                    }
+                    let _ = display.write_region(
+                        &job.fb.0[..],
+                        RENDER_STRIDE,
+                        x,
+                        y,
+                        width,
+                        height,
+                    );
+                    first = false;
+                }
+                let transfer_cycles = cycle_count().wrapping_sub(t_start);
+
+                FLUSH_RETURN_CHANNEL
+                    .send(ReturnedBuffer {
+                        fb: job.fb,
+                        render_cycles: job.render_cycles,
+                        transfer_cycles,
+                        dirty_pixels: job.total_pixels,
+                        rect_count: job.rect_count,
+                    })
+                    .await;
+            }
+            DisplayCommand::SetBrightness(level) => {
+                let _ = display.set_brightness(level);
+            }
+            DisplayCommand::DisplayOff => {
+                let _ = display.display_off();
+            }
+            DisplayCommand::DisplayOn => {
+                let _ = display.display_on();
+            }
+        }
     }
 }
 

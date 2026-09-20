@@ -3668,6 +3668,7 @@ dependencies = [
  "esp-hal",
  "esp-radio",
  "esp-rtos",
+ "heapless 0.8.0",
  "panic-rtt-target",
  "rtt-target",
  "slint",

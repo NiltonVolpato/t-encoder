@@ -7,7 +7,6 @@ use alloc::rc::Rc;
 use core::cell::RefCell;
 use embassy_futures::select::{Either, select};
 use embassy_time::{Duration, Timer};
-use esp_hal::delay::Delay;
 use esp_hal::time::Instant;
 use slint::platform::software_renderer::{
     MinimalSoftwareWindow, RepaintBufferType,
@@ -16,7 +15,11 @@ use slint::platform::{Key, PointerEventButton, WindowAdapter, WindowEvent};
 use slint::PhysicalSize;
 
 use super::buzzer::{Feedback, signal_feedback};
-use super::display::{BUFFER_HEIGHT, Co5300, NativeRgb565, RENDER_HEIGHT, RENDER_STRIDE, RENDER_WIDTH};
+use super::display::{
+    BUFFER_HEIGHT, DISPLAY_COMMAND_CHANNEL, DirtyRect, DisplayCommand, FLUSH_RETURN_CHANNEL,
+    FlushJob, Framebuffer, NativeRgb565, RENDER_HEIGHT, RENDER_STRIDE, RENDER_WIDTH,
+    ReturnedBuffer,
+};
 use super::input::{INPUT_EVENTS, InputEvent};
 use super::touch::TouchEvent;
 
@@ -42,7 +45,7 @@ impl EspPlatform {
 
 impl slint::platform::Platform for EspPlatform {
     fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, slint::PlatformError> {
-        let window = MinimalSoftwareWindow::new(RepaintBufferType::ReusedBuffer);
+        let window = MinimalSoftwareWindow::new(RepaintBufferType::SwappedBuffers);
         window.dispatch_event(WindowEvent::ScaleFactorChanged { scale_factor: 0.5 });
         window.set_size(PhysicalSize::new(
             RENDER_WIDTH as u32,
@@ -150,27 +153,45 @@ fn cycle_count() -> u32 {
 }
 
 /// Runs the main Slint event loop: awaits interrupt-driven inputs, advances animations, and renders updates.
-pub async fn run_event_loop(window_holder: WindowHolder, mut display: Co5300) -> ! {
-    let delay = Delay::new();
-
-    // Framebuffer in fast internal SRAM (200 * 196 * 2 bytes = ~78.4 KiB)
+pub async fn run_event_loop(window_holder: WindowHolder) -> ! {
+    // Two framebuffers in fast internal SRAM (2 * ~78.4 KiB = ~156.8 KiB)
     #[repr(align(16))]
     struct FrameBuffer([NativeRgb565; RENDER_STRIDE * BUFFER_HEIGHT]);
 
-    static FRAME_BUFFER: static_cell::ConstStaticCell<FrameBuffer> =
+    static FRAME_BUFFER_A: static_cell::ConstStaticCell<FrameBuffer> =
+        static_cell::ConstStaticCell::new(FrameBuffer(
+            [NativeRgb565::new(0); RENDER_STRIDE * BUFFER_HEIGHT],
+        ));
+    static FRAME_BUFFER_B: static_cell::ConstStaticCell<FrameBuffer> =
         static_cell::ConstStaticCell::new(FrameBuffer(
             [NativeRgb565::new(0); RENDER_STRIDE * BUFFER_HEIGHT],
         ));
 
-    let frame_buffer = &mut FRAME_BUFFER.take().0;
+    let fb_a = Framebuffer(&mut FRAME_BUFFER_A.take().0);
+    let fb_b = Framebuffer(&mut FRAME_BUFFER_B.take().0);
+    let _ = FLUSH_RETURN_CHANNEL.try_send(ReturnedBuffer {
+        fb: fb_a,
+        render_cycles: 0,
+        transfer_cycles: 0,
+        dirty_pixels: 0,
+        rect_count: 0,
+    });
+    let _ = FLUSH_RETURN_CHANNEL.try_send(ReturnedBuffer {
+        fb: fb_b,
+        render_cycles: 0,
+        transfer_cycles: 0,
+        dirty_pixels: 0,
+        rect_count: 0,
+    });
 
+    let mut current_fb: Option<ReturnedBuffer> = None;
     let mut pending_event: Option<InputEvent> = None;
     let mut power_manager = app_shell::ScreenPowerManager::new();
     let mut perf_tracker = app_shell::PerfTracker::new();
     let mut last_activity = Instant::now();
     let loop_start_time = Instant::now();
 
-    defmt::info!("Entering interrupt-driven Slint MCU event loop with power management");
+    defmt::info!("Entering double-buffered Slint MCU event loop with power management");
 
     loop {
         super::profiler::poll();
@@ -189,11 +210,13 @@ pub async fn run_event_loop(window_holder: WindowHolder, mut display: Co5300) ->
         match power_manager.update(idle_duration) {
             app_shell::PowerTransition::DimTo(level) => {
                 defmt::info!("Screen idle: dimming to brightness {}", level);
-                let _ = display.set_brightness(level);
+                DISPLAY_COMMAND_CHANNEL
+                    .send(DisplayCommand::SetBrightness(level))
+                    .await;
             }
             app_shell::PowerTransition::Sleep => {
                 defmt::info!("Screen idle: entering screen sleep");
-                let _ = display.display_off();
+                DISPLAY_COMMAND_CHANNEL.send(DisplayCommand::DisplayOff).await;
             }
             _ => {}
         }
@@ -208,13 +231,17 @@ pub async fn run_event_loop(window_holder: WindowHolder, mut display: Co5300) ->
             match transition {
                 app_shell::PowerTransition::WakeFromSleep(level) => {
                     defmt::info!("Waking from sleep to brightness {}", level);
-                    let _ = display.display_on();
-                    let _ = display.set_brightness(level);
+                    DISPLAY_COMMAND_CHANNEL.send(DisplayCommand::DisplayOn).await;
+                    DISPLAY_COMMAND_CHANNEL
+                        .send(DisplayCommand::SetBrightness(level))
+                        .await;
                     window.request_redraw();
                 }
                 app_shell::PowerTransition::WakeFromDim(level) => {
                     defmt::info!("Restoring full brightness from dim: {}", level);
-                    let _ = display.set_brightness(level);
+                    DISPLAY_COMMAND_CHANNEL
+                        .send(DisplayCommand::SetBrightness(level))
+                        .await;
                 }
                 _ => {}
             }
@@ -231,55 +258,83 @@ pub async fn run_event_loop(window_holder: WindowHolder, mut display: Co5300) ->
 
         // 4. Render dirty regions (skip DMA transfers if screen is sleeping)
         if !power_manager.is_sleeping() {
-            window.draw_if_needed(|renderer| {
+            let returned = match current_fb.take() {
+                Some(fb) => fb,
+                None => FLUSH_RETURN_CHANNEL.receive().await,
+            };
+
+            if returned.transfer_cycles > 0 {
+                perf_tracker.record_frame(app_shell::FrameCycles {
+                    render_cycles: returned.render_cycles,
+                    transfer_cycles: returned.transfer_cycles,
+                    dirty_pixels: returned.dirty_pixels,
+                    rect_count: returned.rect_count,
+                });
+            }
+
+            let mut dirty_rects: heapless::Vec<DirtyRect, 16> = heapless::Vec::new();
+            let mut total_pixels = 0u32;
+            let mut rect_count = 0u16;
+            let mut render_cycles = 0u32;
+
+            let drawn = window.draw_if_needed(|renderer| {
                 let r_start = cycle_count();
                 super::profiler::start_render();
-                let region = renderer.render(frame_buffer, RENDER_STRIDE);
+                let region = renderer.render(&mut returned.fb.0[..], RENDER_STRIDE);
                 super::profiler::stop_render();
-                let render_cycles = cycle_count().wrapping_sub(r_start);
+                render_cycles = cycle_count().wrapping_sub(r_start);
 
-                let t_start = cycle_count();
-                let mut total_pixels = 0u32;
-                let mut rect_count = 0u16;
-                let mut first = true;
                 for (origin, size) in region.iter_box() {
                     let raw_x = origin.x.max(0) as u16;
                     let raw_y = origin.y.max(0) as u16;
-
-                    // Inflate dirty rect by 1 logical pixel to refresh bilinear-interpolated
-                    // boundary subpixels on the display and eliminate ghost trails.
-                    let x = raw_x.saturating_sub(1);
-                    let y = raw_y.saturating_sub(1);
-                    let right = (raw_x + size.width as u16 + 1).min(RENDER_WIDTH);
-                    let bottom = (raw_y + size.height as u16 + 1).min(RENDER_HEIGHT);
-
-                    let width = right.saturating_sub(x);
-                    let height = bottom.saturating_sub(y);
+                    let width = size.width as u16;
+                    let height = size.height as u16;
 
                     total_pixels += (width as u32 * 2) * (height as u32 * 2);
                     rect_count += 1;
-                    if !first {
-                        delay.delay_micros(10); // Delay needed to avoid glitching.
-                    }
-                    let _ = display.write_region(
-                        frame_buffer,
-                        RENDER_STRIDE,
-                        x,
-                        y,
+
+                    let rect = DirtyRect {
+                        x: raw_x,
+                        y: raw_y,
                         width,
                         height,
-                    );
-                    first = false;
+                    };
+                    if dirty_rects.push(rect).is_err() {
+                        // Coalesce into bounding box if capacity reached
+                        let mut min_x = rect.x;
+                        let mut min_y = rect.y;
+                        let mut max_x = rect.x + rect.width;
+                        let mut max_y = rect.y + rect.height;
+                        for r in &dirty_rects {
+                            min_x = min_x.min(r.x);
+                            min_y = min_y.min(r.y);
+                            max_x = max_x.max(r.x + r.width);
+                            max_y = max_y.max(r.y + r.height);
+                        }
+                        dirty_rects.clear();
+                        let _ = dirty_rects.push(DirtyRect {
+                            x: min_x,
+                            y: min_y,
+                            width: max_x - min_x,
+                            height: max_y - min_y,
+                        });
+                    }
                 }
-                let transfer_cycles = cycle_count().wrapping_sub(t_start);
-
-                perf_tracker.record_frame(app_shell::FrameCycles {
-                    render_cycles,
-                    transfer_cycles,
-                    dirty_pixels: total_pixels,
-                    rect_count,
-                });
             });
+
+            if drawn && !dirty_rects.is_empty() {
+                DISPLAY_COMMAND_CHANNEL
+                    .send(DisplayCommand::Flush(FlushJob {
+                        fb: returned.fb,
+                        rects: dirty_rects,
+                        render_cycles,
+                        total_pixels,
+                        rect_count,
+                    }))
+                    .await;
+            } else {
+                current_fb = Some(returned);
+            }
         }
 
         // 5. Emit periodic performance summary if window elapsed
@@ -300,11 +355,16 @@ pub async fn run_event_loop(window_holder: WindowHolder, mut display: Co5300) ->
             );
         }
 
-        // 6. Check if animations are actively running right after drawing
-        let animating = !power_manager.is_sleeping() && window.has_active_animations();
+        // 6. Check if animations or full-speed refresh are actively running
+        let is_full_speed = option_env!("SLINT_DEBUG_PERFORMANCE")
+            .is_some_and(|opt| opt.contains("refresh_full_speed"));
+        let animating = !power_manager.is_sleeping() && (window.has_active_animations() || is_full_speed);
 
         // 6. Determine sleep timeout
-        let timeout = if animating {
+        let timeout = if is_full_speed {
+            window.request_redraw();
+            Some(Duration::from_millis(0))
+        } else if animating {
             window.request_redraw();
             Some(Duration::from_hz(60))
         } else {

@@ -70,6 +70,7 @@ embassy-futures = { version = "0.1.2", features = ["defmt"] }
 embassy-sync = { version = "0.8.0", features = ["defmt"] }
 embassy-time = { version = "0.5.0", features = ["defmt"] }
 embedded-hal-async = "1.0.0"
+heapless = "0.8"
 esp-radio = {
     version = "0.18.0",
     features = [

@@ -17,7 +17,7 @@ use esp_hal::interrupt::software::SoftwareInterruptControl;
 use esp_hal::timer::timg::TimerGroup;
 use lilygo_t_encoder_pro::bsp::buzzer::buzzer_task;
 use lilygo_t_encoder_pro::bsp::{
-    Bsp, BspPeripherals, button_task, encoder_task, run_event_loop, touch_task,
+    Bsp, BspPeripherals, button_task, display_task, encoder_task, run_event_loop, touch_task,
 };
 use panic_rtt_target as _;
 
@@ -88,6 +88,11 @@ async fn main(spawner: Spawner) -> ! {
     let shell = AppShell::new(Box::new(launcher));
     AppShell::start(&shell);
 
-    // 7. Enter Slint MCU event loop
-    run_event_loop(bsp.window, bsp.display).await;
+    // 7. Spawn display worker task
+    spawner.spawn(
+        display_task(bsp.display).expect("Failed to create display task"),
+    );
+
+    // 8. Enter Slint MCU event loop
+    run_event_loop(bsp.window).await;
 }
