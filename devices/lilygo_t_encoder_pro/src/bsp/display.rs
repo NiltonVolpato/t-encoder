@@ -4,14 +4,18 @@
 //! CO5300 AMOLED controller on QSPI for LilyGO T-Encoder Pro (390x390).
 //! Adapted from Slint's m5stack_stopwatch board support and t-encoder review.
 
+use core::cell::RefCell;
+use critical_section::Mutex;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
+use embassy_sync::signal::Signal;
 use esp_hal::Blocking;
 use esp_hal::delay::Delay;
 use esp_hal::dma::DmaTxBuf;
 use esp_hal::gpio::{Level, Output, OutputConfig};
+use esp_hal::interrupt::{InterruptHandler, Priority};
 use esp_hal::peripherals::{GPIO3, GPIO4};
-use esp_hal::spi::master::{Address, Command, DataMode, SpiDma};
+use esp_hal::spi::master::{Address, Command, DataMode, SpiDma, SpiDmaTransfer, SpiInterrupt};
 use slint::platform::software_renderer::{PremultipliedRgbaColor, Rgb565Pixel, TargetPixel};
 
 pub const DISPLAY_WIDTH: u16 = 390;
@@ -167,16 +171,111 @@ fn cycle_count() -> u32 {
     }
 }
 
-/// Background worker task that exclusively owns the CO5300 display and processes flush jobs.
-#[embassy_executor::task]
-pub async fn display_task(mut display: Co5300) {
-    let delay = Delay::new();
-    loop {
-        match DISPLAY_COMMAND_CHANNEL.receive().await {
-            DisplayCommand::Flush(job) => {
-                let t_start = cycle_count();
-                let mut first = true;
-                for rect in &job.rects {
+/// The SPI peripheral and the TX DMA buffer it writes from.
+pub struct Port {
+    pub spi: SpiDma<'static, Blocking>,
+    pub tx: DmaTxBuf,
+}
+
+struct ActiveTransfer {
+    job: FlushJob,
+    rect_idx: usize,
+    current_row: u16,
+    first_chunk_of_rect: bool,
+    t_start: u32,
+    transfer: SpiDmaTransfer<'static, Blocking, DmaTxBuf>,
+}
+
+enum TransferState {
+    Empty,
+    Idle(Port),
+    Active(ActiveTransfer),
+}
+
+static TRANSFER_STATE: Mutex<RefCell<TransferState>> =
+    Mutex::new(RefCell::new(TransferState::Empty));
+
+static TRANSFER_DONE_SIGNAL: Signal<CriticalSectionRawMutex, ()> = Signal::new();
+
+#[esp_hal::ram]
+fn raw_command(
+    spi: SpiDma<'static, Blocking>,
+    mut tx: DmaTxBuf,
+    command: u8,
+    parameters: &[u8],
+) -> Result<(SpiDma<'static, Blocking>, DmaTxBuf), (esp_hal::spi::Error, SpiDma<'static, Blocking>, DmaTxBuf)> {
+    let len = parameters.len();
+    if len > 0 {
+        tx.as_mut_slice()[..len].copy_from_slice(parameters);
+    }
+    let transfer = spi.half_duplex_write(
+        DataMode::Single,
+        Command::_8Bit(QSPI_CONTROL_OPCODE, DataMode::Single),
+        Address::_24Bit((command as u32) << 8, DataMode::Single),
+        0,
+        len,
+        tx,
+    );
+    match transfer {
+        Ok(t) => {
+            let (s, tx_back) = t.wait();
+            Ok((s, tx_back))
+        }
+        Err((e, s, tx_back)) => Err((e, s, tx_back)),
+    }
+}
+
+#[esp_hal::ram]
+fn raw_set_window(
+    spi: SpiDma<'static, Blocking>,
+    tx: DmaTxBuf,
+    x: u16,
+    y: u16,
+    width: u16,
+    height: u16,
+) -> Result<(SpiDma<'static, Blocking>, DmaTxBuf), (esp_hal::spi::Error, SpiDma<'static, Blocking>, DmaTxBuf)> {
+    let x_start = x + X_OFFSET;
+    let x_end = x_start + width - 1;
+    let (spi, tx) = raw_command(
+        spi,
+        tx,
+        0x2a,
+        &[
+            (x_start >> 8) as u8,
+            x_start as u8,
+            (x_end >> 8) as u8,
+            x_end as u8,
+        ],
+    )?;
+
+    let y_start = y + Y_OFFSET;
+    let y_end = y_start + height - 1;
+    raw_command(
+        spi,
+        tx,
+        0x2b,
+        &[
+            (y_start >> 8) as u8,
+            y_start as u8,
+            (y_end >> 8) as u8,
+            y_end as u8,
+        ],
+    )
+}
+
+#[esp_hal::ram]
+extern "C" fn spi_dma_isr() {
+    critical_section::with(|cs| {
+        let mut state_ref = TRANSFER_STATE.borrow(cs).borrow_mut();
+        let state = core::mem::replace(&mut *state_ref, TransferState::Empty);
+
+        match state {
+            TransferState::Active(mut active) => {
+                let (mut spi, mut tx) = active.transfer.wait();
+                spi.clear_interrupts(SpiInterrupt::TransferDone);
+
+                loop {
+                    let rect = &active.job.rects[active.rect_idx];
                     let x = rect.x.saturating_sub(1);
                     let y = rect.y.saturating_sub(1);
                     let right = (rect.x + rect.width + 1).min(RENDER_WIDTH);
@@ -184,52 +283,296 @@ pub async fn display_task(mut display: Co5300) {
                     let width = right.saturating_sub(x);
                     let height = bottom.saturating_sub(y);
 
-                    if width == 0 || height == 0 {
+                    if active.current_row < y + height {
+                        let logical_row_bytes = width as usize * 8;
+                        let logical_rows_per_chunk = (TX_BUF_BYTES / logical_row_bytes).max(1);
+                        let remaining_rows = (y + height - active.current_row) as usize;
+                        let logical_rows = logical_rows_per_chunk.min(remaining_rows);
+
+                        let used = expand_2x2_chunk(
+                            &active.job.fb.0[..],
+                            RENDER_STRIDE,
+                            x as usize,
+                            active.current_row as usize,
+                            width as usize,
+                            logical_rows,
+                            tx.as_mut_slice(),
+                        );
+
+                        let address = if active.first_chunk_of_rect {
+                            CMD_RAMWR
+                        } else {
+                            CMD_RAMWRC
+                        } << 8;
+                        active.first_chunk_of_rect = false;
+                        active.current_row += logical_rows as u16;
+
+                        let transfer = match spi.half_duplex_write(
+                            DataMode::Quad,
+                            Command::_8Bit(QSPI_PIXEL_OPCODE, DataMode::Single),
+                            Address::_24Bit(address, DataMode::Single),
+                            0,
+                            used,
+                            tx,
+                        ) {
+                            Ok(t) => t,
+                            Err((_e, mut s, tx_back)) => {
+                                s.unlisten(SpiInterrupt::TransferDone);
+                                *state_ref = TransferState::Idle(Port { spi: s, tx: tx_back });
+                                TRANSFER_DONE_SIGNAL.signal(());
+                                return;
+                            }
+                        };
+
+                        active.transfer = transfer;
+                        *state_ref = TransferState::Active(active);
+                        return;
+                    }
+
+                    // Move to next rect
+                    active.rect_idx += 1;
+                    if active.rect_idx < active.job.rects.len() {
+                        let next_rect = &active.job.rects[active.rect_idx];
+                        let nx = next_rect.x.saturating_sub(1);
+                        let ny = next_rect.y.saturating_sub(1);
+                        let nright = (next_rect.x + next_rect.width + 1).min(RENDER_WIDTH);
+                        let nbottom = (next_rect.y + next_rect.height + 1).min(RENDER_HEIGHT);
+                        let nw = nright.saturating_sub(nx);
+                        let nh = nbottom.saturating_sub(ny);
+
+                        if nw == 0 || nh == 0 {
+                            continue;
+                        }
+
+                        spi.unlisten(SpiInterrupt::TransferDone);
+                        let (s, t) = match raw_set_window(spi, tx, nx * 2, ny * 2, nw * 2, nh * 2) {
+                            Ok(res) => res,
+                            Err((_e, s, t)) => {
+                                *state_ref = TransferState::Idle(Port { spi: s, tx: t });
+                                TRANSFER_DONE_SIGNAL.signal(());
+                                return;
+                            }
+                        };
+                        spi = s;
+                        tx = t;
+                        spi.listen(SpiInterrupt::TransferDone);
+
+                        active.current_row = ny;
+                        active.first_chunk_of_rect = true;
                         continue;
                     }
 
-                    if !first {
-                        delay.delay_micros(10);
-                    }
-                    let _ = display.write_region(
-                        &job.fb.0[..],
-                        RENDER_STRIDE,
-                        x,
-                        y,
-                        width,
-                        height,
-                    );
-                    first = false;
-                }
-                let transfer_cycles = cycle_count().wrapping_sub(t_start);
+                    // All rects completed!
+                    spi.unlisten(SpiInterrupt::TransferDone);
+                    let transfer_cycles = cycle_count().wrapping_sub(active.t_start);
 
-                FLUSH_RETURN_CHANNEL
-                    .send(ReturnedBuffer {
-                        fb: job.fb,
-                        render_cycles: job.render_cycles,
+                    let _ = FLUSH_RETURN_CHANNEL.try_send(ReturnedBuffer {
+                        fb: active.job.fb,
+                        render_cycles: active.job.render_cycles,
                         transfer_cycles,
-                        dirty_pixels: job.total_pixels,
-                        rect_count: job.rect_count,
-                    })
-                    .await;
+                        dirty_pixels: active.job.total_pixels,
+                        rect_count: active.job.rect_count,
+                    });
+
+                    *state_ref = TransferState::Idle(Port { spi, tx });
+                    TRANSFER_DONE_SIGNAL.signal(());
+                    return;
+                }
             }
-            DisplayCommand::SetBrightness(level) => {
-                let _ = display.set_brightness(level);
-            }
-            DisplayCommand::DisplayOff => {
-                let _ = display.display_off();
-            }
-            DisplayCommand::DisplayOn => {
-                let _ = display.display_on();
+            other => {
+                *state_ref = other;
             }
         }
+    });
+}
+
+async fn start_flush(job: FlushJob) {
+    let t_start = cycle_count();
+    TRANSFER_DONE_SIGNAL.reset();
+
+    // Check if there is at least one non-empty rect
+    let mut has_valid_rect = false;
+    for rect in &job.rects {
+        let x = rect.x.saturating_sub(1);
+        let y = rect.y.saturating_sub(1);
+        let right = (rect.x + rect.width + 1).min(RENDER_WIDTH);
+        let bottom = (rect.y + rect.height + 1).min(RENDER_HEIGHT);
+        if right > x && bottom > y {
+            has_valid_rect = true;
+            break;
+        }
+    }
+
+    if !has_valid_rect {
+        let _ = FLUSH_RETURN_CHANNEL
+            .send(ReturnedBuffer {
+                fb: job.fb,
+                render_cycles: job.render_cycles,
+                transfer_cycles: 0,
+                dirty_pixels: job.total_pixels,
+                rect_count: job.rect_count,
+            })
+            .await;
+        return;
+    }
+
+    let mut pending_job = Some(job);
+    let mut started = false;
+    critical_section::with(|cs| {
+        let mut state = TRANSFER_STATE.borrow(cs).borrow_mut();
+        if let TransferState::Idle(mut port) =
+            core::mem::replace(&mut *state, TransferState::Empty)
+        {
+            let job_ref = pending_job.as_ref().unwrap();
+            for rect_idx in 0..job_ref.rects.len() {
+                let rect = &job_ref.rects[rect_idx];
+                let x = rect.x.saturating_sub(1);
+                let y = rect.y.saturating_sub(1);
+                let right = (rect.x + rect.width + 1).min(RENDER_WIDTH);
+                let bottom = (rect.y + rect.height + 1).min(RENDER_HEIGHT);
+                let width = right.saturating_sub(x);
+                let height = bottom.saturating_sub(y);
+                if width == 0 || height == 0 {
+                    continue;
+                }
+
+                let phys_x = x * 2;
+                let phys_y = y * 2;
+                let phys_width = width * 2;
+                let phys_height = height * 2;
+
+                port.spi.unlisten(SpiInterrupt::TransferDone);
+                let (mut spi, mut tx) = match raw_set_window(
+                    port.spi,
+                    port.tx,
+                    phys_x,
+                    phys_y,
+                    phys_width,
+                    phys_height,
+                ) {
+                    Ok(res) => res,
+                    Err((_e, s, t)) => {
+                        *state = TransferState::Idle(Port { spi: s, tx: t });
+                        return;
+                    }
+                };
+
+                let logical_row_bytes = width as usize * 8;
+                let logical_rows_per_chunk = (TX_BUF_BYTES / logical_row_bytes).max(1);
+                let logical_rows = logical_rows_per_chunk.min(height as usize);
+
+                let used = expand_2x2_chunk(
+                    &job_ref.fb.0[..],
+                    RENDER_STRIDE,
+                    x as usize,
+                    y as usize,
+                    width as usize,
+                    logical_rows,
+                    tx.as_mut_slice(),
+                );
+
+                spi.listen(SpiInterrupt::TransferDone);
+                let transfer = match spi.half_duplex_write(
+                    DataMode::Quad,
+                    Command::_8Bit(QSPI_PIXEL_OPCODE, DataMode::Single),
+                    Address::_24Bit(CMD_RAMWR << 8, DataMode::Single),
+                    0,
+                    used,
+                    tx,
+                ) {
+                    Ok(t) => t,
+                    Err((_e, mut s, tx_back)) => {
+                        s.unlisten(SpiInterrupt::TransferDone);
+                        *state = TransferState::Idle(Port { spi: s, tx: tx_back });
+                        return;
+                    }
+                };
+
+                let active_job = pending_job.take().unwrap();
+                *state = TransferState::Active(ActiveTransfer {
+                    job: active_job,
+                    rect_idx,
+                    current_row: y + logical_rows as u16,
+                    first_chunk_of_rect: false,
+                    t_start,
+                    transfer,
+                });
+                started = true;
+                break;
+            }
+        }
+    });
+
+    if started {
+        TRANSFER_DONE_SIGNAL.wait().await;
+    } else if let Some(job) = pending_job {
+        let _ = FLUSH_RETURN_CHANNEL
+            .send(ReturnedBuffer {
+                fb: job.fb,
+                render_cycles: job.render_cycles,
+                transfer_cycles: 0,
+                dirty_pixels: job.total_pixels,
+                rect_count: job.rect_count,
+            })
+            .await;
     }
 }
 
-/// The SPI peripheral and the TX DMA buffer it writes from.
-struct Port {
-    spi: SpiDma<'static, Blocking>,
-    tx: DmaTxBuf,
+/// Background worker task that exclusively owns the CO5300 display and processes flush jobs.
+#[embassy_executor::task]
+pub async fn display_task(mut display: Co5300) {
+    critical_section::with(|cs| {
+        if let Some(port) = display.port.take() {
+            *TRANSFER_STATE.borrow(cs).borrow_mut() = TransferState::Idle(port);
+        }
+    });
+
+    loop {
+        match DISPLAY_COMMAND_CHANNEL.receive().await {
+            DisplayCommand::Flush(job) => {
+                start_flush(job).await;
+            }
+            DisplayCommand::SetBrightness(level) => {
+                critical_section::with(|cs| {
+                    let mut state = TRANSFER_STATE.borrow(cs).borrow_mut();
+                    if let TransferState::Idle(port) =
+                        core::mem::replace(&mut *state, TransferState::Empty)
+                    {
+                        match raw_command(port.spi, port.tx, 0x51, &[level]) {
+                            Ok((spi, tx)) => *state = TransferState::Idle(Port { spi, tx }),
+                            Err((_e, spi, tx)) => *state = TransferState::Idle(Port { spi, tx }),
+                        }
+                    }
+                });
+            }
+            DisplayCommand::DisplayOff => {
+                critical_section::with(|cs| {
+                    let mut state = TRANSFER_STATE.borrow(cs).borrow_mut();
+                    if let TransferState::Idle(port) =
+                        core::mem::replace(&mut *state, TransferState::Empty)
+                    {
+                        match raw_command(port.spi, port.tx, 0x28, &[]) {
+                            Ok((spi, tx)) => *state = TransferState::Idle(Port { spi, tx }),
+                            Err((_e, spi, tx)) => *state = TransferState::Idle(Port { spi, tx }),
+                        }
+                    }
+                });
+            }
+            DisplayCommand::DisplayOn => {
+                critical_section::with(|cs| {
+                    let mut state = TRANSFER_STATE.borrow(cs).borrow_mut();
+                    if let TransferState::Idle(port) =
+                        core::mem::replace(&mut *state, TransferState::Empty)
+                    {
+                        match raw_command(port.spi, port.tx, 0x29, &[]) {
+                            Ok((spi, tx)) => *state = TransferState::Idle(Port { spi, tx }),
+                            Err((_e, spi, tx)) => *state = TransferState::Idle(Port { spi, tx }),
+                        }
+                    }
+                });
+            }
+        }
+    }
 }
 
 pub struct Co5300 {
@@ -255,22 +598,9 @@ impl Co5300 {
     }
 
     pub fn command(&mut self, command: u8, parameters: &[u8]) -> Result<(), esp_hal::spi::Error> {
-        let Port { spi, mut tx } = self.port.take().unwrap();
-        let len = parameters.len();
-        if len > 0 {
-            tx.as_mut_slice()[..len].copy_from_slice(parameters);
-        }
-        let transfer = spi.half_duplex_write(
-            DataMode::Single,
-            Command::_8Bit(QSPI_CONTROL_OPCODE, DataMode::Single),
-            Address::_24Bit((command as u32) << 8, DataMode::Single),
-            0,
-            len,
-            tx,
-        );
-        match transfer {
-            Ok(t) => {
-                let (spi, tx) = t.wait();
+        let Port { spi, tx } = self.port.take().unwrap();
+        match raw_command(spi, tx, command, parameters) {
+            Ok((spi, tx)) => {
                 self.port = Some(Port { spi, tx });
                 Ok(())
             }
@@ -308,6 +638,13 @@ impl Co5300 {
         self.command(0x29, &[])?; // display on
         self.command(0x51, &[0xff])?; // brightness in normal mode
         self.command(0x58, &[0x00])?; // high contrast mode off
+
+        self.port
+            .as_mut()
+            .unwrap()
+            .spi
+            .set_interrupt_handler(InterruptHandler::new(spi_dma_isr, Priority::Priority1));
+
         Ok(())
     }
 
@@ -333,105 +670,17 @@ impl Co5300 {
         width: u16,
         height: u16,
     ) -> Result<(), esp_hal::spi::Error> {
-        let x_start = x + X_OFFSET;
-        let x_end = x_start + width - 1;
-        self.command(
-            0x2a,
-            &[
-                (x_start >> 8) as u8,
-                x_start as u8,
-                (x_end >> 8) as u8,
-                x_end as u8,
-            ],
-        )?;
-
-        let y_start = y + Y_OFFSET;
-        let y_end = y_start + height - 1;
-        self.command(
-            0x2b,
-            &[
-                (y_start >> 8) as u8,
-                y_start as u8,
-                (y_end >> 8) as u8,
-                y_end as u8,
-            ],
-        )
-    }
-
-    /// Send one rectangle of the frame buffer to the panel with 2x2 pixel doubling.
-    ///
-    /// Coordinates and sizes are in logical rendered space (0..RENDER_WIDTH, 0..RENDER_HEIGHT).
-    /// The physical display window is automatically set to (2*x, 2*y, 2*width, 2*height).
-    pub fn write_region(
-        &mut self,
-        frame_buffer: &[NativeRgb565],
-        stride: usize,
-        x: u16,
-        y: u16,
-        width: u16,
-        height: u16,
-    ) -> Result<(), esp_hal::spi::Error> {
-        if width == 0 || height == 0 || x >= RENDER_WIDTH || y >= RENDER_HEIGHT {
-            return Ok(());
-        }
-
-        let width = width.min(RENDER_WIDTH - x);
-        let height = height.min(RENDER_HEIGHT - y);
-
-        let phys_x = x * 2;
-        let phys_y = y * 2;
-        let phys_width = width * 2;
-        let phys_height = height * 2;
-
-        self.set_window(phys_x, phys_y, phys_width, phys_height)?;
-
-        // Each logical row produces 2 physical rows of phys_width pixels (width * 8 bytes).
-        let logical_row_bytes = width as usize * 8;
-        let logical_rows_per_chunk = (TX_BUF_BYTES / logical_row_bytes).max(1);
-
-        let mut first = true;
-        let mut row = y;
-        while row < y + height {
-            let logical_rows = logical_rows_per_chunk.min((y + height - row) as usize);
-            let Port { spi, mut tx } = self.port.take().unwrap();
-            let tx_slice = tx.as_mut_slice();
-
-            let used = expand_2x2_chunk(
-                frame_buffer,
-                stride,
-                x as usize,
-                row as usize,
-                width as usize,
-                logical_rows,
-                tx_slice,
-            );
-
-            let address = if first { CMD_RAMWR } else { CMD_RAMWRC } << 8;
-            let transfer = spi.half_duplex_write(
-                DataMode::Quad,
-                Command::_8Bit(QSPI_PIXEL_OPCODE, DataMode::Single),
-                Address::_24Bit(address, DataMode::Single),
-                0,
-                used,
-                tx,
-            );
-
-            match transfer {
-                Ok(t) => {
-                    let (s, tx_back) = t.wait();
-                    self.port = Some(Port { spi: s, tx: tx_back });
-                }
-                Err((e, s, tx_back)) => {
-                    self.port = Some(Port { spi: s, tx: tx_back });
-                    return Err(e);
-                }
+        let Port { spi, tx } = self.port.take().unwrap();
+        match raw_set_window(spi, tx, x, y, width, height) {
+            Ok((spi, tx)) => {
+                self.port = Some(Port { spi, tx });
+                Ok(())
             }
-
-            first = false;
-            row += logical_rows as u16;
+            Err((e, spi, tx)) => {
+                self.port = Some(Port { spi, tx });
+                Err(e)
+            }
         }
-
-        Ok(())
     }
 }
 
@@ -450,6 +699,7 @@ impl Co5300 {
 /// are smoothed cleanly.
 ///
 /// Returns the total number of bytes written to `tx_slice`.
+#[esp_hal::ram]
 pub fn expand_2x2_chunk(
     frame_buffer: &[NativeRgb565],
     stride: usize,
