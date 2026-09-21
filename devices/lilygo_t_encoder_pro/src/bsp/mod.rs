@@ -9,7 +9,6 @@ pub mod display;
 pub mod event;
 pub mod input;
 pub mod platform;
-pub mod profiler;
 pub mod rotary;
 pub mod simd;
 pub mod touch;
@@ -39,6 +38,7 @@ pub struct Bsp {
     pub encoder_hw: EncoderHw,
     pub button: Input<'static>,
     pub buzzer: BuzzerPeripherals,
+    pub profiler_timer: esp_hal::peripherals::TIMG1<'static>,
 }
 
 impl Bsp {
@@ -78,10 +78,7 @@ impl Bsp {
         slint::platform::set_platform(alloc::boxed::Box::new(platform))
             .expect("Slint platform already set");
 
-        // 4. Initialize statistical sampling profiler
-        profiler::init(core0.profiler_timer);
-
-        // 5. Enable PIE SIMD coprocessor
+        // 4. Enable PIE SIMD coprocessor
         simd::enable_pie();
 
         Self {
@@ -90,6 +87,7 @@ impl Bsp {
             encoder_hw,
             button,
             buzzer: core0.buzzer,
+            profiler_timer: core0.profiler_timer,
         }
     }
 }

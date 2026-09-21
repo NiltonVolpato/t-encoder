@@ -193,8 +193,6 @@ pub async fn run_event_loop(window_holder: WindowHolder) -> ! {
     defmt::info!("Entering unified event-driven Slint MCU event loop");
 
     loop {
-        super::profiler::poll();
-
         // 1. Advance Slint animations and timers first thing in the loop
         slint::platform::update_timers_and_animations();
 
@@ -210,7 +208,6 @@ pub async fn run_event_loop(window_holder: WindowHolder) -> ! {
         while let Some(current_event) = event {
             match current_event {
                 Event::Input(input) => {
-                    super::profiler::on_input_event();
                     report_user_activity();
 
                     if is_sleeping {
@@ -301,9 +298,7 @@ pub async fn run_event_loop(window_holder: WindowHolder) -> ! {
 
             let drawn = window.draw_if_needed(|renderer| {
                 let r_start = cycle_count();
-                super::profiler::start_render();
                 let region = renderer.render(&mut returned.fb.0[..], RENDER_STRIDE);
-                super::profiler::stop_render();
                 render_cycles = cycle_count().wrapping_sub(r_start);
 
                 for (origin, size) in region.iter_box() {

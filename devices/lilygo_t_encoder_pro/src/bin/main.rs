@@ -21,7 +21,7 @@ use lilygo_t_encoder_pro::bsp::{
     Board, Bsp, Co5300, Core1Peripherals, button_task, display_task, encoder_task, run_event_loop,
     simd, touch_task,
 };
-use lilygo_t_encoder_pro::tasks::screensaver_task;
+use lilygo_t_encoder_pro::tasks::{PROFILER_ENABLED, profiler_task, screensaver_task};
 use panic_rtt_target as _;
 
 extern crate alloc;
@@ -95,6 +95,9 @@ async fn main(spawner: Spawner) -> ! {
         spawner.spawn(touch_task(touch).expect("Failed to create touch task"));
     }
     spawner.spawn(screensaver_task().expect("Failed to create screensaver task"));
+    if PROFILER_ENABLED {
+        spawner.spawn(profiler_task(bsp.profiler_timer).expect("Failed to create profiler task"));
+    }
 
     info!("Starting AppShell with Launcher on Core 0...");
     let launcher = LauncherAppFactory::default_apps();
