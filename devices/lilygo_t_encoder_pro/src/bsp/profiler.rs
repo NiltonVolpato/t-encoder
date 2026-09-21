@@ -64,7 +64,10 @@ pub fn init(timg1: TIMG1<'static>) {
     timer.set_interrupt_handler(profiler_isr);
     timer.listen();
     if let Err(e) = timer.start(SAMPLING_PERIOD) {
-        defmt::error!("Failed to start profiler timer: {:?}", defmt::Debug2Format(&e));
+        defmt::error!(
+            "Failed to start profiler timer: {:?}",
+            defmt::Debug2Format(&e)
+        );
         return;
     }
 
@@ -144,5 +147,6 @@ fn dump_report() {
             info!("[PROFILE] No render samples captured during the 10s window.");
         }
         info!("================================================================");
+        info!("{}", esp_alloc::HEAP.stats());
     });
 }

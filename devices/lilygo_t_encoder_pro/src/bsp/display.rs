@@ -18,12 +18,19 @@ use esp_hal::spi::master::{Address, Command, Config as SpiConfig, DataMode, Spi,
 use esp_hal::time::Rate;
 use slint::platform::software_renderer::{PremultipliedRgbaColor, Rgb565Pixel, TargetPixel};
 
+// Real display dimensions.
 pub const DISPLAY_WIDTH: u16 = 390;
 pub const DISPLAY_HEIGHT: u16 = 390;
+
+// Rendering dimensions. Optimized for speed and memory usage.
 pub const RENDER_WIDTH: u16 = 195;
 pub const RENDER_HEIGHT: u16 = 195;
+
+// Actual dimensions allocated by the framebuffer.
+// Divisible by 16 bytes to allow aligned PIE SIMD instruction access.
 pub const RENDER_STRIDE: usize = 200;
 pub const BUFFER_HEIGHT: usize = 196;
+
 pub const TX_BUF_BYTES: usize = 16 * 1024;
 
 const QSPI_CONTROL_OPCODE: u16 = 0x02;
@@ -604,10 +611,7 @@ pub async fn display_task(mut display: Co5300) {
                     {
                         Ok(s) => s,
                         Err(e) => {
-                            defmt::error!(
-                                "Failed to start session: {:?}",
-                                defmt::Debug2Format(&e)
-                            );
+                            defmt::error!("Failed to start session: {:?}", defmt::Debug2Format(&e));
                             break;
                         }
                     };

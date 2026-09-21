@@ -6,6 +6,7 @@
 pub mod board;
 pub mod buzzer;
 pub mod display;
+pub mod event;
 pub mod input;
 pub mod platform;
 pub mod profiler;
@@ -22,7 +23,8 @@ pub use display::{
     BigEndianRgb565, Co5300, DISPLAY_HEIGHT, DISPLAY_WIDTH, RENDER_HEIGHT, RENDER_WIDTH,
     TX_BUF_BYTES, display_task,
 };
-pub use input::{INPUT_EVENTS, InputEvent, send_input_event};
+pub use event::{EVENTS, Event, ScreenEvent, send_event};
+pub use input::{InputEvent, send_input_event};
 pub use platform::{EspPlatform, WindowHolder, run_event_loop};
 pub use rotary::{EncoderHw, button_task, encoder_task};
 pub use touch::{Chsc5816, touch_task};

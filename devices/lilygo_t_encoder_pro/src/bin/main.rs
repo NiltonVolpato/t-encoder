@@ -21,6 +21,7 @@ use lilygo_t_encoder_pro::bsp::{
     Board, Bsp, Co5300, Core1Peripherals, button_task, display_task, encoder_task, run_event_loop,
     simd, touch_task,
 };
+use lilygo_t_encoder_pro::tasks::screensaver_task;
 use panic_rtt_target as _;
 
 extern crate alloc;
@@ -33,20 +34,15 @@ const APP_CORE_STACK_SIZE: usize = 16 * 1024;
 static mut APP_CORE_STACK: Stack<APP_CORE_STACK_SIZE> = Stack::new();
 
 /// Entry point for Core 1 (`AppCpu`): owns CO5300 display initialization, Scale2x math, and QSPI DMA transfers.
-fn core1_entry(
-    core1: Core1Peripherals,
-    sw_int2: SoftwareInterrupt<'static, 2>,
-) -> ! {
+fn core1_entry(core1: Core1Peripherals, sw_int2: SoftwareInterrupt<'static, 2>) -> ! {
     simd::enable_pie();
 
     let display = Co5300::new(core1.display);
 
-    let interrupt_executor = Box::leak(Box::new(esp_rtos::embassy::InterruptExecutor::new(
-        sw_int2,
-    )));
+    let interrupt_executor =
+        Box::leak(Box::new(esp_rtos::embassy::InterruptExecutor::new(sw_int2)));
     let send_spawner = interrupt_executor.start(esp_hal::interrupt::Priority::Priority1);
-    send_spawner
-        .spawn(display_task(display).expect("Failed to create display task"));
+    send_spawner.spawn(display_task(display).expect("Failed to create display task"));
 
     let executor = Box::leak(Box::new(esp_rtos::embassy::Executor::new()));
     executor.run(|_spawner| {});
@@ -66,6 +62,7 @@ async fn main(spawner: Spawner) -> ! {
     // 2. Register internal DRAM heaps (DMA buffers & fast RAM)
     esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: 73744);
     esp_alloc::heap_allocator!(size: 64 * 1024);
+    info!("{}", esp_alloc::HEAP.stats());
 
     // 3. Initialize RTOS & Embassy tick driver
     let timg0 = TimerGroup::new(board.system.timg0);
@@ -88,16 +85,16 @@ async fn main(spawner: Spawner) -> ! {
     let bsp = Bsp::init(board.core0);
 
     // 6. Spawn background buzzer & haptics task on GPIO17
-    spawner.spawn(
-        buzzer_task(bsp.buzzer.ledc, bsp.buzzer.pin).expect("Failed to create buzzer task"),
-    );
+    spawner
+        .spawn(buzzer_task(bsp.buzzer.ledc, bsp.buzzer.pin).expect("Failed to create buzzer task"));
 
-    // 7. Spawn interrupt-driven input tasks
+    // 7. Spawn interrupt-driven input & screensaver tasks
     spawner.spawn(encoder_task(bsp.encoder_hw).expect("Failed to create encoder task"));
     spawner.spawn(button_task(bsp.button).expect("Failed to create button task"));
     if let Some(touch) = bsp.touch {
         spawner.spawn(touch_task(touch).expect("Failed to create touch task"));
     }
+    spawner.spawn(screensaver_task().expect("Failed to create screensaver task"));
 
     info!("Starting AppShell with Launcher on Core 0...");
     let launcher = LauncherAppFactory::default_apps();

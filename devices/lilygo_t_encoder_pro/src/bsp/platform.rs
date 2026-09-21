@@ -8,11 +8,9 @@ use core::cell::RefCell;
 use embassy_futures::select::{Either, select};
 use embassy_time::{Duration, Timer};
 use esp_hal::time::Instant;
-use slint::platform::software_renderer::{
-    MinimalSoftwareWindow, RepaintBufferType,
-};
-use slint::platform::{Key, PointerEventButton, WindowAdapter, WindowEvent};
 use slint::PhysicalSize;
+use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType};
+use slint::platform::{Key, PointerEventButton, WindowAdapter, WindowEvent};
 
 use super::buzzer::{Feedback, signal_feedback};
 use super::display::{
@@ -20,8 +18,10 @@ use super::display::{
     FlushJob, Framebuffer, NativeRgb565, RENDER_HEIGHT, RENDER_STRIDE, RENDER_WIDTH,
     ReturnedBuffer,
 };
-use super::input::{INPUT_EVENTS, InputEvent};
+use super::event::{EVENTS, Event, ScreenEvent};
+use super::input::InputEvent;
 use super::touch::TouchEvent;
+use crate::tasks::report_user_activity;
 
 pub type WindowHolder = Rc<RefCell<Option<Rc<MinimalSoftwareWindow>>>>;
 
@@ -47,10 +47,7 @@ impl slint::platform::Platform for EspPlatform {
     fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, slint::PlatformError> {
         let window = MinimalSoftwareWindow::new(RepaintBufferType::SwappedBuffers);
         window.dispatch_event(WindowEvent::ScaleFactorChanged { scale_factor: 0.5 });
-        window.set_size(PhysicalSize::new(
-            RENDER_WIDTH as u32,
-            RENDER_HEIGHT as u32,
-        ));
+        window.set_size(PhysicalSize::new(RENDER_WIDTH as u32, RENDER_HEIGHT as u32));
         self.window.replace(Some(window.clone()));
         Ok(window)
     }
@@ -129,12 +126,12 @@ fn dispatch_input_event(window: &Rc<MinimalSoftwareWindow>, event: InputEvent) {
     }
 }
 
-/// Waits for at most `timeout` for an input event, or indefinitely if `timeout` is `None`.
-async fn next_input_event(timeout: Option<Duration>) -> Option<InputEvent> {
+/// Waits for at most `timeout` for a system event, or indefinitely if `timeout` is `None`.
+async fn next_event(timeout: Option<Duration>) -> Option<Event> {
     let Some(timeout) = timeout else {
-        return Some(INPUT_EVENTS.receive().await);
+        return Some(EVENTS.receive().await);
     };
-    match select(INPUT_EVENTS.receive(), Timer::after(timeout)).await {
+    match select(EVENTS.receive(), Timer::after(timeout)).await {
         Either::First(event) => Some(event),
         Either::Second(()) => None,
     }
@@ -185,13 +182,15 @@ pub async fn run_event_loop(window_holder: WindowHolder) -> ! {
     });
 
     let mut current_fb: Option<ReturnedBuffer> = None;
-    let mut pending_event: Option<InputEvent> = None;
-    let mut power_manager = app_shell::ScreenPowerManager::new();
+    let mut pending_event: Option<Event> = None;
     let mut perf_tracker = app_shell::PerfTracker::new();
-    let mut last_activity = Instant::now();
     let loop_start_time = Instant::now();
 
-    defmt::info!("Entering double-buffered Slint MCU event loop with power management");
+    let base_brightness: u8 = 255;
+    let mut is_dimmed: bool = false;
+    let mut is_sleeping: bool = false;
+
+    defmt::info!("Entering unified event-driven Slint MCU event loop");
 
     loop {
         super::profiler::poll();
@@ -204,60 +203,83 @@ pub async fn run_event_loop(window_holder: WindowHolder) -> ! {
             continue;
         };
 
-        // 2. Update screen power state machine based on idle duration
-        let idle_micros = (Instant::now() - last_activity).as_micros();
-        let idle_duration = core::time::Duration::from_micros(idle_micros);
-        match power_manager.update(idle_duration) {
-            app_shell::PowerTransition::DimTo(level) => {
-                defmt::info!("Screen idle: dimming to brightness {}", level);
-                DISPLAY_COMMAND_CHANNEL
-                    .send(DisplayCommand::SetBrightness(level))
-                    .await;
-            }
-            app_shell::PowerTransition::Sleep => {
-                defmt::info!("Screen idle: entering screen sleep");
-                DISPLAY_COMMAND_CHANNEL.send(DisplayCommand::DisplayOff).await;
-            }
-            _ => {}
-        }
-
-        // 3. Process ALL pending input events before drawing
+        // 2. Process ALL pending events before drawing
         let mut event = pending_event
             .take()
-            .or_else(|| INPUT_EVENTS.try_receive().ok());
+            .or_else(|| EVENTS.try_receive().ok());
         while let Some(current_event) = event {
-            super::profiler::on_input_event();
-            let (wake_action, transition) = power_manager.handle_input();
-            match transition {
-                app_shell::PowerTransition::WakeFromSleep(level) => {
-                    defmt::info!("Waking from sleep to brightness {}", level);
-                    DISPLAY_COMMAND_CHANNEL.send(DisplayCommand::DisplayOn).await;
-                    DISPLAY_COMMAND_CHANNEL
-                        .send(DisplayCommand::SetBrightness(level))
-                        .await;
-                    window.request_redraw();
-                }
-                app_shell::PowerTransition::WakeFromDim(level) => {
-                    defmt::info!("Restoring full brightness from dim: {}", level);
-                    DISPLAY_COMMAND_CHANNEL
-                        .send(DisplayCommand::SetBrightness(level))
-                        .await;
-                }
-                _ => {}
-            }
-            last_activity = Instant::now();
+            match current_event {
+                Event::Input(input) => {
+                    super::profiler::on_input_event();
+                    report_user_activity();
 
-            if wake_action == app_shell::WakeAction::DispatchEvent {
-                dispatch_input_event(&window, current_event);
-            } else {
-                defmt::info!("Wake touch swallowed while sleeping");
+                    if is_sleeping {
+                        defmt::info!("Waking display from sleep");
+                        DISPLAY_COMMAND_CHANNEL
+                            .send(DisplayCommand::DisplayOn)
+                            .await;
+                        DISPLAY_COMMAND_CHANNEL
+                            .send(DisplayCommand::SetBrightness(base_brightness))
+                            .await;
+                        is_sleeping = false;
+                        is_dimmed = false;
+                        window.request_redraw();
+                    } else {
+                        if is_dimmed {
+                            defmt::info!("Restoring full brightness from dim");
+                            DISPLAY_COMMAND_CHANNEL
+                                .send(DisplayCommand::SetBrightness(base_brightness))
+                                .await;
+                            is_dimmed = false;
+                        }
+                        dispatch_input_event(&window, input);
+                    }
+                }
+                Event::Screen(screen_event) => match screen_event {
+                    ScreenEvent::DimRelative(ratio) => {
+                        let level =
+                            ((base_brightness as f32 * ratio + 0.5) as u32).clamp(1, 255) as u8;
+                        defmt::info!("Screen dimming to relative brightness {}", level);
+                        DISPLAY_COMMAND_CHANNEL
+                            .send(DisplayCommand::SetBrightness(level))
+                            .await;
+                        is_dimmed = true;
+                    }
+                    ScreenEvent::DimAbsolute(level) => {
+                        defmt::info!("Screen dimming to absolute brightness {}", level);
+                        DISPLAY_COMMAND_CHANNEL
+                            .send(DisplayCommand::SetBrightness(level))
+                            .await;
+                        is_dimmed = true;
+                    }
+                    ScreenEvent::TurnOff => {
+                        defmt::info!("Turning off display panel");
+                        DISPLAY_COMMAND_CHANNEL
+                            .send(DisplayCommand::DisplayOff)
+                            .await;
+                        is_sleeping = true;
+                    }
+                    ScreenEvent::TurnOn => {
+                        defmt::info!("Turning on display panel");
+                        DISPLAY_COMMAND_CHANNEL
+                            .send(DisplayCommand::DisplayOn)
+                            .await;
+                        DISPLAY_COMMAND_CHANNEL
+                            .send(DisplayCommand::SetBrightness(base_brightness))
+                            .await;
+                        is_sleeping = false;
+                        is_dimmed = false;
+                        window.request_redraw();
+                    }
+                },
             }
 
-            event = INPUT_EVENTS.try_receive().ok();
+            event = EVENTS.try_receive().ok();
         }
 
-        // 4. Render dirty regions (skip DMA transfers if screen is sleeping)
-        if !power_manager.is_sleeping() {
+        // 3. Render dirty regions (skip DMA transfers if screen is sleeping)
+        let mut drew_frame = false;
+        if !is_sleeping {
             let returned = match current_fb.take() {
                 Some(fb) => fb,
                 None => FLUSH_RETURN_CHANNEL.receive().await,
@@ -312,12 +334,13 @@ pub async fn run_event_loop(window_holder: WindowHolder) -> ! {
                         rect_count,
                     }))
                     .await;
+                drew_frame = true;
             } else {
                 current_fb = Some(returned);
             }
         }
 
-        // 5. Emit periodic performance summary if window elapsed
+        // 4. Emit periodic performance summary if window elapsed
         let now_since_start = core::time::Duration::from_micros(
             (Instant::now() - loop_start_time).as_micros() as u64,
         );
@@ -335,38 +358,18 @@ pub async fn run_event_loop(window_holder: WindowHolder) -> ! {
             );
         }
 
-        // 6. Check if animations or full-speed refresh are actively running
-        let is_full_speed = option_env!("SLINT_DEBUG_PERFORMANCE")
-            .is_some_and(|opt| opt.contains("refresh_full_speed"));
-        let animating = !power_manager.is_sleeping() && (window.has_active_animations() || is_full_speed);
-
-        // 6. Determine sleep timeout
-        let timeout = if is_full_speed {
-            window.request_redraw();
-            Some(Duration::from_millis(0))
-        } else if animating {
+        // 5. Determine timeout for event wait
+        let animating = !is_sleeping && (window.has_active_animations() || drew_frame);
+        let timeout = if animating {
             window.request_redraw();
             Some(Duration::from_hz(60))
         } else {
-            let current_idle =
-                core::time::Duration::from_micros((Instant::now() - last_activity).as_micros());
-            let power_timeout = power_manager
-                .time_until_next_transition(current_idle)
-                .map(|d| Duration::from_micros(d.as_micros() as u64));
-
-            let slint_timeout = slint::platform::duration_until_next_timer_update()
-                .map(|d| Duration::from_micros(d.as_micros() as u64));
-
-            match (slint_timeout, power_timeout) {
-                (Some(s), Some(p)) => Some(s.min(p)),
-                (Some(s), None) => Some(s),
-                (None, Some(p)) => Some(p),
-                (None, None) => None,
-            }
+            slint::platform::duration_until_next_timer_update()
+                .map(|d| Duration::from_micros(d.as_micros() as u64))
         };
 
-        // 7. Await next event or animation/timer tick
-        if let Some(event) = next_input_event(timeout).await {
+        // 6. Await next event or animation/timer tick
+        if let Some(event) = next_event(timeout).await {
             pending_event = Some(event);
         }
     }

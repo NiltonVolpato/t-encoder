@@ -4,7 +4,7 @@
 //! PCNT quadrature encoder and button driver for LilyGO T-Encoder Pro.
 
 use embassy_futures::select::{Either, select};
-use embassy_time::{Duration, Instant, Timer};
+use embassy_time::{Duration, Timer};
 use esp_hal::gpio::{Input, InputConfig, Pull};
 use esp_hal::pcnt::Pcnt;
 use esp_hal::pcnt::channel::{CtrlMode, EdgeMode};
@@ -12,19 +12,19 @@ use esp_hal::pcnt::unit::Unit;
 use esp_hal::peripherals::{GPIO1, GPIO2, PCNT};
 
 use super::input::{InputEvent, send_input_event};
-use super::touch::set_button;
+use super::touch;
 
 /// Glitch filter threshold in APB clock cycles.
 const FILTER_THRESHOLD: u16 = 1000;
 
 /// Number of quadrature counter edges per mechanical detent (this encoder emits 2 per click).
-const COUNTS_PER_DETENT: i16 = 2;
+const COUNTS_PER_DETENT: u8 = 2;
 
 /// Debounce settle time after a button edge.
-const DEBOUNCE_MS: u64 = 25;
+const DEBOUNCE_TIME: Duration = Duration::from_millis(25);
 
 /// Hold duration threshold before a button press counts as a long-press.
-const LONG_PRESS_MS: u64 = 600;
+const LONG_PRESS: Duration = Duration::from_millis(500);
 
 /// PCNT-backed quadrature encoder hardware holding pins and counter unit.
 pub struct EncoderHw {
@@ -84,22 +84,54 @@ impl EncoderHw {
     }
 }
 
+/// Accumulates raw quadrature counter readings into whole-detent deltas.
+///
+/// The raw counter is a free-running 16-bit value; deltas are computed with
+/// wrapping subtraction, so any movement smaller than half the counter range
+/// between calls is tracked exactly.
+pub struct Encoder {
+    last_raw: i16,
+    accum: i32,
+    counts_per_detent: i32,
+}
+
+impl Encoder {
+    /// Creates an accumulator for an encoder producing `counts_per_detent`
+    /// quadrature counts per mechanical detent (typically 4). Values below 1
+    /// are clamped to 1.
+    #[must_use]
+    pub fn new(counts_per_detent: u8) -> Self {
+        Self {
+            last_raw: 0,
+            accum: 0,
+            counts_per_detent: i32::from(counts_per_detent.max(1)),
+        }
+    }
+
+    /// Feeds a raw counter reading and returns the number of whole detents
+    /// moved since the previous call (signed; positive is clockwise).
+    ///
+    /// The leftover sub-detent remainder is retained for the next call, so no
+    /// movement is lost to rounding.
+    pub fn update(&mut self, raw: i16) -> i32 {
+        let delta = i32::from(raw.wrapping_sub(self.last_raw));
+        self.last_raw = raw;
+        self.accum = self.accum.saturating_add(delta);
+        let detents = self.accum.checked_div(self.counts_per_detent).unwrap_or(0);
+        self.accum = self
+            .accum
+            .saturating_sub(detents.saturating_mul(self.counts_per_detent));
+        detents
+    }
+}
+
 /// Asynchronous Embassy task listening for rotary encoder edge interrupts.
 #[embassy_executor::task]
-pub async fn encoder_task(mut hw: EncoderHw) {
-    let mut last_count = hw.raw();
-    let mut sub_count = 0i16;
-
+pub async fn encoder_task(mut encoder_hw: EncoderHw) {
+    let mut encoder = Encoder::new(COUNTS_PER_DETENT);
     loop {
-        hw.wait_for_rotation().await;
-        let raw = hw.raw();
-        let delta = raw.wrapping_sub(last_count);
-        last_count = raw;
-
-        sub_count += delta;
-        let detents = sub_count / COUNTS_PER_DETENT;
-        sub_count %= COUNTS_PER_DETENT;
-
+        encoder_hw.wait_for_rotation().await;
+        let detents = encoder.update(encoder_hw.raw());
         if detents != 0 {
             send_input_event(InputEvent::Rotate(detents as i32));
         }
@@ -112,29 +144,20 @@ pub async fn button_task(mut button: Input<'static>) {
     loop {
         // Sleep on falling edge (button pressed, active-low pull-up)
         button.wait_for_falling_edge().await;
-        set_button(true);
-        let press_start = Instant::now();
+        touch::set_button(true);
 
-        match select(
-            button.wait_for_rising_edge(),
-            Timer::after(Duration::from_millis(LONG_PRESS_MS)),
-        )
-        .await
-        {
+        match select(button.wait_for_rising_edge(), Timer::after(LONG_PRESS)).await {
             Either::First(()) => {
-                set_button(false);
-                let duration_ms = (Instant::now() - press_start).as_millis();
-                if duration_ms >= DEBOUNCE_MS {
-                    send_input_event(InputEvent::Click);
-                }
+                touch::set_button(false);
+                send_input_event(InputEvent::Click);
             }
             Either::Second(()) => {
                 send_input_event(InputEvent::LongPress);
                 button.wait_for_rising_edge().await;
-                set_button(false);
+                touch::set_button(false);
             }
         }
 
-        Timer::after(Duration::from_millis(DEBOUNCE_MS)).await;
+        Timer::after(DEBOUNCE_TIME).await;
     }
 }
