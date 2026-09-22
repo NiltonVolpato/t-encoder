@@ -12,7 +12,7 @@ use slint::PhysicalSize;
 use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType};
 use slint::platform::{Key, PointerEventButton, WindowAdapter, WindowEvent};
 
-use super::buzzer::{Feedback, signal_feedback};
+use super::buzzer;
 use super::display::{
     BUFFER_HEIGHT, DISPLAY_COMMAND_CHANNEL, DirtyRect, DisplayCommand, FLUSH_RETURN_CHANNEL,
     FlushJob, Framebuffer, NativeRgb565, RENDER_HEIGHT, RENDER_STRIDE, RENDER_WIDTH,
@@ -62,7 +62,7 @@ fn dispatch_input_event(window: &Rc<MinimalSoftwareWindow>, event: InputEvent) {
     match event {
         InputEvent::Rotate(delta) => {
             if delta > 0 {
-                signal_feedback(Feedback::DialStepForward);
+                buzzer::signal_feedback(buzzer::Feedback::DialStepForward);
                 for _ in 0..delta {
                     let _ = window.dispatch_event_with_result(WindowEvent::KeyPressed {
                         text: Key::UpArrow.into(),
@@ -72,7 +72,7 @@ fn dispatch_input_event(window: &Rc<MinimalSoftwareWindow>, event: InputEvent) {
                     });
                 }
             } else if delta < 0 {
-                signal_feedback(Feedback::DialStepBackward);
+                buzzer::signal_feedback(buzzer::Feedback::DialStepBackward);
                 for _ in 0..(-delta) {
                     let _ = window.dispatch_event_with_result(WindowEvent::KeyPressed {
                         text: Key::DownArrow.into(),
@@ -84,7 +84,7 @@ fn dispatch_input_event(window: &Rc<MinimalSoftwareWindow>, event: InputEvent) {
             }
         }
         InputEvent::Click => {
-            signal_feedback(Feedback::Click);
+            buzzer::signal_feedback(buzzer::Feedback::Click);
             let _ = window.dispatch_event_with_result(WindowEvent::KeyPressed {
                 text: Key::Return.into(),
             });
@@ -93,7 +93,7 @@ fn dispatch_input_event(window: &Rc<MinimalSoftwareWindow>, event: InputEvent) {
             });
         }
         InputEvent::LongPress => {
-            signal_feedback(Feedback::Haptic);
+            buzzer::signal_feedback(buzzer::Feedback::Haptic);
             let _ = window.dispatch_event_with_result(WindowEvent::KeyPressed {
                 text: Key::Escape.into(),
             });
@@ -181,7 +181,6 @@ pub async fn run_event_loop(window_holder: WindowHolder) -> ! {
         rect_count: 0,
     });
 
-    let mut current_fb: Option<ReturnedBuffer> = None;
     let mut pending_event: Option<Event> = None;
     let mut perf_tracker = app_shell::PerfTracker::new();
     let loop_start_time = Instant::now();
@@ -202,10 +201,8 @@ pub async fn run_event_loop(window_holder: WindowHolder) -> ! {
         };
 
         // 2. Process ALL pending events before drawing
-        let mut event = pending_event
-            .take()
-            .or_else(|| EVENTS.try_receive().ok());
-        while let Some(current_event) = event {
+        let event = pending_event.take().or_else(|| EVENTS.try_receive().ok());
+        if let Some(current_event) = event {
             match current_event {
                 Event::Input(input) => {
                     report_user_activity();
@@ -270,36 +267,36 @@ pub async fn run_event_loop(window_holder: WindowHolder) -> ! {
                     }
                 },
             }
-
-            event = EVENTS.try_receive().ok();
         }
 
         // 3. Render dirty regions (skip DMA transfers if screen is sleeping)
         let mut drew_frame = false;
         if !is_sleeping {
-            let returned = match current_fb.take() {
-                Some(fb) => fb,
-                None => FLUSH_RETURN_CHANNEL.receive().await,
-            };
-
-            if returned.transfer_cycles > 0 {
-                perf_tracker.record_frame(app_shell::FrameCycles {
-                    render_cycles: returned.render_cycles,
-                    transfer_cycles: returned.transfer_cycles,
-                    dirty_pixels: returned.dirty_pixels,
-                    rect_count: returned.rect_count,
-                });
-            }
-
             let mut dirty_rects: heapless::Vec<DirtyRect, 3> = heapless::Vec::new();
             let mut total_pixels = 0u32;
             let mut rect_count = 0u16;
             let mut render_cycles = 0u32;
 
-            let drawn = window.draw_if_needed(|renderer| {
+            let mut framebuffer: Option<ReturnedBuffer> = None;
+            window.draw_if_needed(|renderer| {
+                let Some(fb) = FLUSH_RETURN_CHANNEL.try_receive().ok() else {
+                    defmt::warn!("skipping frame: no return buffer available");
+                    return;
+                };
+
+                if fb.transfer_cycles > 0 {
+                    perf_tracker.record_frame(app_shell::FrameCycles {
+                        render_cycles: fb.render_cycles,
+                        transfer_cycles: fb.transfer_cycles,
+                        dirty_pixels: fb.dirty_pixels,
+                        rect_count: fb.rect_count,
+                    });
+                }
+
                 let r_start = cycle_count();
-                let region = renderer.render(&mut returned.fb.0[..], RENDER_STRIDE);
+                let region = renderer.render(&mut fb.fb.0[..], RENDER_STRIDE);
                 render_cycles = cycle_count().wrapping_sub(r_start);
+                framebuffer = Some(fb);
 
                 for (origin, size) in region.iter_box() {
                     let raw_x = origin.x.max(0) as u16;
@@ -319,10 +316,10 @@ pub async fn run_event_loop(window_holder: WindowHolder) -> ! {
                 }
             });
 
-            if drawn && !dirty_rects.is_empty() {
+            if let Some(fb) = framebuffer {
                 DISPLAY_COMMAND_CHANNEL
                     .send(DisplayCommand::Flush(FlushJob {
-                        fb: returned.fb,
+                        fb: fb.fb,
                         rects: dirty_rects,
                         render_cycles,
                         total_pixels,
@@ -330,8 +327,6 @@ pub async fn run_event_loop(window_holder: WindowHolder) -> ! {
                     }))
                     .await;
                 drew_frame = true;
-            } else {
-                current_fb = Some(returned);
             }
         }
 

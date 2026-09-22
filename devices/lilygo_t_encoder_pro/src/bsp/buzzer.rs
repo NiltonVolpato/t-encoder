@@ -19,9 +19,14 @@ pub use app_shell::Feedback;
 /// Signal used to park and wake the buzzer task with zero CPU polling when idle.
 static BUZZER_WAKER: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 
-/// Signals a feedback event to the app shell and wakes the buzzer task.
+/// Queues a feedback event and wakes the parked buzzer task to play it.
+///
+/// This is the only entry point callers should use. `app_shell::feedback::signal`
+/// merely queues the event (it's platform-agnostic and doesn't know about
+/// `BUZZER_WAKER`); calling it directly would leave the event queued but the
+/// buzzer task parked until something else happens to wake it.
 pub fn signal_feedback(feedback: Feedback) {
-    app_shell::signal_feedback(feedback);
+    app_shell::feedback::signal(feedback);
     BUZZER_WAKER.signal(());
 }
 
@@ -105,7 +110,7 @@ pub async fn buzzer_task(ledc_periph: LEDC<'static>, pin: GPIO17<'static>) {
     pulse!(1100, 50, 80);
 
     loop {
-        while let Some(feedback) = app_shell::try_receive_feedback() {
+        while let Some(feedback) = app_shell::feedback::try_receive() {
             match feedback {
                 Feedback::DialStepForward => {
                     // Ascending two-tone chirp (523 Hz -> 659 Hz)

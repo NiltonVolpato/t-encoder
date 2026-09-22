@@ -26,6 +26,8 @@ use panic_rtt_target as _;
 
 extern crate alloc;
 
+defmt::timestamp!("{=u32:us}", { xtensa_lx::timer::get_cycle_count() / 240 });
+
 // Creates a default app-descriptor required by the esp-idf bootloader.
 esp_bootloader_esp_idf::esp_app_desc!();
 

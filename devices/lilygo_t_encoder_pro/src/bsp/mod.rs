@@ -17,7 +17,6 @@ pub use board::{
     Board, BuzzerPeripherals, Core0Peripherals, Core1Peripherals, DisplayPeripherals,
     EncoderPeripherals, SystemPeripherals, TouchPeripherals,
 };
-pub use buzzer::signal_feedback;
 pub use display::{
     BigEndianRgb565, Co5300, DISPLAY_HEIGHT, DISPLAY_WIDTH, RENDER_HEIGHT, RENDER_WIDTH,
     TX_BUF_BYTES, display_task,

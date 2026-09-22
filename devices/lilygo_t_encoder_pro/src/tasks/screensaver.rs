@@ -39,10 +39,10 @@ async fn wait_for_activity(
     optional_timeout: Option<&Duration>,
 ) -> TimeoutState {
     let Some(timeout) = optional_timeout else {
-        activity.get().await;
+        activity.changed().await;
         return TimeoutState::Reset;
     };
-    match select(activity.get(), Timer::after(*timeout)).await {
+    match select(activity.changed(), Timer::after(*timeout)).await {
         Either::First(_) => TimeoutState::Reset,
         Either::Second(_) => TimeoutState::TimedOut,
     }

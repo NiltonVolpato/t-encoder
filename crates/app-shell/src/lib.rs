@@ -12,10 +12,7 @@ pub mod lifecycle;
 pub mod perf;
 pub mod profile;
 
-pub use feedback::{
-    Feedback, clear as clear_feedback, signal as signal_feedback,
-    try_receive as try_receive_feedback,
-};
+pub use feedback::Feedback;
 pub use lifecycle::{AppFactory, AppInfo, AppShell, ShellContext};
 pub use perf::{FrameCycles, PerfSummary, PerfTracker};
 pub use profile::{DEFAULT_TABLE_CAPACITY, PcSample, SampleTable};
@@ -133,23 +130,23 @@ mod tests {
 
     #[test]
     fn test_feedback_service() {
-        clear_feedback();
-        assert_eq!(try_receive_feedback(), None);
+        feedback::clear();
+        assert_eq!(feedback::try_receive(), None);
 
-        signal_feedback(Feedback::DialStepForward);
-        signal_feedback(Feedback::DialStepBackward);
-        signal_feedback(Feedback::Click);
-        signal_feedback(Feedback::Haptic);
-        signal_feedback(Feedback::Tone { hz: 440, ms: 100 });
+        feedback::signal(Feedback::DialStepForward);
+        feedback::signal(Feedback::DialStepBackward);
+        feedback::signal(Feedback::Click);
+        feedback::signal(Feedback::Haptic);
+        feedback::signal(Feedback::Tone { hz: 440, ms: 100 });
 
-        assert_eq!(try_receive_feedback(), Some(Feedback::DialStepForward));
-        assert_eq!(try_receive_feedback(), Some(Feedback::DialStepBackward));
-        assert_eq!(try_receive_feedback(), Some(Feedback::Click));
-        assert_eq!(try_receive_feedback(), Some(Feedback::Haptic));
+        assert_eq!(feedback::try_receive(), Some(Feedback::DialStepForward));
+        assert_eq!(feedback::try_receive(), Some(Feedback::DialStepBackward));
+        assert_eq!(feedback::try_receive(), Some(Feedback::Click));
+        assert_eq!(feedback::try_receive(), Some(Feedback::Haptic));
         assert_eq!(
-            try_receive_feedback(),
+            feedback::try_receive(),
             Some(Feedback::Tone { hz: 440, ms: 100 })
         );
-        assert_eq!(try_receive_feedback(), None);
+        assert_eq!(feedback::try_receive(), None);
     }
 }
