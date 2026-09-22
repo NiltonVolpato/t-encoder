@@ -3648,6 +3648,7 @@ dependencies = [
 name = "lilygo_t_encoder_pro"
 version = "0.1.0"
 dependencies = [
+ "allocator-api2 0.3.1",
  "app-launcher",
  "app-shell",
  "bt-hci",

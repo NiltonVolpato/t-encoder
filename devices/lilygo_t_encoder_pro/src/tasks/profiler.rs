@@ -16,7 +16,7 @@
 
 extern crate alloc;
 
-use alloc::boxed::Box;
+use allocator_api2::boxed::Box;
 use core::cell::RefCell;
 use core::num::NonZeroU8;
 use core::sync::atomic::{AtomicU8, Ordering};
@@ -93,7 +93,8 @@ static CURRENT_SCOPE: AtomicU8 = AtomicU8::new(0);
 
 static TIMER: Mutex<RefCell<Option<PeriodicTimer<'static, Blocking>>>> =
     Mutex::new(RefCell::new(None));
-static SAMPLES: Mutex<RefCell<Option<Box<SampleTable<512>>>>> = Mutex::new(RefCell::new(None));
+static SAMPLES: Mutex<RefCell<Option<Box<SampleTable<512>, esp_alloc::InternalMemory>>>> =
+    Mutex::new(RefCell::new(None));
 
 /// RAII guard that restricts sampling to the lifetime of this scope.
 pub struct ProfileScope {
@@ -289,7 +290,7 @@ pub async fn profiler_task(timg1: TIMG1<'static>) {
 
     // 2. Allocate sample table in the heap
     critical_section::with(|cs| {
-        let table = Box::new(SampleTable::<512>::new());
+        let table = Box::new_in(SampleTable::<512>::new(), esp_alloc::InternalMemory);
         SAMPLES.borrow_ref_mut(cs).replace(table);
     });
 
