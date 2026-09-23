@@ -240,15 +240,14 @@ pub async fn touch_task(mut touch: Chsc5816) {
             Ok(None) => {
                 if stroke_active {
                     stroke_active = false;
-                    if !stroke_suppressed {
-                        if let Some((x, y)) = last_point.take() {
+                    if !stroke_suppressed
+                        && let Some((x, y)) = last_point.take() {
                             send_input_event(InputEvent::Touch(TouchPoint {
                                 x,
                                 y,
                                 event: TouchEvent::Up,
                             }));
                         }
-                    }
                     stroke_suppressed = false;
                 }
             }
@@ -256,15 +255,14 @@ pub async fn touch_task(mut touch: Chsc5816) {
                 defmt::error!("touch: I2C read error");
                 if stroke_active {
                     stroke_active = false;
-                    if !stroke_suppressed {
-                        if let Some((x, y)) = last_point.take() {
+                    if !stroke_suppressed
+                        && let Some((x, y)) = last_point.take() {
                             send_input_event(InputEvent::Touch(TouchPoint {
                                 x,
                                 y,
                                 event: TouchEvent::Up,
                             }));
                         }
-                    }
                     stroke_suppressed = false;
                 }
             }

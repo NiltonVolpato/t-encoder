@@ -393,7 +393,7 @@ pub async fn run_event_loop(window_holder: WindowHolder) -> ! {
 
         // 4. Emit periodic performance summary if window elapsed
         let now_since_start = core::time::Duration::from_micros(
-            (Instant::now() - loop_start_time).as_micros() as u64,
+            (Instant::now() - loop_start_time).as_micros(),
         );
         if let Some(summary) = perf_tracker.take_summary(now_since_start) {
             defmt::info!(

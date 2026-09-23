@@ -151,11 +151,10 @@ fn profiler_isr() {
         }
     });
 
-    if let Some(target) = TARGET_SCOPE {
-        if CURRENT_SCOPE.load(Ordering::Relaxed) != target.get() {
+    if let Some(target) = TARGET_SCOPE
+        && CURRENT_SCOPE.load(Ordering::Relaxed) != target.get() {
             return;
         }
-    }
 
     #[cfg(target_arch = "xtensa")]
     let pc: u32 = {
@@ -249,11 +248,10 @@ fn parse_duration(s: &str) -> Option<Duration> {
         if let Ok(ms) = num_str.parse::<u64>() {
             return Some(Duration::from_millis(ms));
         }
-    } else if let Some(num_str) = s.strip_suffix('s') {
-        if let Ok(secs) = num_str.parse::<u64>() {
+    } else if let Some(num_str) = s.strip_suffix('s')
+        && let Ok(secs) = num_str.parse::<u64>() {
             return Some(Duration::from_secs(secs));
         }
-    }
     None
 }
 
