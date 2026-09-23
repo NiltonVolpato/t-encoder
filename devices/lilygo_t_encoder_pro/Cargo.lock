@@ -150,6 +150,7 @@ name = "app-shell"
 version = "0.1.0"
 dependencies = [
  "critical-section",
+ "defmt 1.1.1",
  "theme",
 ]
 

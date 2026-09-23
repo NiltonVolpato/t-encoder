@@ -12,7 +12,7 @@ use esp_hal::dma::DmaTxBuf;
 use esp_hal::gpio::{Level, Output, OutputConfig};
 use esp_hal::spi::Mode;
 use esp_hal::spi::master::{Address, Command, Config as SpiConfig, DataMode, Spi, SpiDma};
-use esp_hal::time::Rate;
+use esp_hal::time::{Instant, Rate};
 use esp_hal::{Async, dma_tx_buffer};
 use slint::platform::software_renderer::{PremultipliedRgbaColor, Rgb565Pixel, TargetPixel};
 
@@ -148,19 +148,9 @@ pub enum DisplayCommand {
     DisplayOn,
 }
 
-/// A completed frame buffer returned from the display worker with timing metrics.
-pub struct ReturnedBuffer {
-    pub fb: Framebuffer,
-    pub render_cycles: u32,
-    pub transfer_cycles: u32,
-    pub dirty_pixels: u32,
-    pub rect_count: u16,
-}
-
 pub static DISPLAY_COMMAND_CHANNEL: Channel<CriticalSectionRawMutex, DisplayCommand, 4> =
     Channel::new();
-pub static FLUSH_RETURN_CHANNEL: Channel<CriticalSectionRawMutex, ReturnedBuffer, 2> =
-    Channel::new();
+pub static FLUSH_RETURN_CHANNEL: Channel<CriticalSectionRawMutex, Framebuffer, 2> = Channel::new();
 
 #[inline(always)]
 fn cycle_count() -> u32 {
@@ -595,6 +585,9 @@ pub async fn display_task(mut display: Co5300) {
         defmt::info!("CO5300 display initialized successfully");
     }
 
+    let mut perf_tracker = app_shell::PerfTracker::new();
+    let loop_start_time = Instant::now();
+
     loop {
         match DISPLAY_COMMAND_CHANNEL.receive().await {
             DisplayCommand::Flush(job) => {
@@ -639,15 +632,23 @@ pub async fn display_task(mut display: Co5300) {
                     }
                 }
                 let transfer_cycles = cycle_count().wrapping_sub(t_start);
-                let _ = FLUSH_RETURN_CHANNEL
-                    .send(ReturnedBuffer {
-                        fb: job.fb,
+                let _ = FLUSH_RETURN_CHANNEL.send(job.fb).await;
+
+                if transfer_cycles > 0 {
+                    perf_tracker.record_frame(app_shell::FrameCycles {
                         render_cycles: job.render_cycles,
                         transfer_cycles,
                         dirty_pixels: job.total_pixels,
                         rect_count: job.rect_count,
-                    })
-                    .await;
+                    });
+                }
+
+                let now_since_start = core::time::Duration::from_micros(
+                    (Instant::now() - loop_start_time).as_micros(),
+                );
+                if let Some(summary) = perf_tracker.take_summary(now_since_start) {
+                    defmt::info!("[PERF] {}", summary);
+                }
             }
             DisplayCommand::SetBrightness(level) => {
                 let _ = display.set_brightness(level).await;

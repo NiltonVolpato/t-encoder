@@ -19,6 +19,7 @@ std = [
 [dependencies]
 theme = { workspace = true }
 critical-section = "1.2.0"
+defmt = { workspace = true }
 
 [dev-dependencies]
 slint = { workspace = true }

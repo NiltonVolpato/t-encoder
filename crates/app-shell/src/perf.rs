@@ -31,6 +31,23 @@ pub struct PerfSummary {
     pub total_rects: u32,
 }
 
+impl defmt::Format for PerfSummary {
+    fn format(&self, f: defmt::Formatter) {
+        defmt::write!(
+            f,
+            "{=f32} FPS | render: avg {=f32}ms (max {=f32}ms) | transfer: avg {=f32}ms (max {=f32}ms) | dirty: {=f32}% ({} rects, {} frames)",
+            self.fps,
+            self.avg_render_ms,
+            self.max_render_ms,
+            self.avg_transfer_ms,
+            self.max_transfer_ms,
+            self.avg_dirty_percent,
+            self.total_rects,
+            self.frame_count
+        )
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct PerfTracker {
     cycles_per_ms: u32,

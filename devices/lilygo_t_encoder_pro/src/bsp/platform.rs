@@ -19,7 +19,6 @@ use super::buzzer;
 use super::display::{
     BUFFER_HEIGHT, DISPLAY_COMMAND_CHANNEL, DirtyRect, DisplayCommand, FLUSH_RETURN_CHANNEL,
     FlushJob, Framebuffer, NativeRgb565, RENDER_HEIGHT, RENDER_STRIDE, RENDER_WIDTH,
-    ReturnedBuffer,
 };
 use super::event::{EVENTS, Event, ScreenEvent};
 use super::input::InputEvent;
@@ -218,34 +217,14 @@ pub async fn run_event_loop(window_holder: WindowHolder) -> ! {
 
     let fb_a = Framebuffer(&mut FRAME_BUFFER_A.take().0);
     let fb_b = Framebuffer(&mut FRAME_BUFFER_B.take().0);
-    if FLUSH_RETURN_CHANNEL
-        .try_send(ReturnedBuffer {
-            fb: fb_a,
-            render_cycles: 0,
-            transfer_cycles: 0,
-            dirty_pixels: 0,
-            rect_count: 0,
-        })
-        .is_err()
-    {
-        defmt::error!("FLUSH_RETURN_CHANNEL full while seeding framebuffer A, buffer lost");
-    }
-    if FLUSH_RETURN_CHANNEL
-        .try_send(ReturnedBuffer {
-            fb: fb_b,
-            render_cycles: 0,
-            transfer_cycles: 0,
-            dirty_pixels: 0,
-            rect_count: 0,
-        })
-        .is_err()
-    {
-        defmt::error!("FLUSH_RETURN_CHANNEL full while seeding framebuffer B, buffer lost");
-    }
+    FLUSH_RETURN_CHANNEL
+        .try_send(fb_a)
+        .expect("FLUSH_RETURN_CHANNEL full while seeding framebuffer A, buffer lost");
+    FLUSH_RETURN_CHANNEL
+        .try_send(fb_b)
+        .expect("FLUSH_RETURN_CHANNEL full while seeding framebuffer B, buffer lost");
 
     let mut pending_event: Option<Event> = None;
-    let mut perf_tracker = app_shell::PerfTracker::new();
-    let loop_start_time = Instant::now();
 
     let base_brightness: u8 = 255;
     let mut is_dimmed: bool = false;
@@ -339,24 +318,15 @@ pub async fn run_event_loop(window_holder: WindowHolder) -> ! {
             let mut rect_count = 0u16;
             let mut render_cycles = 0u32;
 
-            let mut framebuffer: Option<ReturnedBuffer> = None;
+            let mut framebuffer: Option<Framebuffer> = None;
             window.draw_if_needed(|renderer| {
                 let Some(fb) = FLUSH_RETURN_CHANNEL.try_receive().ok() else {
                     defmt::warn!("skipping frame: no return buffer available");
                     return;
                 };
 
-                if fb.transfer_cycles > 0 {
-                    perf_tracker.record_frame(app_shell::FrameCycles {
-                        render_cycles: fb.render_cycles,
-                        transfer_cycles: fb.transfer_cycles,
-                        dirty_pixels: fb.dirty_pixels,
-                        rect_count: fb.rect_count,
-                    });
-                }
-
                 let r_start = cycle_count();
-                let region = renderer.render(&mut fb.fb.0[..], RENDER_STRIDE);
+                let region = renderer.render(&mut fb.0[..], RENDER_STRIDE);
                 render_cycles = cycle_count().wrapping_sub(r_start);
                 framebuffer = Some(fb);
 
@@ -382,7 +352,7 @@ pub async fn run_event_loop(window_holder: WindowHolder) -> ! {
                 drew_frame = !dirty_rects.is_empty();
                 DISPLAY_COMMAND_CHANNEL
                     .send(DisplayCommand::Flush(FlushJob {
-                        fb: fb.fb,
+                        fb,
                         rects: dirty_rects,
                         render_cycles,
                         total_pixels,
@@ -392,24 +362,7 @@ pub async fn run_event_loop(window_holder: WindowHolder) -> ! {
             }
         }
 
-        // 4. Emit periodic performance summary if window elapsed
-        let now_since_start =
-            core::time::Duration::from_micros((Instant::now() - loop_start_time).as_micros());
-        if let Some(summary) = perf_tracker.take_summary(now_since_start) {
-            defmt::info!(
-                "[PERF] {=f32} FPS | render: avg {=f32}ms (max {=f32}ms) | transfer: avg {=f32}ms (max {=f32}ms) | dirty: {=f32}% ({} rects, {} frames)",
-                summary.fps,
-                summary.avg_render_ms,
-                summary.max_render_ms,
-                summary.avg_transfer_ms,
-                summary.max_transfer_ms,
-                summary.avg_dirty_percent,
-                summary.total_rects,
-                summary.frame_count,
-            );
-        }
-
-        // 5. Determine timeout for event wait
+        // 4. Determine timeout for event wait
         let animating = !is_sleeping && (window.has_active_animations() || drew_frame);
         let timeout = if animating {
             // window.request_redraw();
@@ -419,7 +372,7 @@ pub async fn run_event_loop(window_holder: WindowHolder) -> ! {
                 .map(|d| Duration::from_micros(d.as_micros() as u64))
         };
 
-        // 6. Await next event or animation/timer tick
+        // 5. Await next event or animation/timer tick
         if let Some(event) = next_event(timeout).await {
             pending_event = Some(event);
         }
