@@ -28,14 +28,19 @@ static QUEUE: Mutex<RefCell<VecDeque<Feedback>>> = Mutex::new(RefCell::new(VecDe
 
 /// Signals a feedback event to the system.
 ///
-/// If the internal queue is full, the event is dropped to avoid unbounded memory growth.
-pub fn signal(feedback: Feedback) {
+/// If the internal queue is full, the event is dropped to avoid unbounded memory growth,
+/// and `false` is returned so the caller can report it (this crate is platform-agnostic
+/// and has no logging facility of its own).
+pub fn signal(feedback: Feedback) -> bool {
     critical_section::with(|cs| {
         let mut queue = QUEUE.borrow(cs).borrow_mut();
         if queue.len() < MAX_QUEUE_CAPACITY {
             queue.push_back(feedback);
+            true
+        } else {
+            false
         }
-    });
+    })
 }
 
 /// Attempts to receive the next queued feedback event.

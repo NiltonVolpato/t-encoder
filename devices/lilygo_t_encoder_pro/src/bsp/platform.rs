@@ -10,7 +10,9 @@ use embassy_time::{Duration, Timer};
 use esp_hal::time::Instant;
 use slint::PhysicalSize;
 use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType};
-use slint::platform::{Key, PointerEventButton, WindowAdapter, WindowEvent};
+use slint::platform::{
+    Key, PointerEventButton, WindowAdapter, WindowEvent, WindowEventDispatchResult,
+};
 
 use super::buzzer;
 use super::display::{
@@ -57,6 +59,26 @@ impl slint::platform::Platform for EspPlatform {
     }
 }
 
+/// Dispatches to Slint and logs the actual result, instead of silently
+/// discarding it like `let _ = window.dispatch_event_with_result(...)` did.
+fn dispatch(window: &Rc<MinimalSoftwareWindow>, event: WindowEvent) {
+    match window.dispatch_event_with_result(event.clone()) {
+        Ok(WindowEventDispatchResult::Accepted) => {
+            defmt::trace!("Slint accepted {:?} event", defmt::Debug2Format(&event));
+        }
+        Ok(WindowEventDispatchResult::Rejected) => {
+            defmt::trace!("Slint rejected {:?} event", defmt::Debug2Format(&event));
+        }
+        Ok(_) => {}
+        Err(_) => {
+            defmt::error!(
+                "Slint dispatch_event_with_result errored on {:?} event",
+                defmt::Debug2Format(&event)
+            );
+        }
+    }
+}
+
 /// Dispatches a single input event to the active Slint window.
 fn dispatch_input_event(window: &Rc<MinimalSoftwareWindow>, event: InputEvent) {
     match event {
@@ -64,62 +86,91 @@ fn dispatch_input_event(window: &Rc<MinimalSoftwareWindow>, event: InputEvent) {
             if delta > 0 {
                 buzzer::signal_feedback(buzzer::Feedback::DialStepForward);
                 for _ in 0..delta {
-                    let _ = window.dispatch_event_with_result(WindowEvent::KeyPressed {
-                        text: Key::UpArrow.into(),
-                    });
-                    let _ = window.dispatch_event_with_result(WindowEvent::KeyReleased {
-                        text: Key::UpArrow.into(),
-                    });
+                    dispatch(
+                        window,
+                        WindowEvent::KeyPressed {
+                            text: Key::UpArrow.into(),
+                        },
+                    );
+                    dispatch(
+                        window,
+                        WindowEvent::KeyReleased {
+                            text: Key::UpArrow.into(),
+                        },
+                    );
                 }
             } else if delta < 0 {
                 buzzer::signal_feedback(buzzer::Feedback::DialStepBackward);
                 for _ in 0..(-delta) {
-                    let _ = window.dispatch_event_with_result(WindowEvent::KeyPressed {
-                        text: Key::DownArrow.into(),
-                    });
-                    let _ = window.dispatch_event_with_result(WindowEvent::KeyReleased {
-                        text: Key::DownArrow.into(),
-                    });
+                    dispatch(
+                        window,
+                        WindowEvent::KeyPressed {
+                            text: Key::DownArrow.into(),
+                        },
+                    );
+                    dispatch(
+                        window,
+                        WindowEvent::KeyReleased {
+                            text: Key::DownArrow.into(),
+                        },
+                    );
                 }
             }
         }
         InputEvent::Click => {
             buzzer::signal_feedback(buzzer::Feedback::Click);
-            let _ = window.dispatch_event_with_result(WindowEvent::KeyPressed {
-                text: Key::Return.into(),
-            });
-            let _ = window.dispatch_event_with_result(WindowEvent::KeyReleased {
-                text: Key::Return.into(),
-            });
+            dispatch(
+                window,
+                WindowEvent::KeyPressed {
+                    text: Key::Return.into(),
+                },
+            );
+            dispatch(
+                window,
+                WindowEvent::KeyReleased {
+                    text: Key::Return.into(),
+                },
+            );
         }
         InputEvent::LongPress => {
             buzzer::signal_feedback(buzzer::Feedback::Haptic);
-            let _ = window.dispatch_event_with_result(WindowEvent::KeyPressed {
-                text: Key::Escape.into(),
-            });
-            let _ = window.dispatch_event_with_result(WindowEvent::KeyReleased {
-                text: Key::Escape.into(),
-            });
+            dispatch(
+                window,
+                WindowEvent::KeyPressed {
+                    text: Key::Escape.into(),
+                },
+            );
+            dispatch(
+                window,
+                WindowEvent::KeyReleased {
+                    text: Key::Escape.into(),
+                },
+            );
         }
         InputEvent::Touch(point) => {
             let position = slint::LogicalPosition::new(point.x as f32, point.y as f32);
             match point.event {
                 TouchEvent::Down => {
-                    let _ = window.dispatch_event_with_result(WindowEvent::PointerPressed {
-                        position,
-                        button: PointerEventButton::Left,
-                    });
+                    dispatch(
+                        window,
+                        WindowEvent::PointerPressed {
+                            position,
+                            button: PointerEventButton::Left,
+                        },
+                    );
                 }
                 TouchEvent::Move => {
-                    let _ =
-                        window.dispatch_event_with_result(WindowEvent::PointerMoved { position });
+                    dispatch(window, WindowEvent::PointerMoved { position });
                 }
                 TouchEvent::Up => {
-                    let _ = window.dispatch_event_with_result(WindowEvent::PointerReleased {
-                        position,
-                        button: PointerEventButton::Left,
-                    });
-                    let _ = window.dispatch_event_with_result(WindowEvent::PointerExited);
+                    dispatch(
+                        window,
+                        WindowEvent::PointerReleased {
+                            position,
+                            button: PointerEventButton::Left,
+                        },
+                    );
+                    dispatch(window, WindowEvent::PointerExited);
                 }
             }
         }
@@ -166,20 +217,30 @@ pub async fn run_event_loop(window_holder: WindowHolder) -> ! {
 
     let fb_a = Framebuffer(&mut FRAME_BUFFER_A.take().0);
     let fb_b = Framebuffer(&mut FRAME_BUFFER_B.take().0);
-    let _ = FLUSH_RETURN_CHANNEL.try_send(ReturnedBuffer {
-        fb: fb_a,
-        render_cycles: 0,
-        transfer_cycles: 0,
-        dirty_pixels: 0,
-        rect_count: 0,
-    });
-    let _ = FLUSH_RETURN_CHANNEL.try_send(ReturnedBuffer {
-        fb: fb_b,
-        render_cycles: 0,
-        transfer_cycles: 0,
-        dirty_pixels: 0,
-        rect_count: 0,
-    });
+    if FLUSH_RETURN_CHANNEL
+        .try_send(ReturnedBuffer {
+            fb: fb_a,
+            render_cycles: 0,
+            transfer_cycles: 0,
+            dirty_pixels: 0,
+            rect_count: 0,
+        })
+        .is_err()
+    {
+        defmt::error!("FLUSH_RETURN_CHANNEL full while seeding framebuffer A, buffer lost");
+    }
+    if FLUSH_RETURN_CHANNEL
+        .try_send(ReturnedBuffer {
+            fb: fb_b,
+            render_cycles: 0,
+            transfer_cycles: 0,
+            dirty_pixels: 0,
+            rect_count: 0,
+        })
+        .is_err()
+    {
+        defmt::error!("FLUSH_RETURN_CHANNEL full while seeding framebuffer B, buffer lost");
+    }
 
     let mut pending_event: Option<Event> = None;
     let mut perf_tracker = app_shell::PerfTracker::new();
@@ -317,6 +378,7 @@ pub async fn run_event_loop(window_holder: WindowHolder) -> ! {
             });
 
             if let Some(fb) = framebuffer {
+                drew_frame = !dirty_rects.is_empty();
                 DISPLAY_COMMAND_CHANNEL
                     .send(DisplayCommand::Flush(FlushJob {
                         fb: fb.fb,
@@ -326,7 +388,6 @@ pub async fn run_event_loop(window_holder: WindowHolder) -> ! {
                         rect_count,
                     }))
                     .await;
-                drew_frame = true;
             }
         }
 
@@ -351,7 +412,7 @@ pub async fn run_event_loop(window_holder: WindowHolder) -> ! {
         // 5. Determine timeout for event wait
         let animating = !is_sleeping && (window.has_active_animations() || drew_frame);
         let timeout = if animating {
-            window.request_redraw();
+            // window.request_redraw();
             Some(Duration::from_hz(60))
         } else {
             slint::platform::duration_until_next_timer_update()

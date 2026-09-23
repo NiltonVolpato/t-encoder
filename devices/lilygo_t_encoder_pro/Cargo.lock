@@ -1123,6 +1123,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "detent-decoder"
+version = "0.1.0"
+
+[[package]]
 name = "digest"
 version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3655,6 +3659,7 @@ dependencies = [
  "cc",
  "critical-section",
  "defmt 1.1.1",
+ "detent-decoder",
  "embassy-executor",
  "embassy-futures",
  "embassy-net",

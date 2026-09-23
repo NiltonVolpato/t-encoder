@@ -18,8 +18,8 @@ use esp_hal::system::Stack;
 use esp_hal::timer::timg::TimerGroup;
 use lilygo_t_encoder_pro::bsp::buzzer::buzzer_task;
 use lilygo_t_encoder_pro::bsp::{
-    Board, Bsp, Co5300, Core1Peripherals, button_task, display_task, encoder_task, run_event_loop,
-    simd, touch_task,
+    Board, Bsp, Co5300, Core1Peripherals, button_task, display_task, rotary_task,
+    run_event_loop, simd, touch_task,
 };
 use lilygo_t_encoder_pro::tasks::{PROFILER_ENABLED, profiler_task, screensaver_task};
 use panic_rtt_target as _;
@@ -91,8 +91,8 @@ async fn main(spawner: Spawner) -> ! {
         .spawn(buzzer_task(bsp.buzzer.ledc, bsp.buzzer.pin).expect("Failed to create buzzer task"));
 
     // 7. Spawn interrupt-driven input & screensaver tasks
-    spawner.spawn(encoder_task(bsp.encoder_hw).expect("Failed to create encoder task"));
     spawner.spawn(button_task(bsp.button).expect("Failed to create button task"));
+    spawner.spawn(rotary_task().expect("Failed to create rotary task"));
     if let Some(touch) = bsp.touch {
         spawner.spawn(touch_task(touch).expect("Failed to create touch task"));
     }

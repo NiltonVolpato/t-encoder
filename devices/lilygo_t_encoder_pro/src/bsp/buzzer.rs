@@ -26,7 +26,12 @@ static BUZZER_WAKER: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 /// `BUZZER_WAKER`); calling it directly would leave the event queued but the
 /// buzzer task parked until something else happens to wake it.
 pub fn signal_feedback(feedback: Feedback) {
-    app_shell::feedback::signal(feedback);
+    if !app_shell::feedback::signal(feedback) {
+        defmt::error!(
+            "feedback queue full, dropped {}",
+            defmt::Debug2Format(&feedback)
+        );
+    }
     BUZZER_WAKER.signal(());
 }
 

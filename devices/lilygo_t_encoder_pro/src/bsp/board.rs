@@ -34,6 +34,7 @@ pub struct EncoderPeripherals {
     pub pin_a: GPIO1<'static>,
     pub pin_b: GPIO2<'static>,
     pub button: GPIO0<'static>,
+    pub io_mux: IO_MUX<'static>,
 }
 
 /// Peripherals required for the buzzer / haptic feedback.
@@ -87,6 +88,7 @@ impl Board {
                     pin_a: p.GPIO1,
                     pin_b: p.GPIO2,
                     button: p.GPIO0,
+                    io_mux: p.IO_MUX,
                 },
                 buzzer: BuzzerPeripherals {
                     ledc: p.LEDC,

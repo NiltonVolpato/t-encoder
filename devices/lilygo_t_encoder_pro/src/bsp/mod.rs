@@ -24,7 +24,7 @@ pub use display::{
 pub use event::{EVENTS, Event, ScreenEvent, send_event};
 pub use input::{InputEvent, send_input_event};
 pub use platform::{EspPlatform, WindowHolder, run_event_loop};
-pub use rotary::{EncoderHw, button_task, encoder_task};
+pub use rotary::{EncoderHw, button_task, init_rotary, rotary_decode_once, rotary_task};
 pub use touch::{Chsc5816, touch_task};
 
 use esp_hal::gpio::{Input, InputConfig, Pull};
@@ -34,7 +34,6 @@ use esp_hal::time::Rate;
 pub struct Bsp {
     pub window: WindowHolder,
     pub touch: Option<Chsc5816>,
-    pub encoder_hw: EncoderHw,
     pub button: Input<'static>,
     pub buzzer: BuzzerPeripherals,
     pub profiler_timer: esp_hal::peripherals::TIMG1<'static>,
@@ -64,9 +63,9 @@ impl Bsp {
             }
         };
 
-        // 2. Initialize PCNT quadrature rotary encoder and button
-        let encoder_hw =
-            EncoderHw::new(core0.encoder.pcnt, core0.encoder.pin_a, core0.encoder.pin_b);
+        // 2. Initialize PCNT quadrature rotary encoder (fully interrupt-driven) and button
+        let encoder_hw = EncoderHw::new(core0.encoder.pcnt, core0.encoder.pin_a, core0.encoder.pin_b);
+        init_rotary(core0.encoder.io_mux, encoder_hw);
         let button = Input::new(
             core0.encoder.button,
             InputConfig::default().with_pull(Pull::Up),
@@ -83,7 +82,6 @@ impl Bsp {
         Self {
             window,
             touch,
-            encoder_hw,
             button,
             buzzer: core0.buzzer,
             profiler_timer: core0.profiler_timer,

@@ -13,8 +13,26 @@ test = false
 harness = false
 name    = "hello_test"
 
+[[test]]
+harness = false
+name    = "rotate_dispatch_test"
+
+[[test]]
+harness = false
+name    = "rotary_injector_test"
+
+[[test]]
+harness = false
+name    = "rotary_manual_log_test"
+
 [lib]
 test = false
+
+[features]
+default = []
+# Interrupt-entry pin diagnostics: logs one `rotary isr:` line per wake with
+# pending flags, pin levels, and edge polarity. Off in normal builds.
+rotary-debug = []
 
 [dependencies]
 slint = {
@@ -31,6 +49,7 @@ slint = {
 }
 app-launcher = { path = "../../apps/launcher", default-features = false, features = ["apps"] }
 app-shell = { path = "../../crates/app-shell", default-features = false }
+detent-decoder = { path = "../../crates/detent-decoder" }
 
 esp-hal = { version = "~1.1.0", features = ["defmt", "esp32s3", "unstable"] }
 

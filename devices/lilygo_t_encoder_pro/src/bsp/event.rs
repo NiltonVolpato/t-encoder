@@ -52,7 +52,7 @@ pub static EVENTS: Channel<CriticalSectionRawMutex, Event, QUEUE_CAPACITY> = Cha
 /// Dispatches a system event to the central channel.
 pub fn send_event(event: Event) {
     if EVENTS.try_send(event).is_err() {
-        defmt::warn!("EVENTS channel full, dropped event");
+        defmt::error!("EVENTS channel full, dropped event");
     }
 }
 

@@ -46,7 +46,9 @@ static BUTTON_EVENTS: Channel<CriticalSectionRawMutex, (bool, u64), 8> = Channel
 /// Notifies the touch driver of button state changes to suppress phantom touches.
 pub fn set_button(down: bool) {
     let at_ms = Instant::now().as_millis();
-    let _ = BUTTON_EVENTS.try_send((down, at_ms));
+    if BUTTON_EVENTS.try_send((down, at_ms)).is_err() {
+        defmt::error!("BUTTON_EVENTS channel full, dropped button state");
+    }
 }
 
 struct PhantomTracker {
