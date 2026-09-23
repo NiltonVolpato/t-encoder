@@ -6,7 +6,6 @@
 //! Wraps routines from `third_party/esp_simd` (by Mike Liu) to accelerate
 //! pixel buffer operations using 128-bit vector registers (`q0`–`q7`).
 
-
 unsafe extern "C" {
     /// Fills an `int16_t` array with a constant value using PIE SIMD.
     /// Requires `a` to be 16-byte (128-bit) aligned.

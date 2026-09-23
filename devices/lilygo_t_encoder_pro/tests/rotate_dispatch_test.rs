@@ -68,7 +68,10 @@ mod tests {
         let pressed = window
             .dispatch_event_with_result(WindowEvent::KeyPressed { text: key.into() })
             .expect("dispatch_event_with_result errored on press");
-        let accepted = matches!(pressed, slint::platform::WindowEventDispatchResult::Accepted);
+        let accepted = matches!(
+            pressed,
+            slint::platform::WindowEventDispatchResult::Accepted
+        );
         assert!(accepted, "Slint did not accept the key press");
 
         let _ = window.dispatch_event_with_result(WindowEvent::KeyReleased { text: key.into() });
@@ -109,11 +112,20 @@ mod tests {
             .clone()
             .expect("EspPlatform did not register a window");
 
-        static FRAME_BUFFER_A: static_cell::ConstStaticCell<[NativeRgb565; RENDER_STRIDE * BUFFER_HEIGHT]> =
-            static_cell::ConstStaticCell::new([NativeRgb565::new(0); RENDER_STRIDE * BUFFER_HEIGHT]);
-        static FRAME_BUFFER_B: static_cell::ConstStaticCell<[NativeRgb565; RENDER_STRIDE * BUFFER_HEIGHT]> =
-            static_cell::ConstStaticCell::new([NativeRgb565::new(0); RENDER_STRIDE * BUFFER_HEIGHT]);
-        let mut bufs = [FRAME_BUFFER_A.take().as_mut_slice(), FRAME_BUFFER_B.take().as_mut_slice()];
+        static FRAME_BUFFER_A: static_cell::ConstStaticCell<
+            [NativeRgb565; RENDER_STRIDE * BUFFER_HEIGHT],
+        > = static_cell::ConstStaticCell::new(
+            [NativeRgb565::new(0); RENDER_STRIDE * BUFFER_HEIGHT],
+        );
+        static FRAME_BUFFER_B: static_cell::ConstStaticCell<
+            [NativeRgb565; RENDER_STRIDE * BUFFER_HEIGHT],
+        > = static_cell::ConstStaticCell::new(
+            [NativeRgb565::new(0); RENDER_STRIDE * BUFFER_HEIGHT],
+        );
+        let mut bufs = [
+            FRAME_BUFFER_A.take().as_mut_slice(),
+            FRAME_BUFFER_B.take().as_mut_slice(),
+        ];
         let mut toggle = false;
         tick_render(&window, &mut bufs, &mut toggle); // initial paint, like the first run_event_loop iteration
 

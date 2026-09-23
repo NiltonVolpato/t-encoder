@@ -4,6 +4,7 @@
 extern crate alloc;
 
 use alloc::boxed::Box;
+
 use app_launcher::LauncherAppFactory;
 use app_shell::AppShell;
 

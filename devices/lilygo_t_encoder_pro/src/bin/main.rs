@@ -8,6 +8,7 @@
 #![deny(clippy::large_stack_frames)]
 
 use alloc::boxed::Box;
+
 use app_launcher::LauncherAppFactory;
 use app_shell::AppShell;
 use defmt::info;
@@ -18,8 +19,8 @@ use esp_hal::system::Stack;
 use esp_hal::timer::timg::TimerGroup;
 use lilygo_t_encoder_pro::bsp::buzzer::buzzer_task;
 use lilygo_t_encoder_pro::bsp::{
-    Board, Bsp, Co5300, Core1Peripherals, button_task, display_task, rotary_task,
-    run_event_loop, simd, touch_task,
+    Board, Bsp, Co5300, Core1Peripherals, button_task, display_task, rotary_task, run_event_loop,
+    simd, touch_task,
 };
 use lilygo_t_encoder_pro::tasks::{PROFILER_ENABLED, profiler_task, screensaver_task};
 use panic_rtt_target as _;

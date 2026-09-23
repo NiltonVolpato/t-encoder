@@ -47,4 +47,3 @@ impl app_shell::AppFactory for PomodoroAppFactory {
         Box::new(self.clone())
     }
 }
-

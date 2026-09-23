@@ -13,4 +13,3 @@ where
 {
     Navigation::get(app).on_exit(on_exit);
 }
-

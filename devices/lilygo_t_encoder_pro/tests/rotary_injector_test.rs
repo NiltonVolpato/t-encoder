@@ -160,7 +160,15 @@ mod tests {
         const CYCLES_PER_SPEED: usize = 50;
 
         for &speed_us in &SPEEDS_US {
-            let forward = drive(&unit, &mut pin_a, &mut pin_b, &delay, 1, speed_us, CYCLES_PER_SPEED);
+            let forward = drive(
+                &unit,
+                &mut pin_a,
+                &mut pin_b,
+                &delay,
+                1,
+                speed_us,
+                CYCLES_PER_SPEED,
+            );
             for (i, &d) in forward.iter().enumerate() {
                 let expected = forward_baseline[i % 4];
                 assert_eq!(
@@ -170,7 +178,15 @@ mod tests {
                 );
             }
 
-            let reverse = drive(&unit, &mut pin_a, &mut pin_b, &delay, -1, speed_us, CYCLES_PER_SPEED);
+            let reverse = drive(
+                &unit,
+                &mut pin_a,
+                &mut pin_b,
+                &delay,
+                -1,
+                speed_us,
+                CYCLES_PER_SPEED,
+            );
             for (i, &d) in reverse.iter().enumerate() {
                 let expected = reverse_baseline[i % 4];
                 assert_eq!(
@@ -180,7 +196,11 @@ mod tests {
                 );
             }
 
-            defmt::info!("{}us/step: {} transitions each direction, all matched baseline", speed_us, CYCLES_PER_SPEED * 4);
+            defmt::info!(
+                "{}us/step: {} transitions each direction, all matched baseline",
+                speed_us,
+                CYCLES_PER_SPEED * 4
+            );
         }
 
         defmt::info!("pcnt_never_diverges_from_slow_baseline_at_speed: all speeds matched");

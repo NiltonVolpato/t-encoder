@@ -16,21 +16,21 @@
 
 extern crate alloc;
 
-use allocator_api2::boxed::Box;
 use core::cell::RefCell;
 use core::num::NonZeroU8;
 use core::sync::atomic::{AtomicU8, Ordering};
+
+use allocator_api2::boxed::Box;
+use app_shell::profile::SampleTable;
 use critical_section::Mutex;
 use defmt::info;
 use embassy_time::{Duration, Timer};
-use esp_hal::Blocking;
-use esp_hal::handler;
 use esp_hal::peripherals::TIMG1;
 use esp_hal::timer::PeriodicTimer;
 use esp_hal::timer::timg::TimerGroup;
+use esp_hal::{Blocking, handler};
 
 use super::subscribe_user_activity;
-use app_shell::profile::SampleTable;
 
 /// Sampling frequency: 2 kHz (500 µs interval).
 pub const SAMPLING_PERIOD: esp_hal::time::Duration = esp_hal::time::Duration::from_micros(500);
@@ -152,9 +152,10 @@ fn profiler_isr() {
     });
 
     if let Some(target) = TARGET_SCOPE
-        && CURRENT_SCOPE.load(Ordering::Relaxed) != target.get() {
-            return;
-        }
+        && CURRENT_SCOPE.load(Ordering::Relaxed) != target.get()
+    {
+        return;
+    }
 
     #[cfg(target_arch = "xtensa")]
     let pc: u32 = {
@@ -249,9 +250,10 @@ fn parse_duration(s: &str) -> Option<Duration> {
             return Some(Duration::from_millis(ms));
         }
     } else if let Some(num_str) = s.strip_suffix('s')
-        && let Ok(secs) = num_str.parse::<u64>() {
-            return Some(Duration::from_secs(secs));
-        }
+        && let Ok(secs) = num_str.parse::<u64>()
+    {
+        return Some(Duration::from_secs(secs));
+    }
     None
 }
 

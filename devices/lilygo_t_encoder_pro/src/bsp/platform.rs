@@ -5,6 +5,7 @@
 
 use alloc::rc::Rc;
 use core::cell::RefCell;
+
 use embassy_futures::select::{Either, select};
 use embassy_time::{Duration, Timer};
 use esp_hal::time::Instant;
@@ -392,9 +393,8 @@ pub async fn run_event_loop(window_holder: WindowHolder) -> ! {
         }
 
         // 4. Emit periodic performance summary if window elapsed
-        let now_since_start = core::time::Duration::from_micros(
-            (Instant::now() - loop_start_time).as_micros(),
-        );
+        let now_since_start =
+            core::time::Duration::from_micros((Instant::now() - loop_start_time).as_micros());
         if let Some(summary) = perf_tracker.take_summary(now_since_start) {
             defmt::info!(
                 "[PERF] {=f32} FPS | render: avg {=f32}ms (max {=f32}ms) | transfer: avg {=f32}ms (max {=f32}ms) | dirty: {=f32}% ({} rects, {} frames)",

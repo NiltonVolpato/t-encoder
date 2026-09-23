@@ -47,4 +47,3 @@ impl app_shell::AppFactory for MacropadAppFactory {
         Box::new(self.clone())
     }
 }
-

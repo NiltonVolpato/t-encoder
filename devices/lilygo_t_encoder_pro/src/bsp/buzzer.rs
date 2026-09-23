@@ -4,6 +4,8 @@
 //! Transducer buzzer & haptics driver using a single dynamic LEDC timer on GPIO17.
 
 use core::cell::RefCell;
+
+pub use app_shell::Feedback;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::signal::Signal;
 use embassy_time::{Duration, Timer};
@@ -13,8 +15,6 @@ use esp_hal::ledc::timer::{self, TimerIFace};
 use esp_hal::ledc::{LSGlobalClkSource, Ledc, LowSpeed};
 use esp_hal::peripherals::{GPIO17, LEDC};
 use esp_hal::time::Rate;
-
-pub use app_shell::Feedback;
 
 /// Signal used to park and wake the buzzer task with zero CPU polling when idle.
 static BUZZER_WAKER: Signal<CriticalSectionRawMutex, ()> = Signal::new();

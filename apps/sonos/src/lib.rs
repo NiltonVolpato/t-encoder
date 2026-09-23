@@ -47,4 +47,3 @@ impl app_shell::AppFactory for SonosAppFactory {
         Box::new(self.clone())
     }
 }
-

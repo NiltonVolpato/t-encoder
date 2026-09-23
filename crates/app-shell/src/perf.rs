@@ -113,7 +113,9 @@ impl PerfTracker {
             max_render_ms: self.max_render_cycles as f32 / c_per_ms,
             avg_transfer_ms: (self.total_transfer_cycles as f32 / frames_f32) / c_per_ms,
             max_transfer_ms: self.max_transfer_cycles as f32 / c_per_ms,
-            avg_dirty_percent: (self.total_dirty_pixels as f32 / (SCREEN_PIXELS as f32 * frames_f32)) * 100.0,
+            avg_dirty_percent: (self.total_dirty_pixels as f32
+                / (SCREEN_PIXELS as f32 * frames_f32))
+                * 100.0,
             total_rects: self.total_rects,
         };
 
@@ -157,7 +159,9 @@ mod tests {
             rect_count: 2,
         });
 
-        let summary = tracker.take_summary(Duration::from_secs(1)).expect("Expected summary");
+        let summary = tracker
+            .take_summary(Duration::from_secs(1))
+            .expect("Expected summary");
         assert_eq!(summary.frame_count, 1);
         assert!((summary.fps - 1.0).abs() < 0.01);
         assert!((summary.avg_render_ms - 10.0).abs() < 0.01);
@@ -191,7 +195,9 @@ mod tests {
             rect_count: 3,
         });
 
-        let summary = tracker.take_summary(Duration::from_secs(1)).expect("Expected summary");
+        let summary = tracker
+            .take_summary(Duration::from_secs(1))
+            .expect("Expected summary");
         assert_eq!(summary.frame_count, 2);
         assert!((summary.fps - 2.0).abs() < 0.01);
         assert!((summary.avg_render_ms - 15.0).abs() < 0.01);
@@ -221,7 +227,9 @@ mod tests {
         assert_eq!(tracker.take_summary(Duration::from_millis(1800)), None);
 
         // At 2.0s (1.0s elapsed since 1.0s window start)
-        let summary = tracker.take_summary(Duration::from_secs(2)).expect("Expected summary");
+        let summary = tracker
+            .take_summary(Duration::from_secs(2))
+            .expect("Expected summary");
         assert_eq!(summary.frame_count, 1);
     }
 }

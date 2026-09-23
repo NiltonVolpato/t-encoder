@@ -10,9 +10,9 @@ use alloc::rc::Rc;
 use alloc::vec::Vec;
 use core::any::Any;
 use core::cell::RefCell;
-use slint::ComponentHandle;
 
 pub use app_shell::{AppFactory, AppInfo, AppShell, ShellContext};
+use slint::ComponentHandle;
 
 slint::include_modules!();
 
@@ -86,8 +86,9 @@ impl AppFactory for LauncherAppFactory {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use slint::Model;
+
+    use super::*;
 
     #[derive(Clone)]
     struct MockAppFactory(&'static str);

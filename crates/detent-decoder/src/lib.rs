@@ -195,7 +195,10 @@ mod tests {
             0, 1, 2, 3, 4, 5, 6, 5, 4, 3, 2, 1, 0, -1, -2, -3, -4, //
             -3, -2, -3, -4, -3, -2, -3, -4, -3, -2,
         ];
-        assert_eq!(replay(&raws), [1, 1, 1, -1, -1, -1, -1, -1, 1, -1, 1, -1, 1]);
+        assert_eq!(
+            replay(&raws),
+            [1, 1, 1, -1, -1, -1, -1, -1, 1, -1, 1, -1, 1]
+        );
     }
 
     /// Spring-back twitches replayed from a device log: the dial repeatedly
@@ -265,7 +268,13 @@ mod tests {
     /// both-pins jumps are invalid.
     #[test]
     fn quad_step_directions_and_invalid_jumps() {
-        let cw = [(true, true), (false, true), (false, false), (true, false), (true, true)];
+        let cw = [
+            (true, true),
+            (false, true),
+            (false, false),
+            (true, false),
+            (true, true),
+        ];
         for pair in cw.windows(2) {
             let ((fa, fb), (ta, tb)) = (pair[0], pair[1]);
             assert_eq!(quad_step(fa, fb, ta, tb), 1);

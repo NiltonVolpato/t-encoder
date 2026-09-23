@@ -90,11 +90,7 @@ pub struct Chsc5816 {
 }
 
 impl Chsc5816 {
-    pub fn new(
-        i2c: I2c<'static, Async>,
-        int_pin: GPIO9<'static>,
-        rst_pin: GPIO8<'static>,
-    ) -> Self {
+    pub fn new(i2c: I2c<'static, Async>, int_pin: GPIO9<'static>, rst_pin: GPIO8<'static>) -> Self {
         let int = Input::new(int_pin, InputConfig::default().with_pull(Pull::Up));
         let rst = Output::new(rst_pin, Level::High, OutputConfig::default());
         Self { i2c, int, rst }
@@ -199,55 +195,52 @@ pub async fn touch_task(mut touch: Chsc5816) {
         let at_ms = Instant::now().as_millis();
 
         match touch.read().await {
-            Ok(Some(point)) => {
-                match point.event {
-                    TouchEvent::Down => {
-                        stroke_active = true;
-                        stroke_suppressed = tracker.is_phantom(at_ms);
-                        last_point = Some((point.x, point.y));
-                        if !stroke_suppressed {
-                            send_input_event(InputEvent::Touch(point));
-                        }
-                    }
-                    TouchEvent::Move => {
-                        last_point = Some((point.x, point.y));
-                        if tracker.is_phantom(at_ms) {
-                            stroke_suppressed = true;
-                        }
-                        if !stroke_suppressed {
-                            if !stroke_active {
-                                stroke_active = true;
-                                send_input_event(InputEvent::Touch(TouchPoint {
-                                    x: point.x,
-                                    y: point.y,
-                                    event: TouchEvent::Down,
-                                }));
-                            } else {
-                                send_input_event(InputEvent::Touch(point));
-                            }
-                        }
-                    }
-                    TouchEvent::Up => {
-                        stroke_active = false;
-                        if !stroke_suppressed {
-                            send_input_event(InputEvent::Touch(point));
-                        }
-                        stroke_suppressed = false;
-                        last_point = None;
+            Ok(Some(point)) => match point.event {
+                TouchEvent::Down => {
+                    stroke_active = true;
+                    stroke_suppressed = tracker.is_phantom(at_ms);
+                    last_point = Some((point.x, point.y));
+                    if !stroke_suppressed {
+                        send_input_event(InputEvent::Touch(point));
                     }
                 }
-            }
+                TouchEvent::Move => {
+                    last_point = Some((point.x, point.y));
+                    if tracker.is_phantom(at_ms) {
+                        stroke_suppressed = true;
+                    }
+                    if !stroke_suppressed {
+                        if !stroke_active {
+                            stroke_active = true;
+                            send_input_event(InputEvent::Touch(TouchPoint {
+                                x: point.x,
+                                y: point.y,
+                                event: TouchEvent::Down,
+                            }));
+                        } else {
+                            send_input_event(InputEvent::Touch(point));
+                        }
+                    }
+                }
+                TouchEvent::Up => {
+                    stroke_active = false;
+                    if !stroke_suppressed {
+                        send_input_event(InputEvent::Touch(point));
+                    }
+                    stroke_suppressed = false;
+                    last_point = None;
+                }
+            },
             Ok(None) => {
                 if stroke_active {
                     stroke_active = false;
-                    if !stroke_suppressed
-                        && let Some((x, y)) = last_point.take() {
-                            send_input_event(InputEvent::Touch(TouchPoint {
-                                x,
-                                y,
-                                event: TouchEvent::Up,
-                            }));
-                        }
+                    if !stroke_suppressed && let Some((x, y)) = last_point.take() {
+                        send_input_event(InputEvent::Touch(TouchPoint {
+                            x,
+                            y,
+                            event: TouchEvent::Up,
+                        }));
+                    }
                     stroke_suppressed = false;
                 }
             }
@@ -255,14 +248,13 @@ pub async fn touch_task(mut touch: Chsc5816) {
                 defmt::error!("touch: I2C read error");
                 if stroke_active {
                     stroke_active = false;
-                    if !stroke_suppressed
-                        && let Some((x, y)) = last_point.take() {
-                            send_input_event(InputEvent::Touch(TouchPoint {
-                                x,
-                                y,
-                                event: TouchEvent::Up,
-                            }));
-                        }
+                    if !stroke_suppressed && let Some((x, y)) = last_point.take() {
+                        send_input_event(InputEvent::Touch(TouchPoint {
+                            x,
+                            y,
+                            event: TouchEvent::Up,
+                        }));
+                    }
                     stroke_suppressed = false;
                 }
             }

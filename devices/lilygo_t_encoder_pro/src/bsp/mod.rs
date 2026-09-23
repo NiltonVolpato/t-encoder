@@ -21,15 +21,14 @@ pub use display::{
     BigEndianRgb565, Co5300, DISPLAY_HEIGHT, DISPLAY_WIDTH, RENDER_HEIGHT, RENDER_WIDTH,
     TX_BUF_BYTES, display_task,
 };
+use esp_hal::gpio::{Input, InputConfig, Pull};
+use esp_hal::i2c::master::{BusTimeout, Config as I2cConfig, I2c};
+use esp_hal::time::Rate;
 pub use event::{EVENTS, Event, ScreenEvent, send_event};
 pub use input::{InputEvent, send_input_event};
 pub use platform::{EspPlatform, WindowHolder, run_event_loop};
 pub use rotary::{EncoderHw, button_task, init_rotary, rotary_decode_once, rotary_task};
 pub use touch::{Chsc5816, touch_task};
-
-use esp_hal::gpio::{Input, InputConfig, Pull};
-use esp_hal::i2c::master::{BusTimeout, Config as I2cConfig, I2c};
-use esp_hal::time::Rate;
 
 pub struct Bsp {
     pub window: WindowHolder,
@@ -64,7 +63,8 @@ impl Bsp {
         };
 
         // 2. Initialize PCNT quadrature rotary encoder (fully interrupt-driven) and button
-        let encoder_hw = EncoderHw::new(core0.encoder.pcnt, core0.encoder.pin_a, core0.encoder.pin_b);
+        let encoder_hw =
+            EncoderHw::new(core0.encoder.pcnt, core0.encoder.pin_a, core0.encoder.pin_b);
         init_rotary(core0.encoder.io_mux, encoder_hw);
         let button = Input::new(
             core0.encoder.button,

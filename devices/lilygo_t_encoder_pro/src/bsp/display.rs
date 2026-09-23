@@ -4,19 +4,19 @@
 //! CO5300 AMOLED controller on QSPI for LilyGO T-Encoder Pro (390x390).
 //! Adapted from Slint's m5stack_stopwatch board support and t-encoder review.
 
-use super::board::DisplayPeripherals;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
 use embassy_time::Timer;
-use esp_hal::Async;
 use esp_hal::delay::Delay;
 use esp_hal::dma::DmaTxBuf;
-use esp_hal::dma_tx_buffer;
 use esp_hal::gpio::{Level, Output, OutputConfig};
 use esp_hal::spi::Mode;
 use esp_hal::spi::master::{Address, Command, Config as SpiConfig, DataMode, Spi, SpiDma};
 use esp_hal::time::Rate;
+use esp_hal::{Async, dma_tx_buffer};
 use slint::platform::software_renderer::{PremultipliedRgbaColor, Rgb565Pixel, TargetPixel};
+
+use super::board::DisplayPeripherals;
 
 // Real display dimensions.
 pub const DISPLAY_WIDTH: u16 = 390;

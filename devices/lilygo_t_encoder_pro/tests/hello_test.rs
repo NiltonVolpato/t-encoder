@@ -65,11 +65,7 @@ mod tests {
         // E2 = (L == D ? D : P) = (1 == 3 ? 3 : 0) = 0
         // E3 = (R == D ? D : P) = (2 == 3 ? 3 : 0) = 0
         let p = |raw: u16| NativeRgb565::new(raw);
-        let fb = [
-            p(1), p(1), p(2),
-            p(1), p(0), p(2),
-            p(3), p(3), p(2),
-        ];
+        let fb = [p(1), p(1), p(2), p(1), p(0), p(2), p(3), p(3), p(2)];
 
         // Output buffer for 1 row of width 3 -> 2 physical rows * 3 words = 6 words = 24 bytes
         #[repr(align(4))]

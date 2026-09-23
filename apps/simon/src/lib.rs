@@ -47,4 +47,3 @@ impl app_shell::AppFactory for SimonAppFactory {
         Box::new(self.clone())
     }
 }
-

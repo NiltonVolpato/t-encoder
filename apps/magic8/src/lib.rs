@@ -47,4 +47,3 @@ impl app_shell::AppFactory for Magic8AppFactory {
         Box::new(self.clone())
     }
 }
-

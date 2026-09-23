@@ -5,6 +5,7 @@
 
 use alloc::collections::VecDeque;
 use core::cell::RefCell;
+
 use critical_section::Mutex;
 
 const MAX_QUEUE_CAPACITY: usize = 16;

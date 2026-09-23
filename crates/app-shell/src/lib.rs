@@ -19,11 +19,12 @@ pub use profile::{DEFAULT_TABLE_CAPACITY, PcSample, SampleTable};
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use alloc::boxed::Box;
     use alloc::rc::Rc;
     use core::any::Any;
     use core::cell::RefCell;
+
+    use super::*;
 
     #[derive(Clone)]
     struct MockAppFactory {
