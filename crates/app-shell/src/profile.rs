@@ -174,27 +174,9 @@ mod tests {
 
         let (top, len) = table.top_samples::<3>();
         assert_eq!(len, 3);
-        assert_eq!(
-            top[0],
-            PcSample {
-                pc: 0x2000,
-                count: 5
-            }
-        );
-        assert_eq!(
-            top[1],
-            PcSample {
-                pc: 0x1000,
-                count: 3
-            }
-        );
-        assert_eq!(
-            top[2],
-            PcSample {
-                pc: 0x4000,
-                count: 2
-            }
-        );
+        assert_eq!(top[0], PcSample { pc: 0x2000, count: 5 });
+        assert_eq!(top[1], PcSample { pc: 0x1000, count: 3 });
+        assert_eq!(top[2], PcSample { pc: 0x4000, count: 2 });
     }
 
     #[test]

@@ -175,18 +175,11 @@ pub struct Session<'a> {
 
 impl<'a> Session<'a> {
     pub fn new(display: &'a mut Co5300, port: Port) -> Self {
-        Self {
-            display,
-            port: Some(port),
-            first_chunk: true,
-        }
+        Self { display, port: Some(port), first_chunk: true }
     }
 
     pub fn buffer_mut(&mut self) -> &mut [u8] {
-        self.port
-            .as_mut()
-            .map(|p| p.tx.as_mut_slice())
-            .expect("transfer in progress")
+        self.port.as_mut().map(|p| p.tx.as_mut_slice()).expect("transfer in progress")
     }
 
     pub async fn send(&mut self, used_bytes: usize) -> Result<(), esp_hal::spi::Error> {
@@ -229,11 +222,8 @@ impl<'a> Session<'a> {
 
 impl<'a> Drop for Session<'a> {
     fn drop(&mut self) {
-        self.display.port = Some(
-            self.port
-                .take()
-                .expect("missing port. did the last transfer finish?"),
-        );
+        self.display.port =
+            Some(self.port.take().expect("missing port. did the last transfer finish?"));
     }
 }
 
@@ -249,9 +239,7 @@ impl Co5300 {
     pub fn new(p: DisplayPeripherals) -> Self {
         let spi = Spi::new(
             p.spi,
-            SpiConfig::default()
-                .with_frequency(Rate::from_mhz(80))
-                .with_mode(Mode::_0),
+            SpiConfig::default().with_frequency(Rate::from_mhz(80)).with_mode(Mode::_0),
         )
         .unwrap()
         .with_sio0(p.sio0)
@@ -266,11 +254,7 @@ impl Co5300 {
         let tx = dma_tx_buffer!(TX_BUF_BYTES).unwrap();
         let power_en = Output::new(p.power_en, Level::Low, OutputConfig::default());
         let reset_pin = Output::new(p.reset_pin, Level::High, OutputConfig::default());
-        Self {
-            port: Some(Port { spi, tx }),
-            power_en,
-            reset_pin,
-        }
+        Self { port: Some(Port { spi, tx }), power_en, reset_pin }
     }
 
     pub async fn start_session(
@@ -374,16 +358,10 @@ impl Co5300 {
 
         let (x0, x1) = (x, x + width - 1);
         let (y0, y1) = (y, y + height - 1);
-        self.command(
-            CASET,
-            &[(x0 >> 8) as u8, x0 as u8, (x1 >> 8) as u8, x1 as u8],
-        )
-        .await?;
-        self.command(
-            RASET,
-            &[(y0 >> 8) as u8, y0 as u8, (y1 >> 8) as u8, y1 as u8],
-        )
-        .await
+        self.command(CASET, &[(x0 >> 8) as u8, x0 as u8, (x1 >> 8) as u8, x1 as u8])
+            .await?;
+        self.command(RASET, &[(y0 >> 8) as u8, y0 as u8, (y1 >> 8) as u8, y1 as u8])
+            .await
     }
 }
 

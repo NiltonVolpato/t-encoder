@@ -11,18 +11,14 @@ fn main() -> Result<(), slint::PlatformError> {
 
     let weak = app.as_weak();
     let timer = slint::Timer::default();
-    timer.start(
-        slint::TimerMode::Repeated,
-        core::time::Duration::from_secs(1),
-        move || {
-            if let Some(app) = weak.upgrade() {
-                time.tick();
-                app.set_hours(time.hours as i32);
-                app.set_minutes(time.minutes as i32);
-                app.set_seconds(time.seconds as i32);
-            }
-        },
-    );
+    timer.start(slint::TimerMode::Repeated, core::time::Duration::from_secs(1), move || {
+        if let Some(app) = weak.upgrade() {
+            time.tick();
+            app.set_hours(time.hours as i32);
+            app.set_minutes(time.minutes as i32);
+            app.set_seconds(time.seconds as i32);
+        }
+    });
 
     app.run()
 }

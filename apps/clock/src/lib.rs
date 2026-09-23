@@ -43,19 +43,15 @@ impl app_shell::AppFactory for ClockAppFactory {
         let timer = slint::Timer::default();
         let time = alloc::rc::Rc::new(core::cell::RefCell::new(initial_time));
         let time_clone = time.clone();
-        timer.start(
-            slint::TimerMode::Repeated,
-            core::time::Duration::from_secs(1),
-            move || {
-                if let Some(app) = app_weak.upgrade() {
-                    let mut time = time_clone.borrow_mut();
-                    time.tick();
-                    app.set_hours(time.hours as i32);
-                    app.set_minutes(time.minutes as i32);
-                    app.set_seconds(time.seconds as i32);
-                }
-            },
-        );
+        timer.start(slint::TimerMode::Repeated, core::time::Duration::from_secs(1), move || {
+            if let Some(app) = app_weak.upgrade() {
+                let mut time = time_clone.borrow_mut();
+                time.tick();
+                app.set_hours(time.hours as i32);
+                app.set_minutes(time.minutes as i32);
+                app.set_seconds(time.seconds as i32);
+            }
+        });
 
         let ctx = context.clone();
         theme::setup_navigation(&app, move || ctx.exit());
@@ -80,11 +76,7 @@ pub struct Time {
 
 impl Time {
     pub const fn new(hours: u8, minutes: u8, seconds: u8) -> Self {
-        Self {
-            hours,
-            minutes,
-            seconds,
-        }
+        Self { hours, minutes, seconds }
     }
 
     /// Advances time by one second, handling minute and hour rollover.
@@ -132,11 +124,8 @@ pub fn setup_clock(app: &ClockApp, initial_time: &Time) {
     let weak_app = app.as_weak();
     app.on_adjust_minutes(move |delta| {
         if let Some(app) = weak_app.upgrade() {
-            let mut time = Time::new(
-                app.get_hours() as u8,
-                app.get_minutes() as u8,
-                app.get_seconds() as u8,
-            );
+            let mut time =
+                Time::new(app.get_hours() as u8, app.get_minutes() as u8, app.get_seconds() as u8);
             time.adjust_minutes(delta);
             app.set_hours(time.hours as i32);
             app.set_minutes(time.minutes as i32);

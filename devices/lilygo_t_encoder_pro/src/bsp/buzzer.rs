@@ -27,10 +27,7 @@ static BUZZER_WAKER: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 /// buzzer task parked until something else happens to wake it.
 pub fn signal_feedback(feedback: Feedback) {
     if !app_shell::feedback::signal(feedback) {
-        defmt::error!(
-            "feedback queue full, dropped {}",
-            defmt::Debug2Format(&feedback)
-        );
+        defmt::error!("feedback queue full, dropped {}", defmt::Debug2Format(&feedback));
     }
     BUZZER_WAKER.signal(());
 }
@@ -70,14 +67,11 @@ impl TimerIFace<LowSpeed> for DynamicTimer<'_> {
 
 impl DynamicTimer<'_> {
     fn set_frequency(&self, hz: u32) {
-        let _ = self
-            .0
-            .borrow_mut()
-            .configure(esp_hal::ledc::timer::config::Config {
-                duty: esp_hal::ledc::timer::config::Duty::Duty13Bit,
-                clock_source: timer::LSClockSource::APBClk,
-                frequency: Rate::from_hz(hz),
-            });
+        let _ = self.0.borrow_mut().configure(esp_hal::ledc::timer::config::Config {
+            duty: esp_hal::ledc::timer::config::Duty::Duty13Bit,
+            clock_source: timer::LSClockSource::APBClk,
+            frequency: Rate::from_hz(hz),
+        });
     }
 }
 

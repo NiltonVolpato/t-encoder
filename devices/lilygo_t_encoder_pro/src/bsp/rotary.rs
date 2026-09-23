@@ -75,13 +75,7 @@ impl EncoderHw {
         a.listen(Event::AnyEdge);
         b.listen(Event::AnyEdge);
 
-        Self {
-            unit,
-            pin_a: a,
-            pin_b: b,
-            level_a,
-            level_b,
-        }
+        Self { unit, pin_a: a, pin_b: b, level_a, level_b }
     }
 
     /// Reads current hardware accumulator counter value.
@@ -120,12 +114,7 @@ impl Encoder {
     /// encoder's rest state at boot).
     #[must_use]
     pub fn new(a: bool, b: bool) -> Self {
-        Self {
-            last_raw: 0,
-            last_a: a,
-            last_b: b,
-            decoder: detent_decoder::Decoder::new(2),
-        }
+        Self { last_raw: 0, last_a: a, last_b: b, decoder: detent_decoder::Decoder::new(2) }
     }
 
     /// Feeds one settled sample; returns the signed detents to report
@@ -177,10 +166,9 @@ pub fn init_rotary(io_mux: IO_MUX<'static>, hw: EncoderHw) {
 
     critical_section::with(|cs| {
         let (a, b) = (hw.level_a, hw.level_b);
-        ROTARY.borrow_ref_mut(cs).replace(RotaryState {
-            hw,
-            encoder: Encoder::new(a, b),
-        });
+        ROTARY
+            .borrow_ref_mut(cs)
+            .replace(RotaryState { hw, encoder: Encoder::new(a, b) });
     });
 }
 
@@ -245,15 +233,7 @@ mod debug {
             self.clear_pending();
             let event_a = classify_edge(pending_a, level_a, &mut self.level_a);
             let event_b = classify_edge(pending_b, level_b, &mut self.level_b);
-            IsrSample {
-                raw,
-                level_a,
-                level_b,
-                pending_a,
-                pending_b,
-                event_a,
-                event_b,
-            }
+            IsrSample { raw, level_a, level_b, pending_a, pending_b, event_a, event_b }
         }
     }
 }

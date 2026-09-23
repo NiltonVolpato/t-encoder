@@ -36,14 +36,7 @@ mod tests {
     impl MockAppFactory {
         fn new(name: &'static str) -> (Self, Rc<RefCell<usize>>) {
             let count = Rc::new(RefCell::new(0));
-            (
-                Self {
-                    name,
-                    launched_count: count.clone(),
-                    on_launch_cb: None,
-                },
-                count,
-            )
+            (Self { name, launched_count: count.clone(), on_launch_cb: None }, count)
         }
 
         fn with_action(
@@ -52,11 +45,7 @@ mod tests {
         ) -> (Self, Rc<RefCell<usize>>) {
             let count = Rc::new(RefCell::new(0));
             (
-                Self {
-                    name,
-                    launched_count: count.clone(),
-                    on_launch_cb: Some(Rc::new(action)),
-                },
+                Self { name, launched_count: count.clone(), on_launch_cb: Some(Rc::new(action)) },
                 count,
             )
         }
@@ -144,10 +133,7 @@ mod tests {
         assert_eq!(feedback::try_receive(), Some(Feedback::DialStepBackward));
         assert_eq!(feedback::try_receive(), Some(Feedback::Click));
         assert_eq!(feedback::try_receive(), Some(Feedback::Haptic));
-        assert_eq!(
-            feedback::try_receive(),
-            Some(Feedback::Tone { hz: 440, ms: 100 })
-        );
+        assert_eq!(feedback::try_receive(), Some(Feedback::Tone { hz: 440, ms: 100 }));
         assert_eq!(feedback::try_receive(), None);
     }
 }

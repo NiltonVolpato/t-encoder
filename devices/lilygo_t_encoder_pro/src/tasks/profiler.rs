@@ -121,11 +121,7 @@ impl Drop for ProfileScope {
         }
         let current = CURRENT_SCOPE.swap(self.prev, Ordering::Relaxed);
         if current != self.id.get() {
-            defmt::error!(
-                "Scope mismatch on drop: expected {}, got {}",
-                self.id.get(),
-                current
-            );
+            defmt::error!("Scope mismatch on drop: expected {}, got {}", self.id.get(), current);
         }
     }
 }
@@ -235,11 +231,7 @@ impl ProfilerConfig {
             }
         }
 
-        Self {
-            enabled: true,
-            trigger,
-            duration,
-        }
+        Self { enabled: true, trigger, duration }
     }
 }
 
@@ -300,10 +292,7 @@ pub async fn profiler_task(timg1: TIMG1<'static>) {
     timer.set_interrupt_handler(profiler_isr);
     timer.listen();
     if let Err(e) = timer.start(SAMPLING_PERIOD) {
-        defmt::error!(
-            "Failed to start profiler timer: {:?}",
-            defmt::Debug2Format(&e)
-        );
+        defmt::error!("Failed to start profiler timer: {:?}", defmt::Debug2Format(&e));
         critical_section::with(|cs| {
             let _ = SAMPLES.borrow_ref_mut(cs).take();
         });
@@ -314,10 +303,7 @@ pub async fn profiler_task(timg1: TIMG1<'static>) {
         TIMER.borrow_ref_mut(cs).replace(timer);
     });
 
-    defmt::info!(
-        "Profiler sampling started at 2 kHz for {:?}",
-        config.duration
-    );
+    defmt::info!("Profiler sampling started at 2 kHz for {:?}", config.duration);
 
     // 4. Await capture duration
     Timer::after(config.duration).await;
@@ -343,10 +329,7 @@ fn dump_report(table: &SampleTable<512>) {
 
     info!("================================================================");
     info!("[PROFILE] Sampling Profiling Complete!");
-    info!(
-        "[PROFILE] Total samples: {} (across {} unique PCs)",
-        total, unique
-    );
+    info!("[PROFILE] Total samples: {} (across {} unique PCs)", total, unique);
 
     if total > 0 {
         let (top, count) = table.top_samples::<15>();
@@ -395,14 +378,8 @@ mod tests {
         assert_eq!(parse_target_scope(Some("scope:0")), None);
         assert_eq!(parse_target_scope(Some("scope:8")), NonZeroU8::new(8));
         assert_eq!(parse_target_scope(Some("scope=42")), NonZeroU8::new(42));
-        assert_eq!(
-            parse_target_scope(Some("boot,scope:8,10s")),
-            NonZeroU8::new(8)
-        );
-        assert_eq!(
-            parse_target_scope(Some("delay:2s,scope:255")),
-            NonZeroU8::new(255)
-        );
+        assert_eq!(parse_target_scope(Some("boot,scope:8,10s")), NonZeroU8::new(8));
+        assert_eq!(parse_target_scope(Some("delay:2s,scope:255")), NonZeroU8::new(255));
         assert_eq!(parse_target_scope(Some("scope:256")), None);
     }
 
@@ -442,10 +419,7 @@ mod tests {
 
         let c3 = ProfilerConfig::parse(Some("delay:2s,8s,scope:8"));
         assert_eq!(c3.enabled, true);
-        assert_eq!(
-            c3.trigger,
-            ProfilerTrigger::AfterDelay(Duration::from_secs(2))
-        );
+        assert_eq!(c3.trigger, ProfilerTrigger::AfterDelay(Duration::from_secs(2)));
         assert_eq!(c3.duration, Duration::from_secs(8));
     }
 

@@ -65,11 +65,7 @@ pub struct AppShell {
 impl AppShell {
     /// Creates a new `AppShell` with the given default application factory.
     pub fn new(default_app: Box<dyn AppFactory>) -> Rc<RefCell<Self>> {
-        Rc::new(RefCell::new(Self {
-            default_app,
-            next_app: None,
-            active_app: None,
-        }))
+        Rc::new(RefCell::new(Self { default_app, next_app: None, active_app: None }))
     }
 
     /// Starts the shell lifecycle, launching the initial application.
@@ -86,15 +82,10 @@ impl AppShell {
         let next_factory = {
             let mut borrow = shell.borrow_mut();
             borrow.active_app = None;
-            borrow
-                .next_app
-                .take()
-                .unwrap_or_else(|| borrow.default_app.clone())
+            borrow.next_app.take().unwrap_or_else(|| borrow.default_app.clone())
         };
 
-        let context = ShellContext {
-            shell: Rc::downgrade(&shell),
-        };
+        let context = ShellContext { shell: Rc::downgrade(&shell) };
 
         let instance = next_factory.launch(context);
         shell.borrow_mut().active_app = Some(instance);

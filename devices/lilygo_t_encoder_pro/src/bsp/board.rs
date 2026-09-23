@@ -90,10 +90,7 @@ impl Board {
                     button: p.GPIO0,
                     io_mux: p.IO_MUX,
                 },
-                buzzer: BuzzerPeripherals {
-                    ledc: p.LEDC,
-                    pin: p.GPIO17,
-                },
+                buzzer: BuzzerPeripherals { ledc: p.LEDC, pin: p.GPIO17 },
                 profiler_timer: p.TIMG1,
             },
             core1: Core1Peripherals {

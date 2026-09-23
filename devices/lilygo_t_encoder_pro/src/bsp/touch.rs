@@ -58,10 +58,7 @@ struct PhantomTracker {
 
 impl PhantomTracker {
     const fn new() -> Self {
-        Self {
-            button_down: false,
-            button_up_ms: None,
-        }
+        Self { button_down: false, button_up_ms: None }
     }
 
     fn sync(&mut self) {
@@ -77,9 +74,7 @@ impl PhantomTracker {
 
     fn is_phantom(&self, at_ms: u64) -> bool {
         self.button_down
-            || self
-                .button_up_ms
-                .is_some_and(|up| at_ms.saturating_sub(up) < PHANTOM_GRACE_MS)
+            || self.button_up_ms.is_some_and(|up| at_ms.saturating_sub(up) < PHANTOM_GRACE_MS)
     }
 }
 

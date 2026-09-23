@@ -26,10 +26,7 @@ pub struct LauncherAppFactory {
 impl LauncherAppFactory {
     /// Creates a new `LauncherAppFactory` that presents the given list of applications.
     pub fn new(factories: Vec<Box<dyn AppFactory>>) -> Self {
-        Self {
-            factories,
-            selected_index: Rc::new(RefCell::new(0)),
-        }
+        Self { factories, selected_index: Rc::new(RefCell::new(0)) }
     }
 
     /// Creates a new `LauncherAppFactory` configured with the default suite of applications.

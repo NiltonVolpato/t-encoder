@@ -119,9 +119,6 @@ mod tests {
             }
         }
 
-        defmt::info!(
-            "=== Manual rotary test complete: {} prompts shown ===",
-            PROMPT_COUNT
-        );
+        defmt::info!("=== Manual rotary test complete: {} prompts shown ===", PROMPT_COUNT);
     }
 }

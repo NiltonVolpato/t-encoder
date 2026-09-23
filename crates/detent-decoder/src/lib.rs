@@ -39,10 +39,7 @@ impl Decoder {
     #[must_use]
     pub fn new(steps_per_detent: u32) -> Self {
         assert!(steps_per_detent > 0, "steps_per_detent must be positive");
-        Self {
-            steps_per_detent: i32::try_from(steps_per_detent).unwrap(),
-            net: 0,
-        }
+        Self { steps_per_detent: i32::try_from(steps_per_detent).unwrap(), net: 0 }
     }
 
     /// Feeds one observation and returns the signed detents to report
@@ -139,10 +136,7 @@ impl PinDecoder {
     /// `steps_per_detent` net steps at a rest position.
     #[must_use]
     pub fn new(steps_per_detent: u32) -> Self {
-        Self {
-            last: None,
-            decoder: Decoder::new(steps_per_detent),
-        }
+        Self { last: None, decoder: Decoder::new(steps_per_detent) }
     }
 
     /// Feeds one pin-level observation; returns the signed detents to report
@@ -195,10 +189,7 @@ mod tests {
             0, 1, 2, 3, 4, 5, 6, 5, 4, 3, 2, 1, 0, -1, -2, -3, -4, //
             -3, -2, -3, -4, -3, -2, -3, -4, -3, -2,
         ];
-        assert_eq!(
-            replay(&raws),
-            [1, 1, 1, -1, -1, -1, -1, -1, 1, -1, 1, -1, 1]
-        );
+        assert_eq!(replay(&raws), [1, 1, 1, -1, -1, -1, -1, -1, 1, -1, 1, -1, 1]);
     }
 
     /// Spring-back twitches replayed from a device log: the dial repeatedly
@@ -268,13 +259,7 @@ mod tests {
     /// both-pins jumps are invalid.
     #[test]
     fn quad_step_directions_and_invalid_jumps() {
-        let cw = [
-            (true, true),
-            (false, true),
-            (false, false),
-            (true, false),
-            (true, true),
-        ];
+        let cw = [(true, true), (false, true), (false, false), (true, false), (true, true)];
         for pair in cw.windows(2) {
             let ((fa, fb), (ta, tb)) = (pair[0], pair[1]);
             assert_eq!(quad_step(fa, fb, ta, tb), 1);
@@ -289,11 +274,7 @@ mod tests {
     /// Drives a `PinDecoder` with a level sequence, returning nonzero reports.
     fn drive(levels: &[(bool, bool)]) -> Vec<i32> {
         let mut dec = PinDecoder::new(2);
-        levels
-            .iter()
-            .map(|&(a, b)| dec.update(a, b))
-            .filter(|&d| d != 0)
-            .collect()
+        levels.iter().map(|&(a, b)| dec.update(a, b)).filter(|&d| d != 0).collect()
     }
 
     /// One clockwise detent through the pin-level front end: two steps,
@@ -304,13 +285,7 @@ mod tests {
         let one = [(true, true), (false, true), (false, false)];
         assert_eq!(drive(&one), [1]);
         // Full clockwise cycle: 11 -> 01 -> 00 -> 10 -> 11 = two detents.
-        let full = [
-            (true, true),
-            (false, true),
-            (false, false),
-            (true, false),
-            (true, true),
-        ];
+        let full = [(true, true), (false, true), (false, false), (true, false), (true, true)];
         assert_eq!(drive(&full), [1, 1]);
     }
 

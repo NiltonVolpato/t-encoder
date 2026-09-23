@@ -35,13 +35,7 @@ pub struct EspPlatform {
 impl EspPlatform {
     pub fn new() -> (Self, WindowHolder) {
         let window: WindowHolder = Rc::new(RefCell::new(None));
-        (
-            Self {
-                window: window.clone(),
-                start_time: Instant::now(),
-            },
-            window,
-        )
+        (Self { window: window.clone(), start_time: Instant::now() }, window)
     }
 }
 
@@ -86,66 +80,26 @@ fn dispatch_input_event(window: &Rc<MinimalSoftwareWindow>, event: InputEvent) {
             if delta > 0 {
                 buzzer::signal_feedback(buzzer::Feedback::DialStepForward);
                 for _ in 0..delta {
-                    dispatch(
-                        window,
-                        WindowEvent::KeyPressed {
-                            text: Key::UpArrow.into(),
-                        },
-                    );
-                    dispatch(
-                        window,
-                        WindowEvent::KeyReleased {
-                            text: Key::UpArrow.into(),
-                        },
-                    );
+                    dispatch(window, WindowEvent::KeyPressed { text: Key::UpArrow.into() });
+                    dispatch(window, WindowEvent::KeyReleased { text: Key::UpArrow.into() });
                 }
             } else if delta < 0 {
                 buzzer::signal_feedback(buzzer::Feedback::DialStepBackward);
                 for _ in 0..(-delta) {
-                    dispatch(
-                        window,
-                        WindowEvent::KeyPressed {
-                            text: Key::DownArrow.into(),
-                        },
-                    );
-                    dispatch(
-                        window,
-                        WindowEvent::KeyReleased {
-                            text: Key::DownArrow.into(),
-                        },
-                    );
+                    dispatch(window, WindowEvent::KeyPressed { text: Key::DownArrow.into() });
+                    dispatch(window, WindowEvent::KeyReleased { text: Key::DownArrow.into() });
                 }
             }
         }
         InputEvent::Click => {
             buzzer::signal_feedback(buzzer::Feedback::Click);
-            dispatch(
-                window,
-                WindowEvent::KeyPressed {
-                    text: Key::Return.into(),
-                },
-            );
-            dispatch(
-                window,
-                WindowEvent::KeyReleased {
-                    text: Key::Return.into(),
-                },
-            );
+            dispatch(window, WindowEvent::KeyPressed { text: Key::Return.into() });
+            dispatch(window, WindowEvent::KeyReleased { text: Key::Return.into() });
         }
         InputEvent::LongPress => {
             buzzer::signal_feedback(buzzer::Feedback::Haptic);
-            dispatch(
-                window,
-                WindowEvent::KeyPressed {
-                    text: Key::Escape.into(),
-                },
-            );
-            dispatch(
-                window,
-                WindowEvent::KeyReleased {
-                    text: Key::Escape.into(),
-                },
-            );
+            dispatch(window, WindowEvent::KeyPressed { text: Key::Escape.into() });
+            dispatch(window, WindowEvent::KeyReleased { text: Key::Escape.into() });
         }
         InputEvent::Touch(point) => {
             let position = slint::LogicalPosition::new(point.x as f32, point.y as f32);
@@ -153,10 +107,7 @@ fn dispatch_input_event(window: &Rc<MinimalSoftwareWindow>, event: InputEvent) {
                 TouchEvent::Down => {
                     dispatch(
                         window,
-                        WindowEvent::PointerPressed {
-                            position,
-                            button: PointerEventButton::Left,
-                        },
+                        WindowEvent::PointerPressed { position, button: PointerEventButton::Left },
                     );
                 }
                 TouchEvent::Move => {
@@ -165,10 +116,7 @@ fn dispatch_input_event(window: &Rc<MinimalSoftwareWindow>, event: InputEvent) {
                 TouchEvent::Up => {
                     dispatch(
                         window,
-                        WindowEvent::PointerReleased {
-                            position,
-                            button: PointerEventButton::Left,
-                        },
+                        WindowEvent::PointerReleased { position, button: PointerEventButton::Left },
                     );
                     dispatch(window, WindowEvent::PointerExited);
                 }
@@ -252,9 +200,7 @@ pub async fn run_event_loop(window_holder: WindowHolder) -> ! {
 
                     if is_sleeping {
                         defmt::info!("Waking display from sleep");
-                        DISPLAY_COMMAND_CHANNEL
-                            .send(DisplayCommand::DisplayOn)
-                            .await;
+                        DISPLAY_COMMAND_CHANNEL.send(DisplayCommand::DisplayOn).await;
                         DISPLAY_COMMAND_CHANNEL
                             .send(DisplayCommand::SetBrightness(base_brightness))
                             .await;
@@ -277,30 +223,22 @@ pub async fn run_event_loop(window_holder: WindowHolder) -> ! {
                         let level =
                             ((base_brightness as f32 * ratio + 0.5) as u32).clamp(1, 255) as u8;
                         defmt::info!("Screen dimming to relative brightness {}", level);
-                        DISPLAY_COMMAND_CHANNEL
-                            .send(DisplayCommand::SetBrightness(level))
-                            .await;
+                        DISPLAY_COMMAND_CHANNEL.send(DisplayCommand::SetBrightness(level)).await;
                         is_dimmed = true;
                     }
                     ScreenEvent::DimAbsolute(level) => {
                         defmt::info!("Screen dimming to absolute brightness {}", level);
-                        DISPLAY_COMMAND_CHANNEL
-                            .send(DisplayCommand::SetBrightness(level))
-                            .await;
+                        DISPLAY_COMMAND_CHANNEL.send(DisplayCommand::SetBrightness(level)).await;
                         is_dimmed = true;
                     }
                     ScreenEvent::TurnOff => {
                         defmt::info!("Turning off display panel");
-                        DISPLAY_COMMAND_CHANNEL
-                            .send(DisplayCommand::DisplayOff)
-                            .await;
+                        DISPLAY_COMMAND_CHANNEL.send(DisplayCommand::DisplayOff).await;
                         is_sleeping = true;
                     }
                     ScreenEvent::TurnOn => {
                         defmt::info!("Turning on display panel");
-                        DISPLAY_COMMAND_CHANNEL
-                            .send(DisplayCommand::DisplayOn)
-                            .await;
+                        DISPLAY_COMMAND_CHANNEL.send(DisplayCommand::DisplayOn).await;
                         DISPLAY_COMMAND_CHANNEL
                             .send(DisplayCommand::SetBrightness(base_brightness))
                             .await;
@@ -331,20 +269,11 @@ pub async fn run_event_loop(window_holder: WindowHolder) -> ! {
                         let width = size.width as u16;
                         let height = size.height as u16;
 
-                        let _ = rects.push(DirtyRect {
-                            x,
-                            y,
-                            width,
-                            height,
-                        });
+                        let _ = rects.push(DirtyRect { x, y, width, height });
                     }
 
                     DISPLAY_COMMAND_CHANNEL
-                        .send(DisplayCommand::Flush(FlushJob {
-                            fb,
-                            rects,
-                            render_cycles,
-                        }))
+                        .send(DisplayCommand::Flush(FlushJob { fb, rects, render_cycles }))
                         .await;
                 })
                 .await;

@@ -49,10 +49,7 @@ impl Bsp {
                 .with_timeout(BusTimeout::Maximum),
         ) {
             Ok(i2c) => {
-                let i2c = i2c
-                    .with_sda(core0.touch.sda)
-                    .with_scl(core0.touch.scl)
-                    .into_async();
+                let i2c = i2c.with_sda(core0.touch.sda).with_scl(core0.touch.scl).into_async();
                 let touch_dev = Chsc5816::new(i2c, core0.touch.int, core0.touch.rst);
                 Some(touch_dev)
             }
@@ -66,10 +63,7 @@ impl Bsp {
         let encoder_hw =
             EncoderHw::new(core0.encoder.pcnt, core0.encoder.pin_a, core0.encoder.pin_b);
         init_rotary(core0.encoder.io_mux, encoder_hw);
-        let button = Input::new(
-            core0.encoder.button,
-            InputConfig::default().with_pull(Pull::Up),
-        );
+        let button = Input::new(core0.encoder.button, InputConfig::default().with_pull(Pull::Up));
 
         // 3. Set Slint platform
         let (platform, window) = EspPlatform::new();
