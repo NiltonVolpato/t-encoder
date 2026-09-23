@@ -177,7 +177,8 @@ fn dispatch_input_event(window: &Rc<MinimalSoftwareWindow>, event: InputEvent) {
     }
 }
 
-/// Waits for at most `timeout` for a system event, or indefinitely if `timeout` is `None`.
+/// Waits for at most `timeout` for a system event, or indefinitely if `timeout`
+/// is `None`.
 async fn next_event(timeout: Option<Duration>) -> Option<Event> {
     let Some(timeout) = timeout else {
         return Some(EVENTS.receive().await);
@@ -200,7 +201,8 @@ fn cycle_count() -> u32 {
     }
 }
 
-/// Runs the main Slint event loop: awaits interrupt-driven inputs, advances animations, and renders updates.
+/// Runs the main Slint event loop: awaits interrupt-driven inputs, advances
+/// animations, and renders updates.
 pub async fn run_event_loop(window_holder: WindowHolder) -> ! {
     // Two framebuffers in fast internal SRAM (2 * ~78.4 KiB = ~156.8 KiB)
     #[repr(align(16))]
@@ -242,8 +244,8 @@ pub async fn run_event_loop(window_holder: WindowHolder) -> ! {
         };
 
         // 2. Process ALL pending events before drawing
-        let event = pending_event.take().or_else(|| EVENTS.try_receive().ok());
-        if let Some(current_event) = event {
+        let mut event = pending_event.take().or_else(|| EVENTS.try_receive().ok());
+        while let Some(current_event) = event {
             match current_event {
                 Event::Input(input) => {
                     report_user_activity();
@@ -308,58 +310,44 @@ pub async fn run_event_loop(window_holder: WindowHolder) -> ! {
                     }
                 },
             }
+            event = EVENTS.try_receive().ok();
         }
 
         // 3. Render dirty regions (skip DMA transfers if screen is sleeping)
         let mut drew_frame = false;
         if !is_sleeping {
-            let mut dirty_rects: heapless::Vec<DirtyRect, 3> = heapless::Vec::new();
-            let mut total_pixels = 0u32;
-            let mut rect_count = 0u16;
-            let mut render_cycles = 0u32;
+            drew_frame = window
+                .draw_async_if_needed(async |renderer| {
+                    let fb = FLUSH_RETURN_CHANNEL.receive().await;
 
-            let mut framebuffer: Option<Framebuffer> = None;
-            window.draw_if_needed(|renderer| {
-                let Some(fb) = FLUSH_RETURN_CHANNEL.try_receive().ok() else {
-                    defmt::warn!("skipping frame: no return buffer available");
-                    return;
-                };
+                    let mut rects: heapless::Vec<DirtyRect, 3> = heapless::Vec::new();
+                    let r_start = cycle_count();
+                    let region = renderer.render(&mut fb.0[..], RENDER_STRIDE);
+                    let render_cycles = cycle_count().wrapping_sub(r_start);
 
-                let r_start = cycle_count();
-                let region = renderer.render(&mut fb.0[..], RENDER_STRIDE);
-                render_cycles = cycle_count().wrapping_sub(r_start);
-                framebuffer = Some(fb);
+                    for (origin, size) in region.iter_box() {
+                        let x = origin.x.max(0) as u16;
+                        let y = origin.y.max(0) as u16;
+                        let width = size.width as u16;
+                        let height = size.height as u16;
 
-                for (origin, size) in region.iter_box() {
-                    let raw_x = origin.x.max(0) as u16;
-                    let raw_y = origin.y.max(0) as u16;
-                    let width = size.width as u16;
-                    let height = size.height as u16;
+                        let _ = rects.push(DirtyRect {
+                            x,
+                            y,
+                            width,
+                            height,
+                        });
+                    }
 
-                    total_pixels += (width as u32 * 2) * (height as u32 * 2);
-                    rect_count += 1;
-
-                    let _ = dirty_rects.push(DirtyRect {
-                        x: raw_x,
-                        y: raw_y,
-                        width,
-                        height,
-                    });
-                }
-            });
-
-            if let Some(fb) = framebuffer {
-                drew_frame = !dirty_rects.is_empty();
-                DISPLAY_COMMAND_CHANNEL
-                    .send(DisplayCommand::Flush(FlushJob {
-                        fb,
-                        rects: dirty_rects,
-                        render_cycles,
-                        total_pixels,
-                        rect_count,
-                    }))
-                    .await;
-            }
+                    DISPLAY_COMMAND_CHANNEL
+                        .send(DisplayCommand::Flush(FlushJob {
+                            fb,
+                            rects,
+                            render_cycles,
+                        }))
+                        .await;
+                })
+                .await;
         }
 
         // 4. Determine timeout for event wait

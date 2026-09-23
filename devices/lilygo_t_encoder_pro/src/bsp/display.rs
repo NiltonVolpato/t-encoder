@@ -136,8 +136,6 @@ pub struct FlushJob {
     pub fb: Framebuffer,
     pub rects: heapless::Vec<DirtyRect, 3>,
     pub render_cycles: u32,
-    pub total_pixels: u32,
-    pub rect_count: u16,
 }
 
 /// Commands sent to the dedicated display worker.
@@ -577,10 +575,7 @@ pub fn expand_2x2_chunk(
 #[embassy_executor::task]
 pub async fn display_task(mut display: Co5300) {
     if let Err(e) = display.init().await {
-        defmt::error!(
-            "Failed to initialize CO5300 display: {:?}",
-            defmt::Debug2Format(&e)
-        );
+        defmt::error!("Failed to initialize CO5300 display: {}", e);
     } else {
         defmt::info!("CO5300 display initialized successfully");
     }
@@ -635,11 +630,17 @@ pub async fn display_task(mut display: Co5300) {
                 let _ = FLUSH_RETURN_CHANNEL.send(job.fb).await;
 
                 if transfer_cycles > 0 {
+                    let dirty_pixels: u32 = job
+                        .rects
+                        .iter()
+                        .map(|r| (r.width as u32 * 2) * (r.height as u32 * 2))
+                        .sum();
+                    let rect_count = job.rects.len() as u16;
                     perf_tracker.record_frame(app_shell::FrameCycles {
                         render_cycles: job.render_cycles,
                         transfer_cycles,
-                        dirty_pixels: job.total_pixels,
-                        rect_count: job.rect_count,
+                        dirty_pixels,
+                        rect_count,
                     });
                 }
 

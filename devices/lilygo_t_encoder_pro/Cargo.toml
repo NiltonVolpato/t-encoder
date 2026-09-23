@@ -47,6 +47,12 @@ slint = {
         "software-renderer-path",
     ]
 }
+i-slint-renderer-software = {
+    path = "../../../forks/slint/internal/renderers/software",
+    default-features = false,
+    features = ["experimental"],
+}
+
 app-launcher = { path = "../../apps/launcher", default-features = false, features = ["apps"] }
 app-shell = { path = "../../crates/app-shell", default-features = false }
 detent-decoder = { path = "../../crates/detent-decoder" }

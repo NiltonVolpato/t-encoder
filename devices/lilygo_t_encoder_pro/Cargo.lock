@@ -3676,6 +3676,7 @@ dependencies = [
  "esp-radio",
  "esp-rtos",
  "heapless 0.8.0",
+ "i-slint-renderer-software",
  "panic-rtt-target",
  "rtt-target",
  "slint",
