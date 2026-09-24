@@ -5,7 +5,7 @@ rust-version = "1.97"
 version      = "0.1.0"
 
 [[bin]]
-name = "firmware"
+name = "waveshare_knob_1_8"
 path = "src/bin/main.rs"
 test = false
 
@@ -36,6 +36,7 @@ embassy-executor = { workspace = true }
 embassy-futures = { workspace = true }
 embassy-sync = { workspace = true }
 embassy-time = { workspace = true }
+embassy-embedded-hal = { workspace = true }
 embedded-hal-async = { workspace = true }
 heapless = { workspace = true }
 static_cell = { workspace = true }

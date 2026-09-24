@@ -30,7 +30,7 @@ pub const RENDER_WIDTH: u16 = 360;
 pub const RENDER_HEIGHT: u16 = 360;
 pub const RENDER_STRIDE: usize = 360;
 
-pub const TX_BUF_BYTES: usize = 32 * 1024;
+pub const TX_BUF_BYTES: usize = 16 * 1024;
 
 const QSPI_CONTROL_OPCODE: u16 = 0x02;
 const QSPI_PIXEL_OPCODE: u16 = 0x32;
@@ -39,36 +39,38 @@ const CMD_RAMWRC: u32 = 0x3C;
 const CMD_CASET: u8 = 0x2A;
 const CMD_RASET: u8 = 0x2B;
 
-/// Native-endian RGB565 pixel for direct frame buffer rendering.
+/// RGB565 stored in the SH8601's byte order (big-endian).
+///
+/// Slint's `software_renderer` is generic over [`TargetPixel`], so Slint can
+/// render directly into the panel's pixel format in PSRAM without requiring a
+/// separate conversion pass or intermediate scratch buffer.
 #[repr(transparent)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct NativeRgb565(pub Rgb565Pixel);
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, defmt::Format)]
+pub struct BigEndianRgb565(pub u16);
 
-impl defmt::Format for NativeRgb565 {
-    fn format(&self, fmt: defmt::Formatter) {
-        defmt::write!(fmt, "NativeRgb565({=u16:#04x})", self.0.0);
+impl BigEndianRgb565 {
+    /// Reads the pixel back as a native-endian [`Rgb565Pixel`].
+    pub fn to_native(self) -> Rgb565Pixel {
+        Rgb565Pixel(u16::from_be(self.0))
+    }
+
+    /// Stores a native-endian [`Rgb565Pixel`] in panel order.
+    pub fn from_native(pixel: Rgb565Pixel) -> BigEndianRgb565 {
+        BigEndianRgb565(pixel.0.to_be())
     }
 }
 
-impl NativeRgb565 {
-    pub const fn new(raw: u16) -> Self {
-        Self(Rgb565Pixel(raw))
-    }
-
-    pub fn raw(self) -> u16 {
-        self.0.0
-    }
-}
-
-impl TargetPixel for NativeRgb565 {
+impl TargetPixel for BigEndianRgb565 {
     #[inline(always)]
     fn blend(&mut self, color: PremultipliedRgbaColor) {
-        self.0.blend(color);
+        let mut native = self.to_native();
+        native.blend(color);
+        *self = BigEndianRgb565::from_native(native);
     }
 
     #[inline(always)]
-    fn from_rgb(red: u8, green: u8, blue: u8) -> Self {
-        Self(Rgb565Pixel::from_rgb(red, green, blue))
+    fn from_rgb(red: u8, green: u8, blue: u8) -> BigEndianRgb565 {
+        BigEndianRgb565::from_native(Rgb565Pixel::from_rgb(red, green, blue))
     }
 }
 
@@ -80,7 +82,7 @@ pub struct DirtyRect {
     pub height: u16,
 }
 
-pub struct Framebuffer(pub &'static mut [NativeRgb565]);
+pub struct Framebuffer(pub &'static mut [BigEndianRgb565]);
 unsafe impl Send for Framebuffer {}
 
 impl core::fmt::Debug for Framebuffer {
@@ -197,7 +199,7 @@ impl Sh8601 {
     pub fn new(p: DisplayPeripherals) -> Self {
         let spi = Spi::new(
             p.spi,
-            SpiConfig::default().with_frequency(Rate::from_mhz(40)).with_mode(Mode::_0),
+            SpiConfig::default().with_frequency(Rate::from_mhz(80)).with_mode(Mode::_0),
         )
         .unwrap()
         .with_sio0(p.sio0)
@@ -220,7 +222,7 @@ impl Sh8601 {
             .configure(timer::config::Config {
                 duty: timer::config::Duty::Duty8Bit,
                 clock_source: timer::LSClockSource::APBClk,
-                frequency: Rate::from_khz(50),
+                frequency: Rate::from_khz(5),
             })
             .unwrap();
 
@@ -261,8 +263,8 @@ impl Sh8601 {
         width: u16,
         height: u16,
     ) -> Result<(), esp_hal::spi::Error> {
-        let (x0, x1) = (x, x + width - 1);
-        let (y0, y1) = (y, y + height - 1);
+        let (x0, x1) = (x, (x + width - 1).min(DISPLAY_WIDTH - 1));
+        let (y0, y1) = (y, (y + height - 1).min(DISPLAY_HEIGHT - 1));
         self.command(CMD_CASET, &[(x0 >> 8) as u8, x0 as u8, (x1 >> 8) as u8, x1 as u8])
             .await?;
         self.command(CMD_RASET, &[(y0 >> 8) as u8, y0 as u8, (y1 >> 8) as u8, y1 as u8])
@@ -458,22 +460,37 @@ impl Sh8601 {
         self.command(0x11, &[0x00]).await?; // Sleep Out
         Timer::after_millis(120).await;
         self.command(0x29, &[0x00]).await?; // Display On
-        self.command(0x36, &[0x00]).await?; // MADCTL RGB order
+        self.command(0x36, &[0xC0]).await?; // MADCTL 180 deg (MY=1, MX=1), RGB order
+        self.command(0x3A, &[0x55]).await?; // COLMOD 16-bit RGB565
+        self.command(0x35, &[0x00]).await?; // Tearing effect line on
+        self.command(0x44, &[0x01, 0xD1]).await?; // Set tear scanline
+        self.command(0x53, &[0x20]).await?; // Write display control
 
         Ok(())
     }
 
-    /// Sets PWM backlight duty cycle (0..=255).
+    /// Sets PWM backlight duty cycle (0..=255) using perceptual quadratic curve.
     pub fn set_brightness(&mut self, level: u8) {
-        let duty = (level as u32 * 100) / 255;
-        let _ = self.bl_channel.set_duty(duty as u8);
+        let duty = if level == 0 {
+            0
+        } else {
+            let num = (level as u32) * (level as u32) * 100;
+            let den = 255 * 255;
+            ((num / den) as u8).clamp(1, 100)
+        };
+        defmt::info!("Setting backlight brightness: level={}, duty={}%", level, duty);
+        if let Err(e) = self.bl_channel.set_duty(duty) {
+            defmt::error!("Failed to set backlight duty: {:?}", defmt::Debug2Format(&e));
+        }
     }
 
     pub fn display_on(&mut self) {
+        defmt::info!("Turning backlight on (100%)");
         let _ = self.bl_channel.set_duty(100);
     }
 
     pub fn display_off(&mut self) {
+        defmt::info!("Turning backlight off (0%)");
         let _ = self.bl_channel.set_duty(0);
     }
 
@@ -507,9 +524,9 @@ impl Sh8601 {
     }
 }
 
-/// Copies dirty rectangular regions from full frame buffer into DMA TX slice in native RGB565 format (byte-swapped for panel big-endian order).
+/// Copies dirty rectangular regions from full frame buffer into DMA TX slice in big-endian RGB565 format.
 pub fn copy_rect_to_tx_buffer(
-    frame_buffer: &[NativeRgb565],
+    frame_buffer: &[BigEndianRgb565],
     stride: usize,
     x: usize,
     y: usize,
@@ -517,17 +534,16 @@ pub fn copy_rect_to_tx_buffer(
     rows: usize,
     tx_slice: &mut [u8],
 ) -> usize {
+    let row_bytes = width * 2;
     let mut out_idx = 0;
     for r in 0..rows {
         let row_start = (y + r) * stride + x;
         let row_pixels = &frame_buffer[row_start..row_start + width];
-        for p in row_pixels {
-            // Panel expects big-endian RGB565 over QSPI
-            let be = p.0.0.to_be_bytes();
-            tx_slice[out_idx] = be[0];
-            tx_slice[out_idx + 1] = be[1];
-            out_idx += 2;
-        }
+        let src_bytes: &[u8] = unsafe {
+            core::slice::from_raw_parts(row_pixels.as_ptr() as *const u8, row_bytes)
+        };
+        tx_slice[out_idx..out_idx + row_bytes].copy_from_slice(src_bytes);
+        out_idx += row_bytes;
     }
     out_idx
 }

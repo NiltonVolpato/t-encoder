@@ -5,7 +5,7 @@ rust-version = "1.97"
 version      = "0.1.0"
 
 [[bin]]
-name = "firmware"
+name = "lilygo_t_encoder_pro"
 path = "src/bin/main.rs"
 test = false
 

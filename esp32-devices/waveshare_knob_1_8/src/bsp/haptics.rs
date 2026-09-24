@@ -7,8 +7,6 @@ pub use app_shell::Feedback;
 use drv2605::Drv2605;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::signal::Signal;
-use esp_hal::Async;
-use esp_hal::i2c::master::I2c;
 
 static HAPTIC_WAKER: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 
@@ -22,12 +20,16 @@ pub fn signal_feedback(feedback: Feedback) {
 
 /// Asynchronous Embassy task serving haptic feedback requests via DRV2605.
 #[embassy_executor::task]
-pub async fn haptic_task(i2c: I2c<'static, Async>) {
+pub async fn haptic_task(i2c: super::SharedI2c) {
     let mut drv = Drv2605::new(i2c);
 
-    if let Err(_e) = drv.init().await {
-        defmt::error!("Failed to initialize DRV2605 haptic driver");
-        return;
+    if let Err(e) = drv.init().await {
+        defmt::error!("Failed to initialize DRV2605 haptic driver: {:?}", defmt::Debug2Format(&e));
+        // Drain loop so the feedback queue never gets full or spams errors
+        loop {
+            while app_shell::feedback::try_receive().is_some() {}
+            HAPTIC_WAKER.wait().await;
+        }
     }
     defmt::info!("DRV2605 haptics initialized successfully");
 

@@ -13,7 +13,7 @@ use slint::platform::software_renderer::MinimalSoftwareWindow;
 
 use super::display::{
     DISPLAY_COMMAND_CHANNEL, DirtyRect, DisplayCommand, FLUSH_RETURN_CHANNEL, FlushJob,
-    Framebuffer, NativeRgb565, RENDER_HEIGHT, RENDER_STRIDE, RENDER_WIDTH,
+    Framebuffer, BigEndianRgb565, RENDER_HEIGHT, RENDER_STRIDE, RENDER_WIDTH,
 };
 use common::event::ScreenEvent;
 use super::haptics;
@@ -37,7 +37,7 @@ impl FeedbackSink for WaveshareFeedback {
 pub fn create_platform() -> (EspPlatform, WindowHolder) {
     EspPlatform::with_config(
         Some(PhysicalSize::new(RENDER_WIDTH as u32, RENDER_HEIGHT as u32)),
-        Some(1.0), // 1:1 Native scaling
+        Some(1.0), // Native 1:1 scaling for crisp, unaliased rendering
     )
 }
 
@@ -56,18 +56,19 @@ fn cycle_count() -> u32 {
 /// Runs the main Slint event loop: awaits interrupt-driven inputs, advances
 /// animations, and renders updates.
 pub async fn run_event_loop(window_holder: WindowHolder) -> ! {
-    // Double framebuffers in PSRAM: 2 * (360 * 360 * 2) = 2 * 259,200 bytes = ~506.25 KiB
-    let fb_a_mem = alloc::vec![NativeRgb565::new(0); RENDER_STRIDE * RENDER_HEIGHT as usize].leak();
-    let fb_b_mem = alloc::vec![NativeRgb565::new(0); RENDER_STRIDE * RENDER_HEIGHT as usize].leak();
+    // Single framebuffer in fast internal SRAM (259,200 bytes = 253.125 KiB)
+    #[repr(align(16))]
+    struct FrameBuffer([BigEndianRgb565; RENDER_STRIDE * RENDER_HEIGHT as usize]);
 
-    let fb_a = Framebuffer(fb_a_mem);
-    let fb_b = Framebuffer(fb_b_mem);
+    static FRAME_BUFFER: static_cell::ConstStaticCell<FrameBuffer> =
+        static_cell::ConstStaticCell::new(FrameBuffer(
+            [BigEndianRgb565(0); RENDER_STRIDE * RENDER_HEIGHT as usize],
+        ));
+
+    let fb = Framebuffer(&mut FRAME_BUFFER.take().0);
     FLUSH_RETURN_CHANNEL
-        .try_send(fb_a)
-        .expect("FLUSH_RETURN_CHANNEL full while seeding framebuffer A");
-    FLUSH_RETURN_CHANNEL
-        .try_send(fb_b)
-        .expect("FLUSH_RETURN_CHANNEL full while seeding framebuffer B");
+        .try_send(fb)
+        .expect("FLUSH_RETURN_CHANNEL full while seeding framebuffer");
 
     let base_brightness: u8 = 255;
 
@@ -108,12 +109,22 @@ pub async fn run_event_loop(window_holder: WindowHolder) -> ! {
                     let render_cycles = cycle_count().wrapping_sub(r_start);
 
                     for (origin, size) in region.iter_box() {
-                        let x = origin.x.max(0) as u16;
-                        let y = origin.y.max(0) as u16;
-                        let width = size.width as u16;
-                        let height = size.height as u16;
+                        let x0 = origin.x.max(0) as u16;
+                        let y0 = origin.y.max(0) as u16;
+                        if x0 >= RENDER_WIDTH || y0 >= RENDER_HEIGHT {
+                            continue;
+                        }
+                        // SH8601 QSPI requires even start coordinate and even width (2-pixel alignment)
+                        let x = (x0 / 2) * 2;
+                        let y = (y0 / 2) * 2;
+                        let right = ((x0 + size.width as u16 + 1) / 2) * 2;
+                        let bottom = ((y0 + size.height as u16 + 1) / 2) * 2;
+                        let width = right.min(RENDER_WIDTH).saturating_sub(x);
+                        let height = bottom.min(RENDER_HEIGHT).saturating_sub(y);
 
-                        let _ = rects.push(DirtyRect { x, y, width, height });
+                        if width > 0 && height > 0 {
+                            let _ = rects.push(DirtyRect { x, y, width, height });
+                        }
                     }
 
                     DISPLAY_COMMAND_CHANNEL

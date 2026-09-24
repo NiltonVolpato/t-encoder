@@ -58,9 +58,8 @@ async fn main(spawner: Spawner) -> ! {
     // 1. Initialize PSRAM (Region 0 - default general allocator)
     esp_alloc::psram_allocator!(board.system.psram, esp_hal::psram);
 
-    // 2. Register internal DRAM heaps (DMA buffers & fast RAM)
+    // 2. Register internal DRAM heaps (reclaimed bootloader memory for DMA buffers)
     esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: 73744);
-    esp_alloc::heap_allocator!(size: 64 * 1024);
     info!("{}", esp_alloc::HEAP.stats());
 
     // 3. Initialize RTOS & Embassy tick driver
@@ -84,7 +83,7 @@ async fn main(spawner: Spawner) -> ! {
     let bsp = Bsp::init(board.core0);
 
     // 6. Spawn interrupt-driven input, haptics & screensaver tasks
-    spawner.spawn(rotary_task().expect("Failed to create rotary task"));
+    spawner.spawn(rotary_task(bsp.rotary_a, bsp.rotary_b).expect("Failed to create rotary task"));
     if let Some(touch) = bsp.touch {
         spawner.spawn(touch_task(touch).expect("Failed to create touch task"));
     }

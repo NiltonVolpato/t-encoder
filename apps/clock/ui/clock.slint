@@ -56,8 +56,8 @@ export component ClockApp inherits AppWindow {
 
         // Decorative outer border ring
         Rectangle {
-            width: 374px;
-            height: 374px;
+            width: Theme.screen-size - 16px;
+            height: Theme.screen-size - 16px;
             border-radius: self.width / 2;
             border-width: 2px;
             border-color: Theme.surface-variant;
@@ -65,8 +65,8 @@ export component ClockApp inherits AppWindow {
 
         // Inner dial background
         Rectangle {
-            width: 340px;
-            height: 340px;
+            width: Theme.screen-size - 50px;
+            height: Theme.screen-size - 50px;
             border-radius: self.width / 2;
             background: Theme.surface;
             border-width: 1px;
