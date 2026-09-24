@@ -114,14 +114,6 @@ pub fn setup_clock(app: &ClockApp, initial_time: &Time) {
     app.set_seconds(initial_time.seconds as i32);
 
     let weak_app = app.as_weak();
-    app.on_toggle_seconds(move || {
-        if let Some(app) = weak_app.upgrade() {
-            let current = app.get_show_seconds();
-            app.set_show_seconds(!current);
-        }
-    });
-
-    let weak_app = app.as_weak();
     app.on_adjust_minutes(move |delta| {
         if let Some(app) = weak_app.upgrade() {
             let mut time =

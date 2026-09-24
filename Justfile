@@ -104,6 +104,14 @@ size TARGET=DEVICE COUNT="20":
     @echo ""
     bloaty esp32-devices/target/xtensa-esp32s3-none-elf/release/{{TARGET}} -d compileunits -n {{COUNT}}
 
+[doc("Show firmware RAM usage breakdown by sections and symbols using bloaty (default: waveshare_knob_1_8).")]
+[group("device")]
+ram TARGET=DEVICE COUNT="30":
+    bloaty esp32-devices/target/xtensa-esp32s3-none-elf/release/{{TARGET}} \
+        -d sections,symbols \
+        --source-filter='^\.(bss|data|rwdata|rwtext|dram)' \
+        -s vm --domain=vm -n {{COUNT}}
+
 [doc("Run any cargo or tool command inside the esp32-devices workspace.")]
 [group("device")]
 exec-device *COMMAND:

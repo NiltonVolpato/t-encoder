@@ -19,9 +19,7 @@ export component ClockApp inherits AppWindow {
     in-out property <int> minutes: 42;
     in-out property <int> seconds: 35;
     in-out property <string> date-str: "MON, SEP 14";
-    in-out property <bool> show-seconds: true;
 
-    callback toggle-seconds();
     callback adjust-minutes(int); // delta
     callback exit();
 
@@ -41,19 +39,11 @@ export component ClockApp inherits AppWindow {
                 root.adjust-minutes(-1);
                 return accept;
             }
-            if event.text == Key.Return || event.text == " " {
-                root.toggle-seconds();
-                return accept;
-            }
             reject
         }
     }
 
     CircularScreen {
-        TouchArea {
-            clicked => { root.toggle-seconds(); }
-        }
-
         // Decorative outer border ring
         Rectangle {
             width: Theme.screen-size - 16px;
@@ -61,6 +51,37 @@ export component ClockApp inherits AppWindow {
             border-radius: self.width / 2;
             border-width: 2px;
             border-color: Theme.surface-variant;
+        }
+
+        // 6º moving seconds arc indicator along outer ring
+        Path {
+            width: 100%;
+            height: 100%;
+            stroke: Theme.accent;
+            stroke-width: 4px;
+            stroke-line-cap: round;
+            viewbox-width: self.width / 1px - self.stroke-width / 1px;
+            viewbox-height: self.height / 1px - self.stroke-width / 1px;
+            viewbox-x: -self.viewbox-width / 2;
+            viewbox-y: -self.viewbox-height / 2;
+
+            private property <float> R: (Theme.screen-size / 1px - 16) / 2;
+            private property <angle> alpha: root.seconds * 6deg;
+            private property <angle> start-angle: alpha - 3deg;
+            private property <angle> end-angle: alpha + 3deg;
+
+            MoveTo {
+                x: R * sin(start-angle);
+                y: -R * cos(start-angle);
+            }
+            ArcTo {
+                radius-x: R;
+                radius-y: R;
+                x: R * sin(end-angle);
+                y: -R * cos(end-angle);
+                sweep: true;
+                large-arc: false;
+            }
         }
 
         // Inner dial background
@@ -108,30 +129,6 @@ export component ClockApp inherits AppWindow {
                     text: root.minutes < 10 ? "0" + root.minutes : "" + root.minutes;
                     color: Theme.text-primary;
                     horizontal-alignment: left;
-                }
-            }
-
-            // Seconds badge / mode indicator
-            if root.show-seconds: HorizontalLayout {
-                padding-bottom: 10px;
-                alignment: center;
-                Rectangle {
-                    border-radius: 12px;
-                    background: Theme.surface-variant;
-                    horizontal-stretch: 0;
-
-                    HorizontalLayout {
-                        padding-left: 12px;
-                        padding-right: 12px;
-                        padding-top: 4px;
-                        padding-bottom: 4px;
-
-                        TextLgBold {
-                            text: (root.seconds < 10 ? "0" + root.seconds : "" + root.seconds) + "s";
-                            color: Theme.accent;
-                            horizontal-alignment: center;
-                        }
-                    }
                 }
             }
 
