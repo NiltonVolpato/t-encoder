@@ -128,6 +128,68 @@ pub fn current_scope() -> u8 {
     CURRENT_SCOPE.load(Ordering::Relaxed)
 }
 
+const RA_OFFSET: u32 = 3;
+
+/// Checks if an address is a valid 16-byte aligned stack pointer in ESP32-S3 internal DRAM.
+#[inline(always)]
+fn is_valid_stack_pointer(sp: u32) -> bool {
+    (sp & 0xF) == 0 && (0x3FC8_8010..=0x3FD0_0000).contains(&sp)
+}
+
+/// Attempts to sample the call site (the `call` instruction in the caller) of the interrupted frame.
+#[cfg(target_arch = "xtensa")]
+#[inline(never)]
+pub fn sample_callsite(epc1: u32) -> Option<u32> {
+    let current_sp: u32;
+
+    unsafe {
+        // Spill live window registers to memory so caller save areas are updated
+        core::arch::asm!(
+            "mov {0}, a1",
+            "and a12, a12, a12", "rotw 3",
+            "and a12, a12, a12", "rotw 3",
+            "and a12, a12, a12", "rotw 3",
+            "and a12, a12, a12", "rotw 3",
+            "and a12, a12, a12", "rotw 4",
+            out(reg) current_sp
+        );
+
+        let sanitized_epc1 = (epc1 & 0x3fff_ffff) | 0x4000_0000;
+        let mut fp = current_sp;
+
+        // Walk backwards up to 8 frames looking for the interrupt frame where ra == epc1
+        for _ in 0..8 {
+            if !is_valid_stack_pointer(fp) {
+                return None;
+            }
+
+            let ra = ((fp - 16) as *const u32).read_volatile();
+            let sanitized_ra = (ra & 0x3fff_ffff) | 0x4000_0000;
+            let next_fp = ((fp - 12) as *const u32).read_volatile();
+
+            if sanitized_ra == sanitized_epc1 {
+                // Found the exception frame! next_fp is the interrupted function's SP.
+                if !is_valid_stack_pointer(next_fp) {
+                    return None;
+                }
+
+                let caller_ra = ((next_fp - 16) as *const u32).read_volatile();
+                let sanitized_caller_ra = (caller_ra & 0x3fff_ffff) | 0x4000_0000;
+
+                if sanitized_caller_ra <= 0x4000_0000 + RA_OFFSET {
+                    return None;
+                }
+
+                return Some(sanitized_caller_ra - RA_OFFSET);
+            }
+
+            fp = next_fp;
+        }
+
+        None
+    }
+}
+
 #[handler]
 fn profiler_isr() {
     critical_section::with(|cs| {
@@ -144,11 +206,11 @@ fn profiler_isr() {
 
     #[cfg(target_arch = "xtensa")]
     let pc: u32 = {
-        let val: u32;
+        let epc1: u32;
         unsafe {
-            core::arch::asm!("rsr.epc1 {0}", out(reg) val);
+            core::arch::asm!("rsr.epc1 {0}", out(reg) epc1);
         }
-        val
+        sample_callsite(epc1).unwrap_or(epc1)
     };
 
     #[cfg(not(target_arch = "xtensa"))]

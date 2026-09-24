@@ -8,6 +8,9 @@ fn main() {
     println!(
         "cargo::rerun-if-changed=../../third_party/esp_simd/src/vector/vector_i16/simd_copy_i16.S"
     );
+    println!("cargo::rerun-if-changed=src/asm/s3_simd_alphablend_color_be.S");
+    println!("cargo::rerun-if-changed=src/asm/s3_simd_alphablend_color_le.S");
+    println!("cargo::rerun-if-changed=src/asm/s3_simd_bswap16.S");
 
     let target = std::env::var("TARGET").unwrap_or_default();
     if target.starts_with("xtensa") {
@@ -16,6 +19,9 @@ fn main() {
             .file("../../third_party/esp_simd/src/vector/vector_i16/simd_fill_i16.S")
             .file("../../third_party/esp_simd/src/vector/vector_i16/simd_zeros_i16.S")
             .file("../../third_party/esp_simd/src/vector/vector_i16/simd_copy_i16.S")
+            .file("src/asm/s3_simd_alphablend_color_be.S")
+            .file("src/asm/s3_simd_alphablend_color_le.S")
+            .file("src/asm/s3_simd_bswap16.S")
             .compile("esp_simd");
     }
 

@@ -7,7 +7,6 @@ use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
 use embassy_time::Timer;
 use esp_hal::Async;
-use esp_hal::delay::Delay;
 use esp_hal::dma::DmaTxBuf;
 use esp_hal::dma_tx_buffer;
 use esp_hal::gpio::{DriveMode, Level, Output, OutputConfig};
@@ -110,9 +109,6 @@ impl<'a> Session<'a> {
     pub async fn send(&mut self, used_bytes: usize) -> Result<(), esp_hal::spi::Error> {
         let first = self.first_chunk;
         self.first_chunk = false;
-        if !first {
-            Delay::new().delay_micros(10);
-        }
         self.send_bytes(first, used_bytes).await
     }
 
@@ -501,6 +497,20 @@ pub fn copy_rect_to_tx_buffer(
     tx_slice: &mut [u8],
 ) -> usize {
     let row_bytes = width * 2;
+    // Fast path: full-width rows (x == 0 && width == stride) are completely contiguous in SRAM
+    if x == 0 && width == stride {
+        let total_bytes = rows * row_bytes;
+        let start_pixel = y * stride;
+        let src_bytes: &[u8] = unsafe {
+            core::slice::from_raw_parts(
+                frame_buffer[start_pixel..].as_ptr() as *const u8,
+                total_bytes,
+            )
+        };
+        tx_slice[..total_bytes].copy_from_slice(src_bytes);
+        return total_bytes;
+    }
+
     let mut out_idx = 0;
     for r in 0..rows {
         let row_start = (y + r) * stride + x;

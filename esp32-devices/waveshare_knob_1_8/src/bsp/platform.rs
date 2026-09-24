@@ -108,22 +108,29 @@ pub async fn run_event_loop(window_holder: WindowHolder) -> ! {
                     let region = renderer.render(&mut fb.0[..], RENDER_STRIDE);
                     let render_cycles = cycle_count().wrapping_sub(r_start);
 
+                    let mut y_min = RENDER_HEIGHT;
+                    let mut y_max = 0;
                     for (origin, size) in region.iter_box() {
-                        let x0 = origin.x.max(0) as u16;
                         let y0 = origin.y.max(0) as u16;
-                        if x0 >= RENDER_WIDTH || y0 >= RENDER_HEIGHT {
-                            continue;
+                        let y1 = (origin.y + size.height as i32).max(0) as u16;
+                        if y0 < RENDER_HEIGHT && y1 > 0 {
+                            y_min = y_min.min(y0);
+                            y_max = y_max.max(y1.min(RENDER_HEIGHT));
                         }
-                        // SH8601 QSPI requires even start coordinate and even width (2-pixel alignment)
-                        let x = (x0 / 2) * 2;
-                        let y = (y0 / 2) * 2;
-                        let right = ((x0 + size.width as u16 + 1) / 2) * 2;
-                        let bottom = ((y0 + size.height as u16 + 1) / 2) * 2;
-                        let width = right.min(RENDER_WIDTH).saturating_sub(x);
-                        let height = bottom.min(RENDER_HEIGHT).saturating_sub(y);
+                    }
 
-                        if width > 0 && height > 0 {
-                            let _ = rects.push(DirtyRect { x, y, width, height });
+                    if y_min < y_max {
+                        // SH8601 QSPI requires even start coordinate and even height
+                        let y = (y_min / 2) * 2;
+                        let bottom = ((y_max + 1) / 2) * 2;
+                        let height = bottom.min(RENDER_HEIGHT).saturating_sub(y);
+                        if height > 0 {
+                            let _ = rects.push(DirtyRect {
+                                x: 0,
+                                y,
+                                width: RENDER_WIDTH,
+                                height,
+                            });
                         }
                     }
 
