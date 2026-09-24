@@ -68,7 +68,7 @@ test-app APP="app-clock" PORT="3450" *ARGS:
         pkg="app-$pkg"
     fi
     echo "Starting simulator for $pkg on Slint MCP port {{PORT}}..."
-    SLINT_MCP_PORT="{{PORT}}" cargo run -p "$pkg" {{ARGS}}
+    SLINT_EMIT_DEBUG_INFO=1 SLINT_MCP_PORT="{{PORT}}" cargo run -p "$pkg" {{ARGS}}
 
 alias run-app := test-app
 
