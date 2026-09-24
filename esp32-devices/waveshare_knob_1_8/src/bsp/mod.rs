@@ -19,9 +19,10 @@ pub use common::channels::{
     subscribe_user_activity, try_receive_event,
 };
 pub use common::event::{Event, InputEvent, ScreenEvent, TouchEvent, TouchPoint};
+pub use common::simd;
 pub use display::{
     DISPLAY_HEIGHT, DISPLAY_WIDTH, DirtyRect, DisplayCommand, FlushJob, Framebuffer, BigEndianRgb565,
-    RENDER_HEIGHT, RENDER_STRIDE, RENDER_WIDTH, Sh8601, TX_BUF_BYTES, display_task,
+    NativeRgb565, RENDER_HEIGHT, RENDER_STRIDE, RENDER_WIDTH, Sh8601, TX_BUF_BYTES, display_task,
 };
 use embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
@@ -81,6 +82,9 @@ impl Bsp {
         let (platform, window) = platform::create_platform();
         slint::platform::set_platform(alloc::boxed::Box::new(platform))
             .expect("Slint platform already set");
+
+        // 4. Enable PIE SIMD coprocessor
+        simd::enable_pie();
 
         Self {
             window,

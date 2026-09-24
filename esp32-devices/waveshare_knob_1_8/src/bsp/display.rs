@@ -17,7 +17,6 @@ use esp_hal::ledc::{LSGlobalClkSource, Ledc, LowSpeed};
 use esp_hal::spi::Mode;
 use esp_hal::spi::master::{Address, Command, Config as SpiConfig, DataMode, Spi, SpiDma};
 use esp_hal::time::{Instant, Rate};
-use slint::platform::software_renderer::{PremultipliedRgbaColor, Rgb565Pixel, TargetPixel};
 
 use super::board::DisplayPeripherals;
 
@@ -39,40 +38,7 @@ const CMD_RAMWRC: u32 = 0x3C;
 const CMD_CASET: u8 = 0x2A;
 const CMD_RASET: u8 = 0x2B;
 
-/// RGB565 stored in the SH8601's byte order (big-endian).
-///
-/// Slint's `software_renderer` is generic over [`TargetPixel`], so Slint can
-/// render directly into the panel's pixel format in PSRAM without requiring a
-/// separate conversion pass or intermediate scratch buffer.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, defmt::Format)]
-pub struct BigEndianRgb565(pub u16);
-
-impl BigEndianRgb565 {
-    /// Reads the pixel back as a native-endian [`Rgb565Pixel`].
-    pub fn to_native(self) -> Rgb565Pixel {
-        Rgb565Pixel(u16::from_be(self.0))
-    }
-
-    /// Stores a native-endian [`Rgb565Pixel`] in panel order.
-    pub fn from_native(pixel: Rgb565Pixel) -> BigEndianRgb565 {
-        BigEndianRgb565(pixel.0.to_be())
-    }
-}
-
-impl TargetPixel for BigEndianRgb565 {
-    #[inline(always)]
-    fn blend(&mut self, color: PremultipliedRgbaColor) {
-        let mut native = self.to_native();
-        native.blend(color);
-        *self = BigEndianRgb565::from_native(native);
-    }
-
-    #[inline(always)]
-    fn from_rgb(red: u8, green: u8, blue: u8) -> BigEndianRgb565 {
-        BigEndianRgb565::from_native(Rgb565Pixel::from_rgb(red, green, blue))
-    }
-}
+pub use common::{BigEndianRgb565, NativeRgb565};
 
 #[derive(Clone, Copy, Debug)]
 pub struct DirtyRect {

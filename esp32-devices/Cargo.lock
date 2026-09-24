@@ -751,6 +751,7 @@ version = "0.1.0"
 dependencies = [
  "allocator-api2 0.3.1",
  "app-shell",
+ "cc",
  "critical-section",
  "defmt 1.1.1",
  "embassy-executor",

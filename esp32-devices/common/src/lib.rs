@@ -10,9 +10,12 @@ extern crate alloc;
 
 pub mod channels;
 pub mod event;
+pub mod pixel;
 pub mod platform;
+pub mod simd;
 pub mod tasks;
 
 pub use channels::*;
 pub use event::*;
+pub use pixel::*;
 pub use platform::*;

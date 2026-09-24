@@ -5,24 +5,6 @@ fn main() {
     println!("cargo::rustc-link-arg=-Tdefmt.x");
     // make sure linkall.x is the last linker script (otherwise might cause problems with flip-link)
     println!("cargo::rustc-link-arg=-Tlinkall.x");
-
-    println!(
-        "cargo::rerun-if-changed=../../third_party/esp_simd/src/vector/vector_i16/simd_fill_i16.S"
-    );
-    println!(
-        "cargo::rerun-if-changed=../../third_party/esp_simd/src/vector/vector_i16/simd_zeros_i16.S"
-    );
-    println!(
-        "cargo::rerun-if-changed=../../third_party/esp_simd/src/vector/vector_i16/simd_copy_i16.S"
-    );
-
-    cc::Build::new()
-        .compiler("xtensa-esp32s3-elf-gcc")
-        .file("../../third_party/esp_simd/src/vector/vector_i16/simd_fill_i16.S")
-        .file("../../third_party/esp_simd/src/vector/vector_i16/simd_zeros_i16.S")
-        .file("../../third_party/esp_simd/src/vector/vector_i16/simd_copy_i16.S")
-        .compile("esp_simd");
-
     println!("cargo::rerun-if-changed=build.rs");
 }
 

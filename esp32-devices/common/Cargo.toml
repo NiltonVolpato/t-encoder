@@ -21,3 +21,6 @@ critical-section          = { workspace = true }
 app-shell                 = { workspace = true }
 esp-alloc                 = { workspace = true }
 allocator-api2            = { workspace = true }
+
+[build-dependencies]
+cc = "1.0"

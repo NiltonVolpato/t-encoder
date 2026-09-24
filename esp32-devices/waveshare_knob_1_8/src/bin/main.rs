@@ -20,7 +20,7 @@ use esp_hal::timer::timg::TimerGroup;
 use panic_rtt_target as _;
 use waveshare_knob_1_8::bsp::{
     Board, Bsp, Core1Peripherals, Sh8601, display_task, haptic_task, rotary_task, run_event_loop,
-    touch_task,
+    simd, touch_task,
 };
 use waveshare_knob_1_8::tasks::{PROFILER_ENABLED, profiler_task, screensaver_task};
 
@@ -36,6 +36,7 @@ static mut APP_CORE_STACK: Stack<APP_CORE_STACK_SIZE> = Stack::new();
 
 /// Entry point for Core 1 (`AppCpu`): owns SH8601 display initialization and QSPI DMA transfers.
 fn core1_entry(core1: Core1Peripherals, sw_int2: SoftwareInterrupt<'static, 2>) -> ! {
+    simd::enable_pie();
     let display = Sh8601::new(core1.display);
 
     let interrupt_executor =
@@ -50,6 +51,7 @@ fn core1_entry(core1: Core1Peripherals, sw_int2: SoftwareInterrupt<'static, 2>) 
 #[esp_rtos::main]
 async fn main(spawner: Spawner) -> ! {
     rtt_target::rtt_init_defmt!();
+    simd::enable_pie();
 
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);

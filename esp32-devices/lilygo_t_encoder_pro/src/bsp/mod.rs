@@ -10,7 +10,7 @@ pub mod event;
 pub mod input;
 pub mod platform;
 pub mod rotary;
-pub mod simd;
+pub use common::simd;
 pub mod touch;
 
 pub use board::{
