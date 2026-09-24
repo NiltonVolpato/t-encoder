@@ -48,6 +48,7 @@ fn core1_entry(core1: Core1Peripherals, sw_int2: SoftwareInterrupt<'static, 2>) 
     executor.run(|_spawner| {});
 }
 
+#[allow(clippy::large_stack_frames)]
 #[esp_rtos::main]
 async fn main(spawner: Spawner) -> ! {
     rtt_target::rtt_init_defmt!();

@@ -28,13 +28,7 @@ pub const SAMPLING_PERIOD: esp_hal::time::Duration = esp_hal::time::Duration::fr
 pub const fn is_profiler_enabled(env: Option<&str>) -> bool {
     let Some(s) = env else { return false };
     let bytes = s.as_bytes();
-    match bytes {
-        b"" => false,
-        b"0" => false,
-        b"false" => false,
-        b"no" => false,
-        _ => true,
-    }
+    !matches!(bytes, b"" | b"0" | b"false" | b"no")
 }
 
 /// Parses a target scope number from `PROFILE` (e.g. `scope:8` or `scope=8`).
@@ -45,11 +39,7 @@ pub const fn parse_target_scope(env: Option<&str>) -> Option<NonZeroU8> {
     let k = b"scope".len();
     let mut i = 0;
     while i + k < n {
-        let matched = match bytes.split_at(i).1.split_at(k + 1).0 {
-            b"scope:" => true,
-            b"scope=" => true,
-            _ => false,
-        };
+        let matched = matches!(bytes.split_at(i).1.split_at(k + 1).0, b"scope:" | b"scope=");
         if matched {
             let bytes = bytes.split_at(i + k + 1).1;
             let n = if bytes.len() > 3 { 3 } else { bytes.len() };

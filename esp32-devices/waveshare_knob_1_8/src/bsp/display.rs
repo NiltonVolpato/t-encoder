@@ -6,9 +6,7 @@
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
 use embassy_time::Timer;
-use esp_hal::Async;
-use esp_hal::dma::DmaTxBuf;
-use esp_hal::dma_tx_buffer;
+use esp_hal::dma::{DmaDescriptor, DmaTxBuf};
 use esp_hal::gpio::{DriveMode, Level, Output, OutputConfig};
 use esp_hal::ledc::channel::{self, ChannelIFace};
 use esp_hal::ledc::timer::{self, TimerIFace};
@@ -16,6 +14,7 @@ use esp_hal::ledc::{LSGlobalClkSource, Ledc, LowSpeed};
 use esp_hal::spi::Mode;
 use esp_hal::spi::master::{Address, Command, Config as SpiConfig, DataMode, Spi, SpiDma};
 use esp_hal::time::{Instant, Rate};
+use esp_hal::{Async, dma_tx_buffer};
 
 use super::board::DisplayPeripherals;
 
@@ -28,7 +27,9 @@ pub const RENDER_WIDTH: u16 = 360;
 pub const RENDER_HEIGHT: u16 = 360;
 pub const RENDER_STRIDE: usize = 360;
 
-pub const TX_BUF_BYTES: usize = 16 * 1024;
+const COMMAND_BUFFER_BYTES: usize = 64;
+const FRAMEBUFFER_DMA_DESCRIPTORS_COUNT: usize = 8;
+const MAX_CHUNK_ROWS: usize = 40;
 
 const QSPI_CONTROL_OPCODE: u16 = 0x02;
 const QSPI_PIXEL_OPCODE: u16 = 0x32;
@@ -85,10 +86,11 @@ fn cycle_count() -> u32 {
     }
 }
 
-/// The SPI peripheral and the TX DMA buffer it writes from.
+/// The SPI peripheral, command DMA buffer, and framebuffer DMA descriptors.
 pub struct Port {
     pub spi: SpiDma<'static, Async>,
-    pub tx: DmaTxBuf,
+    pub command_tx_buffer: DmaTxBuf,
+    pub framebuffer_descriptors: &'static mut [DmaDescriptor],
 }
 
 pub struct Session<'a> {
@@ -102,39 +104,39 @@ impl<'a> Session<'a> {
         Self { display, port: Some(port), first_chunk: true }
     }
 
-    pub fn buffer_mut(&mut self) -> &mut [u8] {
-        self.port.as_mut().map(|p| p.tx.as_mut_slice()).expect("transfer in progress")
-    }
-
-    pub async fn send(&mut self, used_bytes: usize) -> Result<(), esp_hal::spi::Error> {
+    pub async fn send_pixel_chunk(
+        &mut self,
+        pixel_bytes: &'static mut [u8],
+    ) -> Result<(), esp_hal::spi::Error> {
         let first = self.first_chunk;
         self.first_chunk = false;
-        self.send_bytes(first, used_bytes).await
-    }
+        let Port { spi, command_tx_buffer, framebuffer_descriptors } =
+            self.port.take().expect("DMA in progress");
 
-    async fn send_bytes(
-        &mut self,
-        first: bool,
-        used_bytes: usize,
-    ) -> Result<(), esp_hal::spi::Error> {
-        let Port { spi, tx } = self.port.take().expect("DMA in progress");
         let address: u32 = if first { CMD_RAMWR } else { CMD_RAMWRC } << 8;
-        let mut transfer = spi
-            .half_duplex_write(
-                DataMode::Quad,
-                Command::_8Bit(QSPI_PIXEL_OPCODE, DataMode::Single),
-                Address::_24Bit(address, DataMode::Single),
-                0,
-                used_bytes,
-                tx,
-            )
-            .map_err(|(e, spi, tx)| {
-                self.port = Some(Port { spi, tx });
-                e
-            })?;
+        let transfer_length = pixel_bytes.len();
+        let tx_buffer = DmaTxBuf::new(framebuffer_descriptors, pixel_bytes)
+            .expect("Failed to initialize Framebuffer DMA buffer");
+
+        let mut transfer = match spi.half_duplex_write(
+            DataMode::Quad,
+            Command::_8Bit(QSPI_PIXEL_OPCODE, DataMode::Single),
+            Address::_24Bit(address, DataMode::Single),
+            0,
+            transfer_length,
+            tx_buffer,
+        ) {
+            Ok(transfer) => transfer,
+            Err((e, spi, tx_buffer)) => {
+                let (framebuffer_descriptors, _) = tx_buffer.split();
+                self.port = Some(Port { spi, command_tx_buffer, framebuffer_descriptors });
+                return Err(e);
+            }
+        };
         transfer.wait_for_done().await;
-        let (spi, tx) = transfer.wait();
-        self.port = Some(Port { spi, tx });
+        let (spi, tx_buffer) = transfer.wait();
+        let (framebuffer_descriptors, _) = tx_buffer.split();
+        self.port = Some(Port { spi, command_tx_buffer, framebuffer_descriptors });
         Ok(())
     }
 }
@@ -156,6 +158,9 @@ unsafe impl Send for Sh8601 {}
 
 static BACKLIGHT_TIMER: static_cell::StaticCell<timer::Timer<'static, LowSpeed>> =
     static_cell::StaticCell::new();
+static FRAMEBUFFER_DMA_DESCRIPTORS: static_cell::StaticCell<
+    [DmaDescriptor; FRAMEBUFFER_DMA_DESCRIPTORS_COUNT],
+> = static_cell::StaticCell::new();
 
 impl Sh8601 {
     pub fn new(p: DisplayPeripherals) -> Self {
@@ -173,7 +178,9 @@ impl Sh8601 {
         .with_dma(p.dma_channel)
         .into_async();
 
-        let tx = dma_tx_buffer!(TX_BUF_BYTES).unwrap();
+        let command_tx_buffer = dma_tx_buffer!(COMMAND_BUFFER_BYTES).unwrap();
+        let framebuffer_descriptors = FRAMEBUFFER_DMA_DESCRIPTORS
+            .init([DmaDescriptor::EMPTY; FRAMEBUFFER_DMA_DESCRIPTORS_COUNT]);
         let reset_pin = Output::new(p.reset_pin, Level::High, OutputConfig::default());
 
         let mut ledc = Ledc::new(p.ledc);
@@ -197,7 +204,11 @@ impl Sh8601 {
             })
             .unwrap();
 
-        Self { port: Some(Port { spi, tx }), reset_pin, bl_channel }
+        Self {
+            port: Some(Port { spi, command_tx_buffer, framebuffer_descriptors }),
+            reset_pin,
+            bl_channel,
+        }
     }
 
     pub async fn power_on_and_reset(&mut self) {
@@ -280,8 +291,20 @@ impl Sh8601 {
         self.command(0xF1, &[0x10]).await?;
         self.command(0xF0, &[0x00]).await?;
         self.command(0xF0, &[0x02]).await?;
-        self.command(0xE0, &[0xF0, 0x0A, 0x10, 0x09, 0x09, 0x36, 0x35, 0x33, 0x4A, 0x29, 0x15, 0x15, 0x2E, 0x34]).await?;
-        self.command(0xE1, &[0xF0, 0x0A, 0x0F, 0x08, 0x08, 0x05, 0x34, 0x33, 0x4A, 0x39, 0x15, 0x15, 0x2D, 0x33]).await?;
+        self.command(
+            0xE0,
+            &[
+                0xF0, 0x0A, 0x10, 0x09, 0x09, 0x36, 0x35, 0x33, 0x4A, 0x29, 0x15, 0x15, 0x2E, 0x34,
+            ],
+        )
+        .await?;
+        self.command(
+            0xE1,
+            &[
+                0xF0, 0x0A, 0x0F, 0x08, 0x08, 0x05, 0x34, 0x33, 0x4A, 0x39, 0x15, 0x15, 0x2D, 0x33,
+            ],
+        )
+        .await?;
         self.command(0xF0, &[0x10]).await?;
         self.command(0xF3, &[0x10]).await?;
         self.command(0xE0, &[0x07]).await?;
@@ -456,72 +479,32 @@ impl Sh8601 {
         let _ = self.bl_channel.set_duty(0);
     }
 
-    async fn command(
-        &mut self,
-        command: u8,
-        parameters: &[u8],
-    ) -> Result<(), esp_hal::spi::Error> {
-        let Port { spi, mut tx } = self.port.take().unwrap();
+    async fn command(&mut self, command: u8, parameters: &[u8]) -> Result<(), esp_hal::spi::Error> {
+        let Port { spi, mut command_tx_buffer, framebuffer_descriptors } =
+            self.port.take().unwrap();
         let len = parameters.len();
         if len > 0 {
-            tx.as_mut_slice()[..len].copy_from_slice(parameters);
+            command_tx_buffer.as_mut_slice()[..len].copy_from_slice(parameters);
         }
-        let mut transfer = spi
-            .half_duplex_write(
-                DataMode::Single,
-                Command::_8Bit(QSPI_CONTROL_OPCODE, DataMode::Single),
-                Address::_24Bit((command as u32) << 8, DataMode::Single),
-                0,
-                len,
-                tx,
-            )
-            .map_err(|(e, spi, tx)| {
-                self.port = Some(Port { spi, tx });
-                e
-            })?;
+        let mut transfer = match spi.half_duplex_write(
+            DataMode::Single,
+            Command::_8Bit(QSPI_CONTROL_OPCODE, DataMode::Single),
+            Address::_24Bit((command as u32) << 8, DataMode::Single),
+            0,
+            len,
+            command_tx_buffer,
+        ) {
+            Ok(transfer) => transfer,
+            Err((e, spi, command_tx_buffer)) => {
+                self.port = Some(Port { spi, command_tx_buffer, framebuffer_descriptors });
+                return Err(e);
+            }
+        };
         transfer.wait_for_done().await;
-        let (spi, tx) = transfer.wait();
-        self.port = Some(Port { spi, tx });
+        let (spi, command_tx_buffer) = transfer.wait();
+        self.port = Some(Port { spi, command_tx_buffer, framebuffer_descriptors });
         Ok(())
     }
-}
-
-/// Copies dirty rectangular regions from full frame buffer into DMA TX slice in big-endian RGB565 format.
-pub fn copy_rect_to_tx_buffer(
-    frame_buffer: &[BigEndianRgb565],
-    stride: usize,
-    x: usize,
-    y: usize,
-    width: usize,
-    rows: usize,
-    tx_slice: &mut [u8],
-) -> usize {
-    let row_bytes = width * 2;
-    // Fast path: full-width rows (x == 0 && width == stride) are completely contiguous in SRAM
-    if x == 0 && width == stride {
-        let total_bytes = rows * row_bytes;
-        let start_pixel = y * stride;
-        let src_bytes: &[u8] = unsafe {
-            core::slice::from_raw_parts(
-                frame_buffer[start_pixel..].as_ptr() as *const u8,
-                total_bytes,
-            )
-        };
-        tx_slice[..total_bytes].copy_from_slice(src_bytes);
-        return total_bytes;
-    }
-
-    let mut out_idx = 0;
-    for r in 0..rows {
-        let row_start = (y + r) * stride + x;
-        let row_pixels = &frame_buffer[row_start..row_start + width];
-        let src_bytes: &[u8] = unsafe {
-            core::slice::from_raw_parts(row_pixels.as_ptr() as *const u8, row_bytes)
-        };
-        tx_slice[out_idx..out_idx + row_bytes].copy_from_slice(src_bytes);
-        out_idx += row_bytes;
-    }
-    out_idx
 }
 
 /// Background worker task that exclusively owns the SH8601 display and processes flush jobs.
@@ -552,22 +535,29 @@ pub async fn display_task(mut display: Sh8601) {
                         }
                     };
 
-                    let row_bytes = rect.width as usize * 2;
-                    let rows_per_chunk = (TX_BUF_BYTES / row_bytes).max(1);
+                    debug_assert_eq!(rect.x, 0, "Partial row X offset is not supported");
+                    debug_assert_eq!(
+                        rect.width, RENDER_WIDTH,
+                        "Partial row width is not supported"
+                    );
+
+                    let bytes_per_row =
+                        rect.width as usize * core::mem::size_of::<BigEndianRgb565>();
                     let mut row = rect.y;
                     while row < rect.y + rect.height {
-                        let chunk_rows =
-                            rows_per_chunk.min((rect.y + rect.height - row) as usize);
-                        let used = copy_rect_to_tx_buffer(
-                            &job.fb.0[..],
-                            RENDER_STRIDE,
-                            rect.x as usize,
-                            row as usize,
-                            rect.width as usize,
-                            chunk_rows,
-                            session.buffer_mut(),
-                        );
-                        if let Err(e) = session.send(used).await {
+                        let remaining_rows = (rect.y + rect.height - row) as usize;
+                        let chunk_rows = remaining_rows.min(MAX_CHUNK_ROWS);
+                        let start_byte = (row as usize * RENDER_STRIDE + rect.x as usize) * 2;
+                        let chunk_bytes = chunk_rows * bytes_per_row;
+
+                        let pixel_slice: &'static mut [u8] = unsafe {
+                            core::slice::from_raw_parts_mut(
+                                (job.fb.0.as_mut_ptr() as *mut u8).add(start_byte),
+                                chunk_bytes,
+                            )
+                        };
+
+                        if let Err(e) = session.send_pixel_chunk(pixel_slice).await {
                             defmt::error!("Session send error: {:?}", defmt::Debug2Format(&e));
                             break;
                         }
@@ -578,11 +568,8 @@ pub async fn display_task(mut display: Sh8601) {
                 let _ = FLUSH_RETURN_CHANNEL.send(job.fb).await;
 
                 if transfer_cycles > 0 {
-                    let dirty_pixels: u32 = job
-                        .rects
-                        .iter()
-                        .map(|r| r.width as u32 * r.height as u32)
-                        .sum();
+                    let dirty_pixels: u32 =
+                        job.rects.iter().map(|r| r.width as u32 * r.height as u32).sum();
                     let rect_count = job.rects.len() as u16;
                     perf_tracker.record_frame(app_shell::FrameCycles {
                         render_cycles: job.render_cycles,

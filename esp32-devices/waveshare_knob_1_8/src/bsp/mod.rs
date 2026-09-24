@@ -21,8 +21,8 @@ pub use common::channels::{
 pub use common::event::{Event, InputEvent, ScreenEvent, TouchEvent, TouchPoint};
 pub use common::simd;
 pub use display::{
-    DISPLAY_HEIGHT, DISPLAY_WIDTH, DirtyRect, DisplayCommand, FlushJob, Framebuffer, BigEndianRgb565,
-    NativeRgb565, RENDER_HEIGHT, RENDER_STRIDE, RENDER_WIDTH, Sh8601, TX_BUF_BYTES, display_task,
+    BigEndianRgb565, DISPLAY_HEIGHT, DISPLAY_WIDTH, DirtyRect, DisplayCommand, FlushJob,
+    Framebuffer, NativeRgb565, RENDER_HEIGHT, RENDER_STRIDE, RENDER_WIDTH, Sh8601, display_task,
 };
 use embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
@@ -63,7 +63,8 @@ impl Bsp {
             Ok(i2c) => {
                 let i2c = i2c.with_sda(core0.i2c0.sda).with_scl(core0.i2c0.scl).into_async();
                 let bus = I2C_BUS.init(Mutex::new(i2c));
-                let touch_dev = TouchHw::new(I2cDevice::new(bus), core0.i2c0.touch_int, core0.i2c0.touch_rst);
+                let touch_dev =
+                    TouchHw::new(I2cDevice::new(bus), core0.i2c0.touch_int, core0.i2c0.touch_rst);
                 let haptic_dev = I2cDevice::new(bus);
                 (Some(touch_dev), Some(haptic_dev))
             }

@@ -6,16 +6,16 @@
 extern crate alloc;
 use alloc::rc::Rc;
 
+use common::event::ScreenEvent;
 pub use common::{EspPlatform, WindowHolder};
 use common::{FeedbackSink, run_event_loop as run_common_event_loop};
 use slint::PhysicalSize;
 use slint::platform::software_renderer::MinimalSoftwareWindow;
 
 use super::display::{
-    DISPLAY_COMMAND_CHANNEL, DirtyRect, DisplayCommand, FLUSH_RETURN_CHANNEL, FlushJob,
-    Framebuffer, BigEndianRgb565, RENDER_HEIGHT, RENDER_STRIDE, RENDER_WIDTH,
+    BigEndianRgb565, DISPLAY_COMMAND_CHANNEL, DirtyRect, DisplayCommand, FLUSH_RETURN_CHANNEL,
+    FlushJob, Framebuffer, RENDER_HEIGHT, RENDER_STRIDE, RENDER_WIDTH,
 };
-use common::event::ScreenEvent;
 use super::haptics;
 
 pub struct WaveshareFeedback;
@@ -122,15 +122,10 @@ pub async fn run_event_loop(window_holder: WindowHolder) -> ! {
                     if y_min < y_max {
                         // SH8601 QSPI requires even start coordinate and even height
                         let y = (y_min / 2) * 2;
-                        let bottom = ((y_max + 1) / 2) * 2;
+                        let bottom = y_max.div_ceil(2) * 2;
                         let height = bottom.min(RENDER_HEIGHT).saturating_sub(y);
                         if height > 0 {
-                            let _ = rects.push(DirtyRect {
-                                x: 0,
-                                y,
-                                width: RENDER_WIDTH,
-                                height,
-                            });
+                            let _ = rects.push(DirtyRect { x: 0, y, width: RENDER_WIDTH, height });
                         }
                     }
 

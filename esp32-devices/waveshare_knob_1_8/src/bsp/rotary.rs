@@ -3,12 +3,11 @@
 
 //! Bidirectional pulsed switch rotary encoder driver for Waveshare ESP32-S3-Knob-Touch-LCD-1.8.
 
+use common::channels::send_input_event;
+use common::event::InputEvent;
 use embassy_futures::select::{Either, select};
 use embassy_time::Timer;
 use esp_hal::gpio::Input;
-
-use common::channels::send_input_event;
-use common::event::InputEvent;
 
 /// Per-channel debounce state machine from Waveshare bidi_switch_knob reference.
 #[derive(Clone, Copy, Debug)]

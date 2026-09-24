@@ -3,14 +3,13 @@
 
 //! CST816D capacitive touch screen task for Waveshare Knob 1.8.
 
+use common::channels::send_input_event;
+use common::event::{InputEvent, TouchEvent, TouchPoint};
 use cst816::{Cst816, TouchState};
 use embassy_futures::select::{Either, select};
 use embassy_time::{Duration, Timer};
 use esp_hal::gpio::{Input, InputConfig, Level, Output, OutputConfig, Pull};
 use esp_hal::peripherals::{GPIO9, GPIO10};
-
-use common::channels::send_input_event;
-use common::event::{InputEvent, TouchEvent, TouchPoint};
 
 /// Watchdog timeout during an active stroke before assuming finger lifted.
 const STROKE_TIMEOUT: Duration = Duration::from_millis(40);
