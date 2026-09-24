@@ -66,7 +66,7 @@ impl Bsp {
         let button = Input::new(core0.encoder.button, InputConfig::default().with_pull(Pull::Up));
 
         // 3. Set Slint platform
-        let (platform, window) = EspPlatform::new();
+        let (platform, window) = platform::create_platform();
         slint::platform::set_platform(alloc::boxed::Box::new(platform))
             .expect("Slint platform already set");
 

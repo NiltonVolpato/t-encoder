@@ -1,18 +1,24 @@
 // Copyright © 2026 Nilton Volpato
 // SPDX-License-Identifier: MIT
 
-//! Unified system event model and central event queue for LilyGO T-Encoder Pro.
+//! Unified event models for embedded device interactions.
 
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-use embassy_sync::channel::Channel;
+#[derive(Clone, Copy, Debug, PartialEq, Eq, defmt::Format)]
+pub enum TouchEvent {
+    Down,
+    Move,
+    Up,
+}
 
-use super::touch::TouchPoint;
-
-/// Central event queue capacity.
-const QUEUE_CAPACITY: usize = 32;
+#[derive(Clone, Copy, Debug, PartialEq, Eq, defmt::Format)]
+pub struct TouchPoint {
+    pub x: u16,
+    pub y: u16,
+    pub event: TouchEvent,
+}
 
 /// User input events from physical controls.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, defmt::Format)]
 pub enum InputEvent {
     /// Rotary dial rotated by delta detents (+1 clockwise, -1 counter-clockwise).
     Rotate(i32),
@@ -44,19 +50,4 @@ pub enum Event {
     Input(InputEvent),
     /// Screen power/brightness change request.
     Screen(ScreenEvent),
-}
-
-/// Global event channel feeding the main event loop.
-pub static EVENTS: Channel<CriticalSectionRawMutex, Event, QUEUE_CAPACITY> = Channel::new();
-
-/// Dispatches a system event to the central channel.
-pub fn send_event(event: Event) {
-    if EVENTS.try_send(event).is_err() {
-        defmt::error!("EVENTS channel full, dropped event");
-    }
-}
-
-/// Helper to dispatch user input events directly.
-pub fn send_input_event(input: InputEvent) {
-    send_event(Event::Input(input));
 }

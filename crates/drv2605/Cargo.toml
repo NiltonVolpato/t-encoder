@@ -1,0 +1,19 @@
+[package]
+name = "drv2605"
+version = "0.1.0"
+edition.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "Hardware driver for TI DRV2605 haptic driver"
+
+[lints]
+workspace = true
+
+[dependencies]
+embedded-hal = "1.0"
+embedded-hal-async = "1.0"
+defmt = { workspace = true, optional = true }
+
+[features]
+default = []
+defmt = ["dep:defmt"]

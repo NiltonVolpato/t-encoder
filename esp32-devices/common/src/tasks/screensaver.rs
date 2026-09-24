@@ -1,12 +1,14 @@
 // Copyright © 2026 Nilton Volpato
 // SPDX-License-Identifier: MIT
 
+//! Inactivity screensaver task managing automated screen dimming and sleeping.
+
 use embassy_futures::select::{Either, select};
 use embassy_sync::watch::DynReceiver;
 use embassy_time::{Duration, Timer};
 
-use super::subscribe_user_activity;
-use crate::bsp::event::{Event, ScreenEvent, send_event};
+use crate::channels::{send_screen_event, subscribe_user_activity};
+use crate::event::ScreenEvent;
 
 #[derive(Clone, Copy, Debug)]
 pub struct InactivityStage {
@@ -48,6 +50,7 @@ async fn wait_for_activity(
     }
 }
 
+/// Asynchronous task monitoring user activity and issuing screen dim/off events.
 #[embassy_executor::task]
 pub async fn screensaver_task() {
     let mut activity = subscribe_user_activity().expect("Failed to subscribe to user activity");
@@ -62,7 +65,7 @@ pub async fn screensaver_task() {
             // Timer expired without interaction; report and wait for next timeout.
             TimeoutState::TimedOut => {
                 if let Some(stage) = current_stage {
-                    send_event(Event::Screen(stage.action));
+                    send_screen_event(stage.action);
                 }
             }
         }

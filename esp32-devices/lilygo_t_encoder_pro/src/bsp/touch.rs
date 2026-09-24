@@ -4,8 +4,6 @@
 //! CHSC5816 capacitive touch controller on async I2C for LilyGO T-Encoder Pro.
 
 use embassy_futures::select::{Either, select};
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-use embassy_sync::channel::Channel;
 use embassy_time::{Duration, Instant, Timer};
 use embedded_hal_async::i2c::I2c as AsyncI2c;
 use esp_hal::Async;
@@ -26,29 +24,12 @@ const STROKE_TIMEOUT: Duration = Duration::from_millis(35);
 /// Time window after rotary button release in which touches are suppressed as phantom touches.
 const PHANTOM_GRACE_MS: u64 = 100;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TouchEvent {
-    Down,
-    Move,
-    Up,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct TouchPoint {
-    pub x: u16,
-    pub y: u16,
-    pub event: TouchEvent,
-}
-
-/// Channel for rotary button events used to suppress phantom touches.
-static BUTTON_EVENTS: Channel<CriticalSectionRawMutex, (bool, u64), 8> = Channel::new();
+pub use common::event::{TouchEvent, TouchPoint};
 
 /// Notifies the touch driver of button state changes to suppress phantom touches.
 pub fn set_button(down: bool) {
     let at_ms = Instant::now().as_millis();
-    if BUTTON_EVENTS.try_send((down, at_ms)).is_err() {
-        defmt::error!("BUTTON_EVENTS channel full, dropped button state");
-    }
+    common::channels::set_button_state(down, at_ms);
 }
 
 struct PhantomTracker {
@@ -62,7 +43,7 @@ impl PhantomTracker {
     }
 
     fn sync(&mut self) {
-        while let Ok((down, at_ms)) = BUTTON_EVENTS.try_receive() {
+        while let Some((down, at_ms)) = common::channels::try_receive_button_state() {
             if self.button_down != down {
                 self.button_down = down;
                 if !down {

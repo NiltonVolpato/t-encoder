@@ -1,0 +1,23 @@
+[package]
+name         = "common"
+version      = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+slint                     = { workspace = true }
+i-slint-renderer-software = { workspace = true }
+esp-hal                   = { workspace = true }
+esp-rtos                  = { workspace = true }
+defmt                     = { workspace = true }
+embassy-sync              = { workspace = true }
+embassy-time              = { workspace = true }
+embassy-futures           = { workspace = true }
+embassy-executor          = { workspace = true }
+heapless                  = { workspace = true }
+static_cell               = { workspace = true }
+critical-section          = { workspace = true }
+app-shell                 = { workspace = true }
+esp-alloc                 = { workspace = true }
+allocator-api2            = { workspace = true }

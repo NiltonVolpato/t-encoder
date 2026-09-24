@@ -1,0 +1,64 @@
+// Copyright © 2026 Nilton Volpato
+// SPDX-License-Identifier: MIT
+
+//! TI DRV2605 haptic feedback driver for Waveshare Knob 1.8.
+
+pub use app_shell::Feedback;
+use drv2605::Drv2605;
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use embassy_sync::signal::Signal;
+use esp_hal::Async;
+use esp_hal::i2c::master::I2c;
+
+static HAPTIC_WAKER: Signal<CriticalSectionRawMutex, ()> = Signal::new();
+
+/// Queues a feedback event and wakes the parked haptic task.
+pub fn signal_feedback(feedback: Feedback) {
+    if !app_shell::feedback::signal(feedback) {
+        defmt::error!("feedback queue full, dropped {}", defmt::Debug2Format(&feedback));
+    }
+    HAPTIC_WAKER.signal(());
+}
+
+/// Asynchronous Embassy task serving haptic feedback requests via DRV2605.
+#[embassy_executor::task]
+pub async fn haptic_task(i2c: I2c<'static, Async>) {
+    let mut drv = Drv2605::new(i2c);
+
+    if let Err(_e) = drv.init().await {
+        defmt::error!("Failed to initialize DRV2605 haptic driver");
+        return;
+    }
+    defmt::info!("DRV2605 haptics initialized successfully");
+
+    // Boot click (sharp click effect 1)
+    let _ = drv.play_effect(1).await;
+
+    loop {
+        while let Some(feedback) = app_shell::feedback::try_receive() {
+            match feedback {
+                Feedback::DialStepForward => {
+                    // Sharp tick 1 (effect 17)
+                    let _ = drv.play_effect(17).await;
+                }
+                Feedback::DialStepBackward => {
+                    // Soft tick 1 (effect 24)
+                    let _ = drv.play_effect(24).await;
+                }
+                Feedback::Click => {
+                    // Strong click 100% (effect 1)
+                    let _ = drv.play_effect(1).await;
+                }
+                Feedback::Haptic => {
+                    // Long buzz / transition ramp (effect 14)
+                    let _ = drv.play_effect(14).await;
+                }
+                Feedback::Tone { .. } => {
+                    // DRV2605 uses built-in ROM waveforms, map generic tone to click
+                    let _ = drv.play_effect(1).await;
+                }
+            }
+        }
+        HAPTIC_WAKER.wait().await;
+    }
+}

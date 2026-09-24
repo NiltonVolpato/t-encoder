@@ -1,0 +1,19 @@
+[package]
+name = "cst816"
+version = "0.1.0"
+edition.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "Hardware driver for CST816 family capacitive touch controllers"
+
+[lints]
+workspace = true
+
+[dependencies]
+embedded-hal = "1.0"
+embedded-hal-async = "1.0"
+defmt = { workspace = true, optional = true }
+
+[features]
+default = []
+defmt = ["dep:defmt"]

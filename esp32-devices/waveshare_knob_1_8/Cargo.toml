@@ -1,0 +1,49 @@
+[package]
+edition      = "2024"
+name         = "waveshare_knob_1_8"
+rust-version = "1.97"
+version      = "0.1.0"
+
+[[bin]]
+name = "firmware"
+path = "src/bin/main.rs"
+test = false
+
+[lib]
+test = false
+
+[features]
+default = []
+rotary-debug = []
+
+[dependencies]
+slint = { workspace = true }
+i-slint-renderer-software = { workspace = true }
+
+app-launcher = { workspace = true }
+app-shell = { workspace = true }
+detent-decoder = { workspace = true }
+common = { workspace = true }
+cst816 = { workspace = true }
+drv2605 = { workspace = true }
+
+esp-hal = { workspace = true }
+esp-rtos = { workspace = true }
+defmt = { workspace = true }
+esp-alloc = { workspace = true }
+esp-bootloader-esp-idf = { workspace = true }
+embassy-executor = { workspace = true }
+embassy-futures = { workspace = true }
+embassy-sync = { workspace = true }
+embassy-time = { workspace = true }
+embedded-hal-async = { workspace = true }
+heapless = { workspace = true }
+static_cell = { workspace = true }
+critical-section = { workspace = true }
+panic-rtt-target = { workspace = true }
+rtt-target = { workspace = true }
+allocator-api2 = { workspace = true }
+xtensa-lx = "0.13.0"
+
+[lints]
+workspace = true

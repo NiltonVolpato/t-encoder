@@ -2,17 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 //! Statistical sampling profiler task for Xtensa LX7 (ESP32-S3).
-//!
-//! When enabled via the `PROFILE` compile-time environment variable,
-//! this task samples the program counter (PC) from `EPC1` at 2 kHz using
-//! hardware timer `TIMG1.timer0`.
-//!
-//! By default, every PC executed during the capture window is sampled.
-//! If explicit areas of interest are marked using [`scope()`], only samples
-//! inside the matching target scope guard are recorded.
-//!
-//! The hardware timer interrupt is only armed when sampling starts, and is
-//! immediately unlistened / silenced when the duration expires.
 
 extern crate alloc;
 
@@ -30,7 +19,7 @@ use esp_hal::timer::PeriodicTimer;
 use esp_hal::timer::timg::TimerGroup;
 use esp_hal::{Blocking, handler};
 
-use super::subscribe_user_activity;
+use crate::channels::subscribe_user_activity;
 
 /// Sampling frequency: 2 kHz (500 µs interval).
 pub const SAMPLING_PERIOD: esp_hal::time::Duration = esp_hal::time::Duration::from_micros(500);
