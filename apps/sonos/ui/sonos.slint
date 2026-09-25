@@ -1,7 +1,7 @@
 // Copyright © 2026 Nilton Volpato
 // SPDX-License-Identifier: MIT
 
-import { AppWindow, Theme, CircularScreen, AppInfo, TextSm, TextXlBold } from "@theme";
+import { AppWindow, Theme, AppInfo, TextSm, TextXlBold } from "@theme";
 
 export global SonosInfo {
     out property <AppInfo> info: {
@@ -28,29 +28,25 @@ export component SonosApp inherits AppWindow {
         }
     }
 
-    CircularScreen {
-        background: #f59e0b;
+    TouchArea {
+        clicked => { root.exit(); }
+    }
 
-        TouchArea {
-            clicked => { root.exit(); }
+    VerticalLayout {
+        alignment: center;
+        spacing: 12px;
+
+        TextXlBold {
+            text: "Sonos";
+            color: white;
+            horizontal-alignment: center;
         }
 
-        VerticalLayout {
-            alignment: center;
-            spacing: 12px;
-
-            TextXlBold {
-                text: "Sonos";
-                color: white;
-                horizontal-alignment: center;
-            }
-
-            TextSm {
-                text: "TAP OR ESC TO EXIT";
-                color: white.darker(0.2);
-                horizontal-alignment: center;
-                letter-spacing: 1.5px;
-            }
+        TextSm {
+            text: "TAP OR ESC TO EXIT";
+            color: white.darker(0.2);
+            horizontal-alignment: center;
+            letter-spacing: 1.5px;
         }
     }
 }

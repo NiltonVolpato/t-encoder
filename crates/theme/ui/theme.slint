@@ -30,12 +30,6 @@ export component TextLgBold inherits Text { font-family: "Inter Variable"; font-
 export component TextXlBold inherits Text { font-family: "Inter Variable"; font-size: 26px; font-weight: 700; }
 export component TextDisplayBold inherits Text { font-family: "Inter Variable"; font-size: 72px; font-weight: 700; }
 
-export component CircularScreen inherits Rectangle {
-    width: Theme.screen-size;
-    height: Theme.screen-size;
-    background: Theme.background;
-}
-
 export component RotaryKnob inherits FocusScope {
     in-out property <int> value: 0;
     in property <int> min: 0;
