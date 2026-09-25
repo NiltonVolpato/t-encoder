@@ -16,6 +16,7 @@ use embassy_executor::Spawner;
 use esp_hal::clock::CpuClock;
 use esp_hal::interrupt::software::{SoftwareInterrupt, SoftwareInterruptControl};
 use esp_hal::system::Stack;
+use esp_hal::time::Instant;
 use esp_hal::timer::timg::TimerGroup;
 use panic_rtt_target as _;
 use waveshare_knob_1_8::bsp::{
@@ -26,7 +27,9 @@ use waveshare_knob_1_8::tasks::{PROFILER_ENABLED, profiler_task, screensaver_tas
 
 extern crate alloc;
 
-defmt::timestamp!("{=u32:us}", { xtensa_lx::timer::get_cycle_count() / 240 });
+defmt::timestamp!("{=u64:tus} C{}", { Instant::now().duration_since_epoch().as_micros() }, {
+    esp_hal::system::Cpu::current() as usize
+});
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
@@ -63,7 +66,6 @@ async fn main(spawner: Spawner) -> ! {
 
     // 2. Register internal DRAM heaps (reclaimed bootloader memory for DMA buffers)
     esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: 73744);
-    info!("{}", esp_alloc::HEAP.stats());
 
     // 3. Initialize RTOS & Embassy tick driver
     let timg0 = TimerGroup::new(board.system.timg0);
@@ -100,7 +102,7 @@ async fn main(spawner: Spawner) -> ! {
 
     info!("Starting AppShell with Launcher on Core 0...");
     let launcher = LauncherAppFactory::default_apps();
-    let shell = AppShell::new(Box::new(launcher));
+    let shell = AppShell::new(Box::new(common::EspAppShellPlatform), Box::new(launcher));
     AppShell::start(&shell);
 
     // 7. Enter Slint MCU event loop on Core 0

@@ -13,7 +13,9 @@ pub mod perf;
 pub mod profile;
 
 pub use feedback::Feedback;
-pub use lifecycle::{AppFactory, AppInfo, AppShell, ShellContext};
+pub use lifecycle::{
+    AppFactory, AppInfo, AppShell, AppShellPlatform, DefaultAppShellPlatform, ShellContext,
+};
 pub use perf::{FrameCycles, PerfSummary, PerfTracker};
 pub use profile::{DEFAULT_TABLE_CAPACITY, PcSample, SampleTable};
 
@@ -21,6 +23,7 @@ pub use profile::{DEFAULT_TABLE_CAPACITY, PcSample, SampleTable};
 mod tests {
     use alloc::boxed::Box;
     use alloc::rc::Rc;
+    use alloc::string::String;
     use core::any::Any;
     use core::cell::RefCell;
 
@@ -73,10 +76,20 @@ mod tests {
         }
     }
 
+    struct TestPlatform {
+        launched_names: Rc<RefCell<alloc::vec::Vec<String>>>,
+    }
+
+    impl AppShellPlatform for TestPlatform {
+        fn on_app_launched(&self, info: &AppInfo) {
+            self.launched_names.borrow_mut().push(info.name.as_str().into());
+        }
+    }
+
     #[test]
     fn test_single_app_lifecycle() {
         let (clock, launch_count) = MockAppFactory::new("Clock");
-        let shell = AppShell::new(Box::new(clock));
+        let shell = AppShell::new(Box::new(DefaultAppShellPlatform), Box::new(clock));
 
         assert!(!shell.borrow().has_active_app());
         assert_eq!(*launch_count.borrow(), 0);
@@ -93,6 +106,20 @@ mod tests {
     }
 
     #[test]
+    fn test_platform_on_app_launched_hook() {
+        let launched_names = Rc::new(RefCell::new(alloc::vec::Vec::new()));
+        let platform = TestPlatform { launched_names: launched_names.clone() };
+        let (clock, _) = MockAppFactory::new("Clock");
+        let shell = AppShell::new(Box::new(platform), Box::new(clock));
+
+        AppShell::start(&shell);
+        assert_eq!(*launched_names.borrow(), alloc::vec!["Clock"]);
+
+        AppShell::exit_active_app(&shell);
+        assert_eq!(*launched_names.borrow(), alloc::vec!["Clock", "Clock"]);
+    }
+
+    #[test]
     fn test_launcher_next_app_lifecycle() {
         let (target_app, target_launch_count) = MockAppFactory::new("Simon");
 
@@ -104,7 +131,7 @@ mod tests {
                 ctx.exit();
             });
 
-        let shell = AppShell::new(Box::new(launcher));
+        let shell = AppShell::new(Box::new(DefaultAppShellPlatform), Box::new(launcher));
 
         // Starting shell launches Launcher, which queues Simon and exits, so Simon runs
         AppShell::start(&shell);

@@ -11,7 +11,7 @@ use alloc::vec::Vec;
 use core::any::Any;
 use core::cell::RefCell;
 
-pub use app_shell::{AppFactory, AppInfo, AppShell, ShellContext};
+pub use app_shell::{AppFactory, AppInfo, AppShell, DefaultAppShellPlatform, ShellContext};
 use slint::ComponentHandle;
 
 slint::include_modules!();
@@ -152,7 +152,7 @@ mod tests {
         drop(launcher);
 
         let launcher_factory = LauncherAppFactory::new(test_factories());
-        let shell = AppShell::new(Box::new(launcher_factory));
+        let shell = AppShell::new(Box::new(DefaultAppShellPlatform), Box::new(launcher_factory));
         AppShell::start(&shell);
 
         assert!(shell.borrow().has_active_app());

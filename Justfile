@@ -87,6 +87,11 @@ build TARGET=DEVICE *ARGS:
 flash TARGET=DEVICE *ARGS:
     cd esp32-devices && cargo run -p {{TARGET}} --release {{ARGS}}
 
+[doc("Attach to a running device and monitor logs without reflashing.")]
+[group("device")]
+attach TARGET=DEVICE *ARGS:
+    probe-rs attach --chip=esp32s3 --always-print-stacktrace --log-format '{L:severity:bold:<1} {t:dimmed}] {s}' esp32-devices/target/xtensa-esp32s3-none-elf/release/{{TARGET}} {{ARGS}}
+
 [doc("Typecheck device firmware crates.")]
 [group("device")]
 check-device TARGET=DEVICE *ARGS:

@@ -52,20 +52,38 @@ impl ShellContext {
     }
 }
 
+/// Platform-specific integration hooks for the application shell.
+pub trait AppShellPlatform {
+    /// Called immediately after an application instance has been launched.
+    fn on_app_launched(&self, info: &AppInfo) {
+        let _ = info;
+    }
+}
+
+/// Default no-op platform implementation for host testing and simulators.
+#[derive(Default, Clone, Copy, Debug)]
+pub struct DefaultAppShellPlatform;
+
+impl AppShellPlatform for DefaultAppShellPlatform {}
+
 /// Headless application lifecycle coordinator.
 ///
 /// Manages the active application instance and handles transitions between default
 /// and temporary (run-once) applications without creating any windows of its own.
 pub struct AppShell {
+    platform: Box<dyn AppShellPlatform>,
     default_app: Box<dyn AppFactory>,
     next_app: Option<Box<dyn AppFactory>>,
     active_app: Option<Box<dyn Any>>,
 }
 
 impl AppShell {
-    /// Creates a new `AppShell` with the given default application factory.
-    pub fn new(default_app: Box<dyn AppFactory>) -> Rc<RefCell<Self>> {
-        Rc::new(RefCell::new(Self { default_app, next_app: None, active_app: None }))
+    /// Creates a new `AppShell` with the given platform hooks and default application factory.
+    pub fn new(
+        platform: Box<dyn AppShellPlatform>,
+        default_app: Box<dyn AppFactory>,
+    ) -> Rc<RefCell<Self>> {
+        Rc::new(RefCell::new(Self { platform, default_app, next_app: None, active_app: None }))
     }
 
     /// Starts the shell lifecycle, launching the initial application.
@@ -85,10 +103,15 @@ impl AppShell {
             borrow.next_app.take().unwrap_or_else(|| borrow.default_app.clone())
         };
 
+        let info = next_factory.info();
         let context = ShellContext { shell: Rc::downgrade(&shell) };
 
         let instance = next_factory.launch(context);
-        shell.borrow_mut().active_app = Some(instance);
+        {
+            let mut borrow = shell.borrow_mut();
+            borrow.active_app = Some(instance);
+            borrow.platform.on_app_launched(&info);
+        }
     }
 
     /// Configures an application to run once upon the next lifecycle transition.

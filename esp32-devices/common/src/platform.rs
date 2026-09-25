@@ -250,3 +250,15 @@ where
         }
     }
 }
+
+/// Application shell platform integration for ESP32 devices.
+///
+/// Logs application launch events and heap statistics via `defmt`.
+#[derive(Default, Clone, Copy, Debug)]
+pub struct EspAppShellPlatform;
+
+impl app_shell::AppShellPlatform for EspAppShellPlatform {
+    fn on_app_launched(&self, info: &app_shell::AppInfo) {
+        defmt::debug!("Launched app: {}, {}", info.name.as_str(), esp_alloc::HEAP.stats());
+    }
+}
