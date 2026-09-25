@@ -115,8 +115,10 @@ version = "0.1.0"
 dependencies = [
  "app-shell",
  "baker",
+ "image",
  "slint",
  "theme",
+ "zune-jpeg",
 ]
 
 [[package]]

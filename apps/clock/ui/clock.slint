@@ -1,8 +1,7 @@
 // Copyright © 2026 Nilton Volpato
 // SPDX-License-Identifier: MIT
 
-import { AppWindow, Theme, AppInfo, TextBase, TextLgBold, TextDisplayBold } from "@theme";
-import { TextBaseBold } from "../../../crates/theme/ui/theme.slint";
+import { AppWindow, Theme, AppInfo, TextLgBold, TextDisplayBold } from "@theme";
 
 export global ClockInfo {
     out property <AppInfo> info: {
@@ -12,6 +11,19 @@ export global ClockInfo {
     };
 }
 
+export struct ClockTheme {
+    time-color: color,
+    colon-color: color,
+    date-color: color,
+    seconds-color: color,
+    outer-ring-color: color,
+    inner-frame-color: color,
+    show-outer-ring: bool,
+    show-inner-frame: bool,
+    show-seconds-arc: bool,
+    show-date: bool,
+}
+
 export component ClockApp inherits AppWindow {
     title: "Clock";
 
@@ -19,6 +31,19 @@ export component ClockApp inherits AppWindow {
     in-out property <int> minutes: 42;
     in-out property <int> seconds: 35;
     in-out property <string> date-str: "MON, SEP 14";
+
+    in property <ClockTheme> theme: {
+        time-color: #2D729B,
+        colon-color: #2D729B,
+        date-color: #97793F,
+        seconds-color: #CF3B57,
+        outer-ring-color: #586574,
+        inner-frame-color: Theme.surface-variant,
+        show-outer-ring: false,
+        show-inner-frame: false,
+        show-seconds-arc: true,
+        show-date: true,
+    };
 
     callback adjust-minutes(int); // delta
     callback exit();
@@ -43,18 +68,28 @@ export component ClockApp inherits AppWindow {
         }
     }
 
+    in-out property <image> background-image;
+
+    // Background wallpaper
+    if root.background-image.width > 0: Image {
+        source: root.background-image;
+        width: 100%;
+        height: 100%;
+        image-fit: cover;
+    }
+
     // Decorative outer border ring
-    Rectangle {
+    if root.theme.show-outer-ring: Rectangle {
         width: Theme.screen-size - 16px;
         height: Theme.screen-size - 16px;
         border-radius: self.width / 2;
-        border-width: 2px;
-        border-color: Theme.surface-variant;
+        border-width: 18px;
+        border-color: root.theme.outer-ring-color;
     }
 
     // Container for seconds indicator arc along outer track
-    block := Rectangle {
-        private property <float> R: 162.5;
+    if root.theme.show-seconds-arc: block := Rectangle {
+        private property <float> R: 163;
         private property <angle> alpha: root.seconds * 6deg;
         private property <float> center-x: 180.0 + R * sin(alpha);
         private property <float> center-y: 180.0 - R * cos(alpha);
@@ -69,8 +104,8 @@ export component ClockApp inherits AppWindow {
             width: 100%;
             height: 100%;
             fit: preserve;
-            stroke: Theme.accent;
-            stroke-width: 8px;
+            stroke: root.theme.seconds-color;
+            stroke-width: 14px;
             stroke-line-cap: butt;
 
             private property <angle> start-angle: block.alpha - 3.0deg;
@@ -91,59 +126,51 @@ export component ClockApp inherits AppWindow {
         }
     }
 
-    // Inner dial background
-    Rectangle {
+    // Inner dial frame
+    if root.theme.show-inner-frame: Rectangle {
         width: Theme.screen-size - 50px;
         height: Theme.screen-size - 50px;
         border-radius: self.width / 2;
-        background: Theme.surface;
         border-width: 1px;
-        border-color: Theme.surface-variant;
+        border-color: root.theme.inner-frame-color;
     }
 
-    // Center content layout
-    VerticalLayout {
+    // Date readout positioned along the equal-area line of the upper semicircle:
+    // In Cartesian coordinates: y = d * R above center (d ≈ 0.40397).
+    // In screen coordinates: y = R * (1 - d) = root.height * 0.5 * (1 - 0.40397) ≈ root.height * 0.298
+    if root.theme.show-date: TextLgBold {
+        y: root.height * 0.5 * (1.0 - 0.40397) - self.height / 2;
+        width: 100%;
+        text: root.date-str;
+        color: root.theme.date-color;
+        horizontal-alignment: center;
+        letter-spacing: 1px;
+    }
+
+    // Main digital time readout (Hours : Minutes) centered vertically
+    HorizontalLayout {
         alignment: center;
-        spacing: 16px;
+        spacing: 6px;
+        y: (root.height - self.height) / 2;
+        height: 72px;
 
-        // Date readout
-        TextLgBold {
-            text: root.date-str;
-            color: Theme.text-secondary;
-            horizontal-alignment: center;
-            letter-spacing: 1px;
+        TextDisplayBold {
+            text: root.hours < 10 ? "0" + root.hours : "" + root.hours;
+            color: root.theme.time-color;
+            horizontal-alignment: right;
         }
 
-        // Main digital time readout (Hours : Minutes)
-        HorizontalLayout {
-            alignment: center;
-            spacing: 6px;
-
-            TextDisplayBold {
-                text: root.hours < 10 ? "0" + root.hours : "" + root.hours;
-                color: Theme.text-primary;
-                horizontal-alignment: right;
-            }
-
-            TextDisplayBold {
-                y: -8px;
-                text: ":";
-                color: Theme.accent;
-                horizontal-alignment: center;
-            }
-
-            TextDisplayBold {
-                text: root.minutes < 10 ? "0" + root.minutes : "" + root.minutes;
-                color: Theme.text-primary;
-                horizontal-alignment: left;
-            }
+        TextDisplayBold {
+            y: -8px;
+            text: ":";
+            color: root.theme.colon-color;
+            horizontal-alignment: center;
         }
 
-        // Focus hint for rotary encoder
-        if dial-focus.has-focus: TextBaseBold {
-            text: "• ROTATE TO ADJUST •";
-            color: Theme.text-muted;
-            horizontal-alignment: center;
+        TextDisplayBold {
+            text: root.minutes < 10 ? "0" + root.minutes : "" + root.minutes;
+            color: root.theme.time-color;
+            horizontal-alignment: left;
         }
     }
 }

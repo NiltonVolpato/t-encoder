@@ -107,8 +107,31 @@ impl Time {
     }
 }
 
+#[cfg(feature = "display-390")]
+const BACKGROUND_JPEG_BYTES: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/bg_390.jpg"));
+#[cfg(not(feature = "display-390"))]
+const BACKGROUND_JPEG_BYTES: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/bg_360.jpg"));
+
+/// Decodes the embedded background JPEG image into a Slint RGB8 pixel buffer.
+pub fn load_background_image() -> Option<slint::Image> {
+    let mut decoder = Box::new(zune_jpeg::JpegDecoder::new(
+        zune_jpeg::zune_core::bytestream::ZCursor::new(BACKGROUND_JPEG_BYTES),
+    ));
+    decoder.decode_headers().ok()?;
+    let info = decoder.info()?;
+
+    let mut pixel_buffer =
+        slint::SharedPixelBuffer::<slint::Rgb8Pixel>::new(info.width as u32, info.height as u32);
+    decoder.decode_into(pixel_buffer.make_mut_bytes()).ok()?;
+    Some(slint::Image::from_rgb8(pixel_buffer))
+}
+
 /// Binds default reactive controller logic to a `ClockApp` instance.
 pub fn setup_clock(app: &ClockApp, initial_time: &Time) {
+    if let Some(background) = load_background_image() {
+        app.set_background_image(background);
+    }
+
     app.set_hours(initial_time.hours as i32);
     app.set_minutes(initial_time.minutes as i32);
     app.set_seconds(initial_time.seconds as i32);
