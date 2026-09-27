@@ -8,6 +8,7 @@
 #include <string>
 #include <cstring>
 #include "esp_log.h"
+#include "esp_mac.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/timers.h"
 #include "host/ble_hs.h"
@@ -34,6 +35,7 @@ static TimerHandle_t s_grace_timer = nullptr;
 static uint8_t s_state = improv::STATE_STOPPED;
 static uint8_t s_error = improv::ERROR_NONE;
 static std::vector<uint8_t> s_rpc_result;
+static std::string s_device_name = "Smart Dial";
 
 static uint16_t s_status_val_handle = 0;
 static uint16_t s_error_val_handle = 0;
@@ -237,10 +239,10 @@ static int gatt_svr_access(uint16_t conn_handle, uint16_t attr_handle,
                 }
                 case improv::Command::GET_DEVICE_INFO: {
                     std::vector<std::string> info = {
-                        "T-Encoder",
+                        "smart-dial",
                         "1.0.0",
-                        "Waveshare-1.8",
-                        "T-Encoder"
+                        "waveshare knob 1.8/esp32",
+                        s_device_name
                     };
                     s_rpc_result = improv::build_rpc_response(improv::Command::GET_DEVICE_INFO, info);
                     ble_gatts_chr_updated(s_rpc_result_val_handle);
@@ -416,10 +418,18 @@ void ble_improv_init(ble_improv_wifi_connect_cb_t connect_cb, ble_improv_status_
 
     ble_hs_cfg.sync_cb = ble_on_sync;
 
+    uint8_t mac[6] = {0};
+    if (esp_read_mac(mac, ESP_MAC_WIFI_STA) == ESP_OK) {
+        char name_buf[32];
+        snprintf(name_buf, sizeof(name_buf), "Smart Dial %02X%02X", mac[4], mac[5]);
+        s_device_name = name_buf;
+    }
+
     ble_svc_gap_init();
     ble_svc_gatt_init();
 
-    ESP_ERROR_CHECK(ble_svc_gap_device_name_set("T-Encoder"));
+    ESP_ERROR_CHECK(ble_svc_gap_device_name_set(s_device_name.c_str()));
+    ESP_LOGI(TAG, "Device name set to: %s", s_device_name.c_str());
 
     int rc = ble_gatts_count_cfg(s_gatt_svcs);
     assert(rc == 0);

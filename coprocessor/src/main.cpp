@@ -79,7 +79,7 @@ static void periodic_status_log_timer(TimerHandle_t xTimer) {
 }
 
 extern "C" void app_main() {
-    ESP_LOGI(TAG, "=== T-Encoder Co-Processor Firmware starting ===");
+    ESP_LOGI(TAG, "=== Smart Dial Co-Processor Firmware starting ===");
 
     // Initialize NVS flash storage for Wi-Fi credentials
     esp_err_t ret = nvs_flash_init();
