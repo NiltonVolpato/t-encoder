@@ -1,18 +1,17 @@
 CompileFlags:
-  CompilationDatabase: .
-  BuiltinHeaders: QueryDriver
   Remove:
+    - -isysroot
+    - /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk
     - -mlongcalls
     - -fno-shrink-wrap
-    - -fstrict-volatile-bitfields
     - -fno-tree-switch-conversion
-
----
-If:
-  PathMatch: .*\.h
-CompileFlags:
+    - -fstrict-volatile-bitfields
   Add:
-    - -xc++-header
-    - -std=gnu++26
-    - -Iinclude
-    - -Isrc
+    - -isysroot
+    - /Users/nilton/.platformio/packages/toolchain-xtensa-esp-elf/xtensa-esp-elf
+Diagnostics:
+  Includes:
+    IgnoreHeader:
+      - .*FreeRTOS\.h
+  ClangTidy:
+      Add: modernize*

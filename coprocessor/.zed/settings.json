@@ -1,13 +1,18 @@
 {
+  "languages": {
+    "C": {"language_servers": ["clangd", "!sourcekit-lsp"]},
+    "C++": {"language_servers": ["clangd", "!sourcekit-lsp"]},
+    "Swift": {"language_servers": []},
+  },
   "lsp": {
     "clangd": {
       "binary": {
         "env": {
-          "PATH": "/Users/nilton/.platformio/packages/toolchain-xtensa-esp32/bin:/opt/homebrew/opt/llvm@22/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+          "PATH": "/Users/nilton/.platformio/packages/toolchain-xtensa-esp-elf/bin:/opt/homebrew/opt/llvm@22/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
         },
         "path": "/opt/homebrew/opt/llvm@22/bin/clangd",
         "arguments": [
-          "--query-driver=**/.platformio/**"
+          "--query-driver=**"
         ]
       }
     }

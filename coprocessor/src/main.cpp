@@ -1,7 +1,6 @@
 // Copyright © 2026 Nilton Volpato
 // SPDX-License-Identifier: MIT
 
-#include <cstdio>
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_system.h"
