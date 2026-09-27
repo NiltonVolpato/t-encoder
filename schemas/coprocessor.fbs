@@ -1,0 +1,80 @@
+// Copyright © 2026 Nilton Volpato
+// SPDX-License-Identifier: MIT
+
+namespace CoprocessorProto;
+
+// Status of Wi-Fi connection reported by the co-processor
+table WifiStatus {
+    connected: bool;
+    ip: string;
+    ssid: string;
+    rssi: int16;
+}
+
+// Request co-processor to connect to Wi-Fi manually
+table WifiConnectRequest {
+    ssid: string;
+    password: string;
+}
+
+// Heartbeat for liveness and latency checks
+table Heartbeat {
+    uptime_ms: uint64;
+    heap_free: uint32;
+}
+
+// Streaming chunk for multiplexed large payloads (album art, OTA, etc.)
+table StreamChunk {
+    stream_id: uint32;
+    sequence: uint32;
+    is_last: bool;
+    payload: [ubyte];
+}
+
+// Provisioning state for on-demand BLE setup
+enum ProvisioningState : ubyte {
+    Inactive = 0,
+    Active = 1,
+    Provisioned = 2,
+    TimedOut = 3,
+}
+
+// Request co-processor to open on-demand BLE provisioning window
+table StartProvisioning {
+    timeout_seconds: uint32;
+}
+
+// Request co-processor to immediately stop/cancel BLE provisioning
+table StopProvisioning {}
+
+// Status update of BLE provisioning session
+table ProvisioningStatus {
+    state: ProvisioningState;
+}
+
+// Union of all Requests (S3 -> Co-processor)
+union Request {
+    Heartbeat,
+    WifiConnectRequest,
+    StartProvisioning,
+    StopProvisioning,
+    StreamChunk,
+}
+
+// Union of all Responses / Events (Co-processor -> S3)
+union Response {
+    Heartbeat,
+    WifiStatus,
+    ProvisioningStatus,
+    StreamChunk,
+}
+
+table RequestEnvelope {
+    message: Request;
+}
+
+table ResponseEnvelope {
+    message: Response;
+}
+
+root_type RequestEnvelope;

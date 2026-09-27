@@ -723,6 +723,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "cobs"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dd93fd2c1b27acd030440c9dbd9d14c1122aad622374fe05a670b67a4bc034be"
+dependencies = [
+ "heapless 0.9.3",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "codespan-reporting"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -817,6 +827,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "633458d4ef8c78b72454de2d54fd6ab2e60f9e02be22f3c6104cdc8a4e0fceb9"
 dependencies = [
  "unicode-segmentation",
+]
+
+[[package]]
+name = "coprocessor"
+version = "0.1.0"
+dependencies = [
+ "cobs",
+ "crc32fast",
+ "flatbuffers",
 ]
 
 [[package]]
@@ -2254,6 +2273,16 @@ dependencies = [
  "displaydoc",
  "smallvec",
  "writeable",
+]
+
+[[package]]
+name = "flatbuffers"
+version = "25.12.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "35f6839d7b3b98adde531effaf34f0c2badc6f4735d26fe74709d8e513a96ef3"
+dependencies = [
+ "bitflags 2.13.2",
+ "rustc_version",
 ]
 
 [[package]]
@@ -6428,6 +6457,7 @@ dependencies = [
  "app-launcher",
  "app-shell",
  "common",
+ "coprocessor",
  "critical-section",
  "cst816",
  "defmt 1.1.1",

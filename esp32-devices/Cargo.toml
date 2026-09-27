@@ -61,6 +61,7 @@ detent-decoder = { path = "../crates/detent-decoder" }
 cst816 = { path = "../crates/cst816", features = ["defmt"] }
 drv2605 = { path = "../crates/drv2605", features = ["defmt"] }
 allocator-api2 = { version = "0.3", default-features = false, features = ["alloc"] }
+coprocessor = { path = "../crates/coprocessor" }
 common = { path = "common" }
 
 [workspace.lints.clippy]

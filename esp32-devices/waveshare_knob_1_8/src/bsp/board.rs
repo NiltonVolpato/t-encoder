@@ -37,11 +37,19 @@ pub struct EncoderPeripherals {
     pub io_mux: IO_MUX<'static>,
 }
 
-/// Hardware peripherals serviced by Core 0 (inputs, profiling, haptics).
+/// Peripherals required for inter-MCU UART with the ESP32 co-processor.
+pub struct CoprocessorUartPeripherals {
+    pub uart: UART1<'static>,
+    pub tx: GPIO38<'static>,
+    pub rx: GPIO48<'static>,
+}
+
+/// Hardware peripherals serviced by Core 0 (inputs, profiling, haptics, co-processor).
 pub struct Core0Peripherals {
     pub i2c0: I2c0Peripherals,
     pub encoder: EncoderPeripherals,
     pub profiler_timer: TIMG1<'static>,
+    pub coprocessor: CoprocessorUartPeripherals,
 }
 
 /// Hardware peripherals serviced by Core 1 (display rendering and DMA flushing).
@@ -83,6 +91,11 @@ impl Board {
                     io_mux: p.IO_MUX,
                 },
                 profiler_timer: p.TIMG1,
+                coprocessor: CoprocessorUartPeripherals {
+                    uart: p.UART1,
+                    tx: p.GPIO38,
+                    rx: p.GPIO48,
+                },
             },
             core1: Core1Peripherals {
                 display: DisplayPeripherals {

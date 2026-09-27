@@ -169,3 +169,30 @@ env-info:
     @echo "xtensa bin = {{xtensa_bin}}"
     @cd esp32-devices && rustc --version
 
+# -----------------------------------------------------------------------------
+# Co-Processor Recipes (ESP32-U4WDH Wi-Fi/BT)
+# -----------------------------------------------------------------------------
+
+[doc("Build co-processor firmware with PlatformIO.")]
+[group("coprocessor")]
+build-coprocessor *ARGS:
+    cd coprocessor && \
+        pio run {{ARGS}}
+
+[doc("Flash co-processor firmware via CH340 and monitor output (requires flipped USB-C cable orientation).")]
+[group("coprocessor")]
+flash-coprocessor PORT="/dev/cu.usbserial-10" *ARGS:
+    cd coprocessor && \
+        pio run -t upload --upload-port {{PORT}} {{ARGS}} && \
+        pio device monitor --port {{PORT}} --baud 115200
+
+[doc("Monitor co-processor UART output via CH340 (resets MCU on connect, requires flipped USB-C cable orientation).")]
+[group("coprocessor")]
+monitor-coprocessor PORT="/dev/cu.usbserial-10" *ARGS:
+    cd coprocessor && \
+        pio device monitor --port {{PORT}} --baud 115200 {{ARGS}}
+
+[doc("Reset the co-processor into normal running mode without attaching.")]
+[group("coprocessor")]
+reset-coprocessor PORT="/dev/cu.usbserial-10":
+    esptool -p {{PORT}} run

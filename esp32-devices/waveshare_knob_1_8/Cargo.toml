@@ -26,6 +26,7 @@ detent-decoder = { workspace = true }
 common = { workspace = true }
 cst816 = { workspace = true }
 drv2605 = { workspace = true }
+coprocessor = { workspace = true }
 
 esp-hal = { workspace = true }
 esp-rtos = { workspace = true }
