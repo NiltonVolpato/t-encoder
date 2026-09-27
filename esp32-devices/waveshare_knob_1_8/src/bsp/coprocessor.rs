@@ -3,8 +3,10 @@
 
 //! Inter-MCU UART communication with the onboard ESP32 co-processor.
 
+use core::sync::atomic::{AtomicBool, Ordering};
+
 use coprocessor::{FrameAccumulator, encode_packet, flatbuffers, parse_response_envelope, proto};
-use defmt::{error, info, warn};
+use defmt::{debug, error, info, warn};
 use embassy_futures::join::join;
 use embassy_futures::select::{Either, select};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
@@ -12,6 +14,8 @@ use embassy_sync::channel::Channel;
 use embassy_time::Timer;
 use esp_hal::peripherals::{GPIO38, GPIO48, UART1};
 use esp_hal::uart::{Config, Uart};
+
+static IS_LINKED: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Clone)]
 pub enum CoprocessorCommand {
@@ -41,12 +45,12 @@ pub fn connect_wifi(ssid: &str, password: &str) {
     let _ = COMMAND_CHANNEL.try_send(CoprocessorCommand::WifiConnect { ssid: s, password: p });
 }
 
-fn handle_coprocessor_response(payload: &[u8]) {
+fn handle_coprocessor_response(payload: &[u8], last_uptime: &mut u64) {
     match parse_response_envelope(payload) {
         Ok(env) => match env.message_type() {
             proto::Response::WifiStatus => {
                 if let Some(status) = env.message_as_wifi_status() {
-                    info!(
+                    debug!(
                         "[COPROCESSOR] Wi-Fi Status: connected={}, ssid={}, ip={}, rssi={}",
                         status.connected(),
                         status.ssid().unwrap_or(""),
@@ -57,23 +61,46 @@ fn handle_coprocessor_response(payload: &[u8]) {
             }
             proto::Response::ProvisioningStatus => {
                 if let Some(status) = env.message_as_provisioning_status() {
-                    info!(
+                    debug!(
                         "[COPROCESSOR] Provisioning Status: {:?}",
                         defmt::Debug2Format(&status.state())
                     );
                 }
             }
+            proto::Response::Hello => {
+                if IS_LINKED.load(Ordering::Relaxed) {
+                    warn!(
+                        "[COPROCESSOR] Co-processor reboot detected via Hello while linked! Rebooting S3..."
+                    );
+                    esp_hal::system::software_reset();
+                } else {
+                    info!("[COPROCESSOR] First Hello received from co-processor, linking session");
+                    IS_LINKED.store(true, Ordering::Relaxed);
+                }
+            }
             proto::Response::Heartbeat => {
                 if let Some(hb) = env.message_as_heartbeat() {
-                    info!(
+                    let uptime = hb.uptime_ms();
+                    if IS_LINKED.load(Ordering::Relaxed)
+                        && *last_uptime > 0
+                        && uptime < *last_uptime
+                    {
+                        warn!(
+                            "[COPROCESSOR] Co-processor uptime dropped ({} < {}), reboot detected! Rebooting S3...",
+                            uptime, *last_uptime
+                        );
+                        esp_hal::system::software_reset();
+                    }
+                    *last_uptime = uptime;
+                    debug!(
                         "[COPROCESSOR] Heartbeat ACK: uptime={}ms, free_heap={}",
-                        hb.uptime_ms(),
+                        uptime,
                         hb.heap_free()
                     );
                 }
             }
             _ => {
-                info!("[COPROCESSOR] Received response type: {:?}", env.message_type().0);
+                debug!("[COPROCESSOR] Received response type: {:?}", env.message_type().0);
             }
         },
         Err(e) => {
@@ -103,13 +130,24 @@ pub async fn coprocessor_task(
     let rx_fut = async {
         let mut accumulator = FrameAccumulator::<2048>::new();
         let mut buf = [0u8; 64];
+        let mut last_coprocessor_uptime = 0u64;
         loop {
             match rx.read_async(&mut buf).await {
                 Ok(n) => {
+                    debug!("[COPROCESSOR] UART RX: read {} bytes", n);
                     for &b in &buf[..n] {
                         if let Some(res) = accumulator.push_byte(b) {
                             match res {
-                                Ok(payload) => handle_coprocessor_response(payload),
+                                Ok(payload) => {
+                                    debug!(
+                                        "[COPROCESSOR] Frame assembled ({} bytes), handling response",
+                                        payload.len()
+                                    );
+                                    handle_coprocessor_response(
+                                        payload,
+                                        &mut last_coprocessor_uptime,
+                                    );
+                                }
                                 Err(e) => {
                                     warn!(
                                         "[COPROCESSOR] Codec error: {:?}",
@@ -129,6 +167,26 @@ pub async fn coprocessor_task(
     };
 
     let tx_fut = async {
+        while !IS_LINKED.load(Ordering::Relaxed) {
+            let mut builder = flatbuffers::FlatBufferBuilder::new();
+            let hello = proto::Hello::create(&mut builder, &proto::HelloArgs {});
+            let env = proto::RequestEnvelope::create(
+                &mut builder,
+                &proto::RequestEnvelopeArgs {
+                    message_type: proto::Request::Hello,
+                    message: Some(hello.as_union_value()),
+                },
+            );
+            builder.finish_size_prefixed(env, None);
+            let packet = encode_packet(builder.finished_data());
+            debug!("[COPROCESSOR] TX Hello request sent ({} bytes)", packet.len());
+            if let Err(e) = tx.write_async(&packet).await {
+                error!("[COPROCESSOR] UART TX error: {:?}", defmt::Debug2Format(&e));
+            }
+            let _ = tx.flush_async().await;
+            Timer::after_millis(500).await;
+        }
+
         loop {
             match select(Timer::after_secs(10), COMMAND_CHANNEL.receive()).await {
                 Either::First(_) => {
@@ -151,9 +209,11 @@ pub async fn coprocessor_task(
                     );
                     builder.finish_size_prefixed(env, None);
                     let packet = encode_packet(builder.finished_data());
+                    debug!("[COPROCESSOR] TX Heartbeat request sent ({} bytes)", packet.len());
                     if let Err(e) = tx.write_async(&packet).await {
                         error!("[COPROCESSOR] UART TX error: {:?}", defmt::Debug2Format(&e));
                     }
+                    let _ = tx.flush_async().await;
                 }
                 Either::Second(cmd) => {
                     let mut builder = flatbuffers::FlatBufferBuilder::new();
@@ -205,9 +265,11 @@ pub async fn coprocessor_task(
                     };
                     builder.finish_size_prefixed(env, None);
                     let packet = encode_packet(builder.finished_data());
+                    debug!("[COPROCESSOR] TX command sent ({} bytes)", packet.len());
                     if let Err(e) = tx.write_async(&packet).await {
                         error!("[COPROCESSOR] UART TX error: {:?}", defmt::Debug2Format(&e));
                     }
+                    let _ = tx.flush_async().await;
                 }
             }
         }

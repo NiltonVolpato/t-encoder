@@ -1,5 +1,7 @@
 set dotenv-load := true
 
+export INTERACTIVE := env('INTERACTIVE', "true")
+
 _default:
     @just --list
 
@@ -93,6 +95,11 @@ _monitor-expect PORT="/dev/cu.usbserial-10" TIMEOUT='15' TAIL='5':
             set timeout {{TAIL}}
             expect {
                 -re "(Guru Meditation Error|abort\\(\\)|assert failed|Backtrace:)" {
+                    set timeout 3
+                    expect {
+                        -re "(Rebooting|Restarting|CPU halted)" {}
+                        timeout {}
+                    }
                     send_user "\n*** Panic/crash detected after initialization!\n"
                     shutdown $pid 1
                 }
@@ -107,6 +114,11 @@ _monitor-expect PORT="/dev/cu.usbserial-10" TIMEOUT='15' TAIL='5':
             }
         }
         -re "(Guru Meditation Error|abort\\(\\)|assert failed|Backtrace:)" {
+            set timeout 3
+            expect {
+                -re "(Rebooting|Restarting|CPU halted)" {}
+                timeout {}
+            }
             send_user "\n*** Panic/crash detected during boot!\n"
             shutdown $pid 1
         }

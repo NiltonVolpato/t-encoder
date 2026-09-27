@@ -4,6 +4,7 @@
 #include "uart_protocol.h"
 
 #include <array>
+#include <cinttypes>
 #include <cstring>
 #include <string_view>
 #include <vector>
@@ -12,13 +13,18 @@
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_timer.h"
+#include "esp_wifi.h"
 #include "freertos/task.h"
+#include "wifi_manager.h"
 
 namespace coprocessor {
 
 namespace {
 
 constexpr const char* TAG = "uart_proto";
+
+bool s_is_linked = false;
+uint64_t s_last_s3_uptime = 0;
 
 uart_wifi_connect_cb_t s_wifi_connect_cb = nullptr;
 uart_start_provisioning_cb_t s_start_provisioning_cb = nullptr;
@@ -103,6 +109,8 @@ void send_response_envelope(
 
   uart_write_bytes(UART_PORT, reinterpret_cast<const char*>(encoded.data()),
                    encoded_len);
+  ESP_LOGI(TAG, "UART TX: sent response (%u bytes)",
+           static_cast<unsigned>(encoded_len));
 }
 
 void handle_rx_packet(const uint8_t* payload, size_t payload_len) {
@@ -113,9 +121,46 @@ void handle_rx_packet(const uint8_t* payload, size_t payload_len) {
   }
 
   switch (req_env->message_type()) {
+    case CoprocessorProto::Request_Hello: {
+      if (s_is_linked) {
+        ESP_LOGW(TAG,
+                 "S3 reboot detected via Hello while linked! Rebooting "
+                 "coprocessor...");
+        esp_restart();
+      } else {
+        ESP_LOGI(TAG, "First Hello received from S3, linking session");
+        s_is_linked = true;
+        uart_send_hello();
+        if (wifi_is_connected()) {
+          wifi_ap_record_t ap_info;
+          int16_t rssi = 0;
+          if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+            rssi = ap_info.rssi;
+          }
+          uart_send_wifi_status(true, wifi_get_ssid(), wifi_get_ip(), rssi);
+        }
+      }
+      break;
+    }
     case CoprocessorProto::Request_Heartbeat: {
+      auto req = req_env->message_as_Heartbeat();
+      if (req) {
+        if (s_is_linked && s_last_s3_uptime > 0 &&
+            req->uptime_ms() < s_last_s3_uptime) {
+          ESP_LOGW(TAG,
+                   "S3 uptime dropped (%" PRIu64 " < %" PRIu64
+                   "), reboot detected! Rebooting coprocessor...",
+                   req->uptime_ms(), s_last_s3_uptime);
+          esp_restart();
+        }
+        s_last_s3_uptime = req->uptime_ms();
+      }
       auto uptime_ms = static_cast<uint64_t>(esp_timer_get_time() / 1000);
       uint32_t heap_free = esp_get_free_heap_size();
+      ESP_LOGI(TAG,
+               "Heartbeat request received from S3 (uptime=%" PRIu64
+               " ms), sending ACK",
+               req ? req->uptime_ms() : 0);
       uart_send_heartbeat_response(uptime_ms, heap_free);
       break;
     }
@@ -130,6 +175,8 @@ void handle_rx_packet(const uint8_t* payload, size_t payload_len) {
                                     ? std::string_view(req->password()->data(),
                                                        req->password()->size())
                                     : std::string_view{};
+        ESP_LOGI(TAG, "WifiConnectRequest received: ssid='%.*s'",
+                 static_cast<int>(ssid.size()), ssid.data());
         s_wifi_connect_cb(ssid, pass);
       }
       break;
@@ -137,12 +184,15 @@ void handle_rx_packet(const uint8_t* payload, size_t payload_len) {
     case CoprocessorProto::Request_StartProvisioning: {
       auto req = req_env->message_as_StartProvisioning();
       if (req && s_start_provisioning_cb) {
+        ESP_LOGI(TAG, "StartProvisioning request received: timeout=%lu s",
+                 static_cast<unsigned long>(req->timeout_seconds()));
         s_start_provisioning_cb(req->timeout_seconds());
       }
       break;
     }
     case CoprocessorProto::Request_StopProvisioning: {
       if (s_stop_provisioning_cb) {
+        ESP_LOGI(TAG, "StopProvisioning request received");
         s_stop_provisioning_cb();
       }
       break;
@@ -156,9 +206,9 @@ void handle_rx_packet(const uint8_t* payload, size_t payload_len) {
 
 void uart_rx_task(void* pvParameters) {
   constexpr size_t BUFFER_CAPACITY = 2048;
-  std::array<uint8_t, 128> rx_raw{};
-  std::array<uint8_t, BUFFER_CAPACITY> frame_buf{};
-  std::array<uint8_t, BUFFER_CAPACITY> scratch{};
+  static std::array<uint8_t, 128> rx_raw{};
+  static std::array<uint8_t, BUFFER_CAPACITY> frame_buf{};
+  static std::array<uint8_t, BUFFER_CAPACITY> scratch{};
   size_t frame_pos = 0;
 
   ESP_LOGI(TAG, "UART RX task started on %d (TX=%d, RX=%d)", UART_PORT,
@@ -170,6 +220,7 @@ void uart_rx_task(void* pvParameters) {
     if (len <= 0) {
       continue;
     }
+    ESP_LOGI(TAG, "UART RX: read %d bytes", len);
 
     for (int i = 0; i < len; i++) {
       uint8_t byte = rx_raw[i];
@@ -255,12 +306,24 @@ void uart_send_provisioning_status(CoprocessorProto::ProvisioningState state) {
   send_response_envelope(fbb, env);
 }
 
+void uart_send_hello() {
+  flatbuffers::FlatBufferBuilder fbb(64);
+  auto hello = CoprocessorProto::CreateHello(fbb);
+  auto env = CoprocessorProto::CreateResponseEnvelope(
+      fbb, CoprocessorProto::Response_Hello, hello.Union());
+  send_response_envelope(fbb, env);
+}
+
+bool uart_is_linked() { return s_is_linked; }
+
 void uart_init(uart_wifi_connect_cb_t wifi_cb,
                uart_start_provisioning_cb_t start_prov_cb,
                uart_stop_provisioning_cb_t stop_prov_cb) {
   s_wifi_connect_cb = wifi_cb;
   s_start_provisioning_cb = start_prov_cb;
   s_stop_provisioning_cb = stop_prov_cb;
+  s_is_linked = false;
+  s_last_s3_uptime = 0;
 
   uart_config_t uart_config = {};
   uart_config.baud_rate = UART_BAUD;
@@ -277,6 +340,7 @@ void uart_init(uart_wifi_connect_cb_t wifi_cb,
 
   xTaskCreatePinnedToCore(uart_rx_task, "uart_rx_task", 4096, nullptr, 10,
                           nullptr, 1);
+  uart_send_hello();
 }
 
 }  // namespace coprocessor

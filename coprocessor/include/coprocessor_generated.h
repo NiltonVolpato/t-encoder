@@ -36,6 +36,9 @@ struct StopProvisioningBuilder;
 struct ProvisioningStatus;
 struct ProvisioningStatusBuilder;
 
+struct Hello;
+struct HelloBuilder;
+
 struct RequestEnvelope;
 struct RequestEnvelopeBuilder;
 
@@ -85,37 +88,40 @@ enum Request : uint8_t {
   Request_StartProvisioning = 3,
   Request_StopProvisioning = 4,
   Request_StreamChunk = 5,
+  Request_Hello = 6,
   Request_MIN = Request_NONE,
-  Request_MAX = Request_StreamChunk
+  Request_MAX = Request_Hello
 };
 
-inline const Request (&EnumValuesRequest())[6] {
+inline const Request (&EnumValuesRequest())[7] {
   static const Request values[] = {
     Request_NONE,
     Request_Heartbeat,
     Request_WifiConnectRequest,
     Request_StartProvisioning,
     Request_StopProvisioning,
-    Request_StreamChunk
+    Request_StreamChunk,
+    Request_Hello
   };
   return values;
 }
 
 inline const char * const *EnumNamesRequest() {
-  static const char * const names[7] = {
+  static const char * const names[8] = {
     "NONE",
     "Heartbeat",
     "WifiConnectRequest",
     "StartProvisioning",
     "StopProvisioning",
     "StreamChunk",
+    "Hello",
     nullptr
   };
   return names;
 }
 
 inline const char *EnumNameRequest(Request e) {
-  if (::flatbuffers::IsOutRange(e, Request_NONE, Request_StreamChunk)) return "";
+  if (::flatbuffers::IsOutRange(e, Request_NONE, Request_Hello)) return "";
   const size_t index = static_cast<size_t>(e);
   return EnumNamesRequest()[index];
 }
@@ -144,6 +150,10 @@ template<> struct RequestTraits<CoprocessorProto::StreamChunk> {
   static const Request enum_value = Request_StreamChunk;
 };
 
+template<> struct RequestTraits<CoprocessorProto::Hello> {
+  static const Request enum_value = Request_Hello;
+};
+
 template <bool B = false>
 bool VerifyRequest(::flatbuffers::VerifierTemplate<B> &verifier, const void *obj, Request type);
 template <bool B = false>
@@ -155,35 +165,38 @@ enum Response : uint8_t {
   Response_WifiStatus = 2,
   Response_ProvisioningStatus = 3,
   Response_StreamChunk = 4,
+  Response_Hello = 5,
   Response_MIN = Response_NONE,
-  Response_MAX = Response_StreamChunk
+  Response_MAX = Response_Hello
 };
 
-inline const Response (&EnumValuesResponse())[5] {
+inline const Response (&EnumValuesResponse())[6] {
   static const Response values[] = {
     Response_NONE,
     Response_Heartbeat,
     Response_WifiStatus,
     Response_ProvisioningStatus,
-    Response_StreamChunk
+    Response_StreamChunk,
+    Response_Hello
   };
   return values;
 }
 
 inline const char * const *EnumNamesResponse() {
-  static const char * const names[6] = {
+  static const char * const names[7] = {
     "NONE",
     "Heartbeat",
     "WifiStatus",
     "ProvisioningStatus",
     "StreamChunk",
+    "Hello",
     nullptr
   };
   return names;
 }
 
 inline const char *EnumNameResponse(Response e) {
-  if (::flatbuffers::IsOutRange(e, Response_NONE, Response_StreamChunk)) return "";
+  if (::flatbuffers::IsOutRange(e, Response_NONE, Response_Hello)) return "";
   const size_t index = static_cast<size_t>(e);
   return EnumNamesResponse()[index];
 }
@@ -206,6 +219,10 @@ template<> struct ResponseTraits<CoprocessorProto::ProvisioningStatus> {
 
 template<> struct ResponseTraits<CoprocessorProto::StreamChunk> {
   static const Response enum_value = Response_StreamChunk;
+};
+
+template<> struct ResponseTraits<CoprocessorProto::Hello> {
+  static const Response enum_value = Response_Hello;
 };
 
 template <bool B = false>
@@ -623,6 +640,36 @@ inline ::flatbuffers::Offset<ProvisioningStatus> CreateProvisioningStatus(
   return builder_.Finish();
 }
 
+struct Hello FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef HelloBuilder Builder;
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           verifier.EndTable();
+  }
+};
+
+struct HelloBuilder {
+  typedef Hello Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  explicit HelloBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<Hello> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<Hello>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<Hello> CreateHello(
+    ::flatbuffers::FlatBufferBuilder &_fbb) {
+  HelloBuilder builder_(_fbb);
+  return builder_.Finish();
+}
+
 struct RequestEnvelope FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   typedef RequestEnvelopeBuilder Builder;
   enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
@@ -650,6 +697,9 @@ struct RequestEnvelope FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   }
   const CoprocessorProto::StreamChunk *message_as_StreamChunk() const {
     return message_type() == CoprocessorProto::Request_StreamChunk ? static_cast<const CoprocessorProto::StreamChunk *>(message()) : nullptr;
+  }
+  const CoprocessorProto::Hello *message_as_Hello() const {
+    return message_type() == CoprocessorProto::Request_Hello ? static_cast<const CoprocessorProto::Hello *>(message()) : nullptr;
   }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
@@ -679,6 +729,10 @@ template<> inline const CoprocessorProto::StopProvisioning *RequestEnvelope::mes
 
 template<> inline const CoprocessorProto::StreamChunk *RequestEnvelope::message_as<CoprocessorProto::StreamChunk>() const {
   return message_as_StreamChunk();
+}
+
+template<> inline const CoprocessorProto::Hello *RequestEnvelope::message_as<CoprocessorProto::Hello>() const {
+  return message_as_Hello();
 }
 
 struct RequestEnvelopeBuilder {
@@ -737,6 +791,9 @@ struct ResponseEnvelope FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   const CoprocessorProto::StreamChunk *message_as_StreamChunk() const {
     return message_type() == CoprocessorProto::Response_StreamChunk ? static_cast<const CoprocessorProto::StreamChunk *>(message()) : nullptr;
   }
+  const CoprocessorProto::Hello *message_as_Hello() const {
+    return message_type() == CoprocessorProto::Response_Hello ? static_cast<const CoprocessorProto::Hello *>(message()) : nullptr;
+  }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
@@ -761,6 +818,10 @@ template<> inline const CoprocessorProto::ProvisioningStatus *ResponseEnvelope::
 
 template<> inline const CoprocessorProto::StreamChunk *ResponseEnvelope::message_as<CoprocessorProto::StreamChunk>() const {
   return message_as_StreamChunk();
+}
+
+template<> inline const CoprocessorProto::Hello *ResponseEnvelope::message_as<CoprocessorProto::Hello>() const {
+  return message_as_Hello();
 }
 
 struct ResponseEnvelopeBuilder {
@@ -820,6 +881,10 @@ inline bool VerifyRequest(::flatbuffers::VerifierTemplate<B> &verifier, const vo
       auto ptr = reinterpret_cast<const CoprocessorProto::StreamChunk *>(obj);
       return verifier.VerifyTable(ptr);
     }
+    case Request_Hello: {
+      auto ptr = reinterpret_cast<const CoprocessorProto::Hello *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
     default: return true;
   }
 }
@@ -857,6 +922,10 @@ inline bool VerifyResponse(::flatbuffers::VerifierTemplate<B> &verifier, const v
     }
     case Response_StreamChunk: {
       auto ptr = reinterpret_cast<const CoprocessorProto::StreamChunk *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case Response_Hello: {
+      auto ptr = reinterpret_cast<const CoprocessorProto::Hello *>(obj);
       return verifier.VerifyTable(ptr);
     }
     default: return true;

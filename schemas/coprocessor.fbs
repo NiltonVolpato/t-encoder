@@ -52,6 +52,9 @@ table ProvisioningStatus {
     state: ProvisioningState;
 }
 
+// Handshake message sent on boot to establish link and detect peer reboots
+table Hello {}
+
 // Union of all Requests (S3 -> Co-processor)
 union Request {
     Heartbeat,
@@ -59,6 +62,7 @@ union Request {
     StartProvisioning,
     StopProvisioning,
     StreamChunk,
+    Hello,
 }
 
 // Union of all Responses / Events (Co-processor -> S3)
@@ -67,6 +71,7 @@ union Response {
     WifiStatus,
     ProvisioningStatus,
     StreamChunk,
+    Hello,
 }
 
 table RequestEnvelope {

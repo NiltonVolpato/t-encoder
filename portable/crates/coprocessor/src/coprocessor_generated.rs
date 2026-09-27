@@ -2,7 +2,7 @@
 // @generated
 extern crate alloc;
 
-#[allow(unused_imports, dead_code, clippy::all)]
+#[allow(unused_imports, dead_code)]
 pub mod coprocessor_proto {
 
     #[deprecated(
@@ -112,19 +112,20 @@ pub mod coprocessor_proto {
         since = "2.0.0",
         note = "Use associated constants instead. This will no longer be generated in 2021."
     )]
-    pub const ENUM_MAX_REQUEST: u8 = 5;
+    pub const ENUM_MAX_REQUEST: u8 = 6;
     #[deprecated(
         since = "2.0.0",
         note = "Use associated constants instead. This will no longer be generated in 2021."
     )]
     #[allow(non_camel_case_types)]
-    pub const ENUM_VALUES_REQUEST: [Request; 6] = [
+    pub const ENUM_VALUES_REQUEST: [Request; 7] = [
         Request::NONE,
         Request::Heartbeat,
         Request::WifiConnectRequest,
         Request::StartProvisioning,
         Request::StopProvisioning,
         Request::StreamChunk,
+        Request::Hello,
     ];
 
     #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -138,9 +139,10 @@ pub mod coprocessor_proto {
         pub const StartProvisioning: Self = Self(3);
         pub const StopProvisioning: Self = Self(4);
         pub const StreamChunk: Self = Self(5);
+        pub const Hello: Self = Self(6);
 
         pub const ENUM_MIN: u8 = 0;
-        pub const ENUM_MAX: u8 = 5;
+        pub const ENUM_MAX: u8 = 6;
         pub const ENUM_VALUES: &'static [Self] = &[
             Self::NONE,
             Self::Heartbeat,
@@ -148,6 +150,7 @@ pub mod coprocessor_proto {
             Self::StartProvisioning,
             Self::StopProvisioning,
             Self::StreamChunk,
+            Self::Hello,
         ];
         /// Returns the variant's name or "" if unknown.
         pub fn variant_name(self) -> Option<&'static str> {
@@ -158,6 +161,7 @@ pub mod coprocessor_proto {
                 Self::StartProvisioning => Some("StartProvisioning"),
                 Self::StopProvisioning => Some("StopProvisioning"),
                 Self::StreamChunk => Some("StreamChunk"),
+                Self::Hello => Some("Hello"),
                 _ => None,
             }
         }
@@ -224,18 +228,19 @@ pub mod coprocessor_proto {
         since = "2.0.0",
         note = "Use associated constants instead. This will no longer be generated in 2021."
     )]
-    pub const ENUM_MAX_RESPONSE: u8 = 4;
+    pub const ENUM_MAX_RESPONSE: u8 = 5;
     #[deprecated(
         since = "2.0.0",
         note = "Use associated constants instead. This will no longer be generated in 2021."
     )]
     #[allow(non_camel_case_types)]
-    pub const ENUM_VALUES_RESPONSE: [Response; 5] = [
+    pub const ENUM_VALUES_RESPONSE: [Response; 6] = [
         Response::NONE,
         Response::Heartbeat,
         Response::WifiStatus,
         Response::ProvisioningStatus,
         Response::StreamChunk,
+        Response::Hello,
     ];
 
     #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -248,15 +253,17 @@ pub mod coprocessor_proto {
         pub const WifiStatus: Self = Self(2);
         pub const ProvisioningStatus: Self = Self(3);
         pub const StreamChunk: Self = Self(4);
+        pub const Hello: Self = Self(5);
 
         pub const ENUM_MIN: u8 = 0;
-        pub const ENUM_MAX: u8 = 4;
+        pub const ENUM_MAX: u8 = 5;
         pub const ENUM_VALUES: &'static [Self] = &[
             Self::NONE,
             Self::Heartbeat,
             Self::WifiStatus,
             Self::ProvisioningStatus,
             Self::StreamChunk,
+            Self::Hello,
         ];
         /// Returns the variant's name or "" if unknown.
         pub fn variant_name(self) -> Option<&'static str> {
@@ -266,6 +273,7 @@ pub mod coprocessor_proto {
                 Self::WifiStatus => Some("WifiStatus"),
                 Self::ProvisioningStatus => Some("ProvisioningStatus"),
                 Self::StreamChunk => Some("StreamChunk"),
+                Self::Hello => Some("Hello"),
                 _ => None,
             }
         }
@@ -1173,6 +1181,84 @@ pub mod coprocessor_proto {
             ds.finish()
         }
     }
+    pub enum HelloOffset {}
+    #[derive(Copy, Clone, PartialEq)]
+
+    pub struct Hello<'a> {
+        pub _tab: ::flatbuffers::Table<'a>,
+    }
+
+    impl<'a> ::flatbuffers::Follow<'a> for Hello<'a> {
+        type Inner = Hello<'a>;
+        #[inline]
+        unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+            Self { _tab: unsafe { ::flatbuffers::Table::new(buf, loc) } }
+        }
+    }
+
+    impl<'a> Hello<'a> {
+        #[inline]
+        pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
+            Hello { _tab: table }
+        }
+        #[allow(unused_mut)]
+        pub fn create<
+            'bldr: 'args,
+            'args: 'mut_bldr,
+            'mut_bldr,
+            A: ::flatbuffers::Allocator + 'bldr,
+        >(
+            _fbb: &'mut_bldr mut ::flatbuffers::FlatBufferBuilder<'bldr, A>,
+            _args: &'args HelloArgs,
+        ) -> ::flatbuffers::WIPOffset<Hello<'bldr>> {
+            let mut builder = HelloBuilder::new(_fbb);
+            builder.finish()
+        }
+    }
+
+    impl ::flatbuffers::Verifiable for Hello<'_> {
+        #[inline]
+        fn run_verifier(
+            v: &mut ::flatbuffers::Verifier,
+            pos: usize,
+        ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
+            v.visit_table(pos)?.finish();
+            Ok(())
+        }
+    }
+    pub struct HelloArgs {}
+    impl<'a> Default for HelloArgs {
+        #[inline]
+        fn default() -> Self {
+            HelloArgs {}
+        }
+    }
+
+    pub struct HelloBuilder<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> {
+        fbb_: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+        start_: ::flatbuffers::WIPOffset<::flatbuffers::TableUnfinishedWIPOffset>,
+    }
+    impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> HelloBuilder<'a, 'b, A> {
+        #[inline]
+        pub fn new(
+            _fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+        ) -> HelloBuilder<'a, 'b, A> {
+            let start = _fbb.start_table();
+            HelloBuilder { fbb_: _fbb, start_: start }
+        }
+        #[inline]
+        pub fn finish(self) -> ::flatbuffers::WIPOffset<Hello<'a>> {
+            let o = self.fbb_.end_table(self.start_);
+            ::flatbuffers::WIPOffset::new(o.value())
+        }
+    }
+
+    impl ::core::fmt::Debug for Hello<'_> {
+        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+            let mut ds = f.debug_struct("Hello");
+            ds.finish()
+        }
+    }
     pub enum RequestEnvelopeOffset {}
     #[derive(Copy, Clone, PartialEq)]
 
@@ -1311,6 +1397,21 @@ pub mod coprocessor_proto {
                 None
             }
         }
+
+        #[inline]
+        #[allow(non_snake_case)]
+        pub fn message_as_hello(&self) -> Option<Hello<'a>> {
+            if self.message_type() == Request::Hello {
+                self.message().map(|t| {
+                    // Safety:
+                    // Created from a valid Table for this object
+                    // Which contains a valid union in this slot
+                    unsafe { Hello::init_from_table(t) }
+                })
+            } else {
+                None
+            }
+        }
     }
 
     impl ::flatbuffers::Verifiable for RequestEnvelope<'_> {
@@ -1327,6 +1428,7 @@ pub mod coprocessor_proto {
           Request::StartProvisioning => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<StartProvisioning>>("Request::StartProvisioning", pos),
           Request::StopProvisioning => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<StopProvisioning>>("Request::StopProvisioning", pos),
           Request::StreamChunk => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<StreamChunk>>("Request::StreamChunk", pos),
+          Request::Hello => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<Hello>>("Request::Hello", pos),
           _ => Ok(()),
         }
      })?
@@ -1429,6 +1531,16 @@ pub mod coprocessor_proto {
                 }
                 Request::StreamChunk => {
                     if let Some(x) = self.message_as_stream_chunk() {
+                        ds.field("message", &x)
+                    } else {
+                        ds.field(
+                            "message",
+                            &"InvalidFlatbuffer: Union discriminant does not match value.",
+                        )
+                    }
+                }
+                Request::Hello => {
+                    if let Some(x) = self.message_as_hello() {
                         ds.field("message", &x)
                     } else {
                         ds.field(
@@ -1568,6 +1680,21 @@ pub mod coprocessor_proto {
                 None
             }
         }
+
+        #[inline]
+        #[allow(non_snake_case)]
+        pub fn message_as_hello(&self) -> Option<Hello<'a>> {
+            if self.message_type() == Response::Hello {
+                self.message().map(|t| {
+                    // Safety:
+                    // Created from a valid Table for this object
+                    // Which contains a valid union in this slot
+                    unsafe { Hello::init_from_table(t) }
+                })
+            } else {
+                None
+            }
+        }
     }
 
     impl ::flatbuffers::Verifiable for ResponseEnvelope<'_> {
@@ -1583,6 +1710,7 @@ pub mod coprocessor_proto {
           Response::WifiStatus => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<WifiStatus>>("Response::WifiStatus", pos),
           Response::ProvisioningStatus => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<ProvisioningStatus>>("Response::ProvisioningStatus", pos),
           Response::StreamChunk => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<StreamChunk>>("Response::StreamChunk", pos),
+          Response::Hello => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<Hello>>("Response::Hello", pos),
           _ => Ok(()),
         }
      })?
@@ -1675,6 +1803,16 @@ pub mod coprocessor_proto {
                 }
                 Response::StreamChunk => {
                     if let Some(x) = self.message_as_stream_chunk() {
+                        ds.field("message", &x)
+                    } else {
+                        ds.field(
+                            "message",
+                            &"InvalidFlatbuffer: Union discriminant does not match value.",
+                        )
+                    }
+                }
+                Response::Hello => {
+                    if let Some(x) = self.message_as_hello() {
                         ds.field("message", &x)
                     } else {
                         ds.field(

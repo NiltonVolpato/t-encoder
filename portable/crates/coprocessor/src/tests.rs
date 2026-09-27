@@ -224,3 +224,44 @@ fn test_roundtrip_provisioning_messages() {
     let status = parsed_resp.message_as_provisioning_status().unwrap();
     assert_eq!(status.state(), proto::ProvisioningState::Active);
 }
+
+#[test]
+fn test_roundtrip_hello() {
+    // 1. Request::Hello
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let hello = proto::Hello::create(&mut builder, &proto::HelloArgs {});
+    let env = proto::RequestEnvelope::create(
+        &mut builder,
+        &proto::RequestEnvelopeArgs {
+            message_type: proto::Request::Hello,
+            message: Some(hello.as_union_value()),
+        },
+    );
+    builder.finish_size_prefixed(env, None);
+    let packet = encode_packet(builder.finished_data());
+
+    let mut decoded = [0u8; 128];
+    let payload = decode_packet(&packet, &mut decoded).unwrap();
+    let parsed = proto::size_prefixed_root_as_request_envelope(payload).unwrap();
+    assert_eq!(parsed.message_type(), proto::Request::Hello);
+    assert!(parsed.message_as_hello().is_some());
+
+    // 2. Response::Hello
+    let mut resp_builder = flatbuffers::FlatBufferBuilder::new();
+    let resp_hello = proto::Hello::create(&mut resp_builder, &proto::HelloArgs {});
+    let resp_env = proto::ResponseEnvelope::create(
+        &mut resp_builder,
+        &proto::ResponseEnvelopeArgs {
+            message_type: proto::Response::Hello,
+            message: Some(resp_hello.as_union_value()),
+        },
+    );
+    resp_builder.finish_size_prefixed(resp_env, None);
+    let resp_packet = encode_packet(resp_builder.finished_data());
+
+    let mut resp_decoded = [0u8; 128];
+    let resp_payload = decode_packet(&resp_packet, &mut resp_decoded).unwrap();
+    let parsed_resp = crate::parse_response_envelope(resp_payload).unwrap();
+    assert_eq!(parsed_resp.message_type(), proto::Response::Hello);
+    assert!(parsed_resp.message_as_hello().is_some());
+}
