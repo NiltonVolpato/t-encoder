@@ -9,7 +9,6 @@
 #include "esp_timer.h"
 #include "esp_system.h"
 #include "driver/uart.h"
-#include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
 static const char *TAG = "uart_proto";

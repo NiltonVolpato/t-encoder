@@ -4,7 +4,6 @@
 #pragma once
 
 #include <cstdint>
-#include <cstddef>
 #include "coprocessor_generated.h"
 
 // Hardware pinout for ESP32-U4WDH inter-MCU UART to ESP32-S3

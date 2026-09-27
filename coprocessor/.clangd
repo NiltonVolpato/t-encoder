@@ -1,0 +1,18 @@
+CompileFlags:
+  CompilationDatabase: .
+  Compiler: /Users/nilton/.platformio/packages/toolchain-xtensa-esp-elf/bin/xtensa-esp32-elf-g++
+  Remove:
+    - -mlongcalls
+    - -fno-shrink-wrap
+    - -fstrict-volatile-bitfields
+    - -fno-tree-switch-conversion
+
+---
+If:
+  PathMatch: .*\.h
+CompileFlags:
+  Add:
+    - -xc++-header
+    - -std=gnu++26
+    - -Iinclude
+    - -Isrc

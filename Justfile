@@ -182,6 +182,11 @@ build-coprocessor *ARGS:
     cd coprocessor && \
         pio run {{ARGS}}
 
+[doc("Generate compile_commands.json for clangd and Zed IDE integration.")]
+[group("coprocessor")]
+compiledb:
+    cd coprocessor && pio run -t compiledb
+
 [private]
 _monitor-coprocessor-expect PORT="/dev/cu.usbserial-10" TIMEOUT='15' TAIL='5':
     #!/usr/bin/env expect -f

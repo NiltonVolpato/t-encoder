@@ -4,9 +4,16 @@
       "binary": {
         "path": "slint-lsp",
         "arguments": [
-          "-L", "theme=crates/theme/ui/theme.slint",
+          "-L", "theme=crates/theme/ui/theme.slint"
         ],
         "env": {}
+      }
+    },
+    "clangd": {
+      "binary": {
+        "arguments": [
+          "--query-driver=**/*xtensa*"
+        ]
       }
     }
   }
