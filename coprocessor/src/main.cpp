@@ -1,6 +1,8 @@
 // Copyright © 2026 Nilton Volpato
 // SPDX-License-Identifier: MIT
 
+#include <string_view>
+
 #include "ble_improv.h"
 #include "esp_log.h"
 #include "esp_system.h"
@@ -18,11 +20,13 @@ using namespace coprocessor;
 
 constexpr const char* TAG = "main";
 
-void on_wifi_status_changed(bool connected, const char* ssid,
-                            const char* ip_addr, int16_t rssi) {
+void on_wifi_status_changed(bool connected, std::string_view ssid,
+                            std::string_view ip_addr, int16_t rssi) {
   ESP_LOGI(TAG,
-           "Wi-Fi status changed: connected=%d, ssid='%s', ip='%s', rssi=%d",
-           connected, ssid, ip_addr, rssi);
+           "Wi-Fi status changed: connected=%d, ssid='%.*s', ip='%.*s', "
+           "rssi=%d",
+           connected, static_cast<int>(ssid.size()), ssid.data(),
+           static_cast<int>(ip_addr.size()), ip_addr.data(), rssi);
 
   // Forward status event to ESP32-S3 over UART
   uart_send_wifi_status(connected, ssid, ip_addr, rssi);
@@ -42,8 +46,9 @@ void on_provisioning_status_changed(CoprocessorProto::ProvisioningState state) {
   uart_send_provisioning_status(state);
 }
 
-void on_wifi_connect_request(const char* ssid, const char* password) {
-  ESP_LOGI(TAG, "Wi-Fi connect requested for SSID: %s", ssid);
+void on_wifi_connect_request(std::string_view ssid, std::string_view password) {
+  ESP_LOGI(TAG, "Wi-Fi connect requested for SSID: %.*s",
+           static_cast<int>(ssid.size()), ssid.data());
   wifi_connect(ssid, password);
 }
 
@@ -62,8 +67,8 @@ void periodic_status_log_timer(TimerHandle_t xTimer) {
   auto uptime_sec = static_cast<uint32_t>(esp_timer_get_time() / 1000000);
   uint32_t free_heap_kb = esp_get_free_heap_size() / 1024;
   bool connected = wifi_is_connected();
-  const char* ssid = wifi_get_ssid();
-  const char* ip = wifi_get_ip();
+  std::string_view ssid = wifi_get_ssid();
+  std::string_view ip = wifi_get_ip();
   int8_t rssi = 0;
   if (connected) {
     wifi_ap_record_t ap_info;
@@ -72,12 +77,14 @@ void periodic_status_log_timer(TimerHandle_t xTimer) {
     }
   }
   ESP_LOGI(TAG,
-           "[Heartbeat] uptime=%lus, heap=%luKB, wifi=%s (ssid='%s', ip='%s', "
-           "rssi=%d), ble=%s",
+           "[Heartbeat] uptime=%lus, heap=%luKB, wifi=%s (ssid='%.*s', "
+           "ip='%.*s', rssi=%d), ble=%s",
            static_cast<unsigned long>(uptime_sec),
            static_cast<unsigned long>(free_heap_kb),
-           connected ? "connected" : "disconnected", ssid ? ssid : "",
-           ip ? ip : "", rssi, ble_is_active() ? "active" : "dormant");
+           connected ? "connected" : "disconnected",
+           static_cast<int>(ssid.size()), ssid.data(),
+           static_cast<int>(ip.size()), ip.data(), rssi,
+           ble_is_active() ? "active" : "dormant");
 }
 
 }  // namespace

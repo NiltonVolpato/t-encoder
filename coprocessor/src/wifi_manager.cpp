@@ -3,10 +3,11 @@
 
 #include "wifi_manager.h"
 
+#include <algorithm>
 #include <array>
 #include <cstring>
 #include <string>
-#include <vector>
+#include <string_view>
 
 #include "esp_event.h"
 #include "esp_log.h"
@@ -32,14 +33,17 @@ constexpr const char* NVS_NAMESPACE = "wifi_store";
 constexpr const char* NVS_KEY_SSID = "ssid";
 constexpr const char* NVS_KEY_PASS = "pass";
 
-void save_credentials(const char* ssid, const char* password) {
+void save_credentials(std::string_view ssid, std::string_view password) {
   nvs_handle_t handle;
   if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle) == ESP_OK) {
-    nvs_set_str(handle, NVS_KEY_SSID, ssid);
-    nvs_set_str(handle, NVS_KEY_PASS, password);
+    std::string ssid_str(ssid);
+    std::string pass_str(password);
+    nvs_set_str(handle, NVS_KEY_SSID, ssid_str.c_str());
+    nvs_set_str(handle, NVS_KEY_PASS, pass_str.c_str());
     nvs_commit(handle);
     nvs_close(handle);
-    ESP_LOGI(TAG, "Saved Wi-Fi credentials for SSID: %s", ssid);
+    ESP_LOGI(TAG, "Saved Wi-Fi credentials for SSID: %.*s",
+             static_cast<int>(ssid.size()), ssid.data());
   } else {
     ESP_LOGE(TAG, "Failed to open NVS to save Wi-Fi credentials");
   }
@@ -108,14 +112,19 @@ bool wifi_get_saved_credentials(std::string& ssid, std::string& password) {
     return false;
   }
 
-  std::vector<char> ssid_buf(ssid_len);
-  std::vector<char> pass_buf(pass_len);
-  nvs_get_str(handle, NVS_KEY_SSID, ssid_buf.data(), &ssid_len);
-  nvs_get_str(handle, NVS_KEY_PASS, pass_buf.data(), &pass_len);
+  ssid.resize(ssid_len);
+  password.resize(pass_len);
+  nvs_get_str(handle, NVS_KEY_SSID, ssid.data(), &ssid_len);
+  nvs_get_str(handle, NVS_KEY_PASS, password.data(), &pass_len);
   nvs_close(handle);
 
-  ssid = ssid_buf.data();
-  password = pass_buf.data();
+  if (!ssid.empty() && ssid.back() == '\0') {
+    ssid.pop_back();
+  }
+  if (!password.empty() && password.back() == '\0') {
+    password.pop_back();
+  }
+
   return !ssid.empty();
 }
 
@@ -141,28 +150,33 @@ void wifi_init(wifi_status_cb_t status_cb) {
   std::string saved_pass;
   if (wifi_get_saved_credentials(saved_ssid, saved_pass)) {
     ESP_LOGI(TAG, "Auto-connecting to saved network: %s", saved_ssid.c_str());
-    wifi_connect(saved_ssid.c_str(), saved_pass.c_str());
+    wifi_connect(saved_ssid, saved_pass);
   } else {
     ESP_LOGI(TAG, "No saved Wi-Fi credentials found");
   }
 }
 
-void wifi_connect(const char* ssid, const char* password) {
-  if (!ssid || strlen(ssid) == 0) {
+void wifi_connect(std::string_view ssid, std::string_view password) {
+  if (ssid.empty()) {
     return;
   }
 
-  strncpy(s_current_ssid.data(), ssid, s_current_ssid.size() - 1);
-  s_current_ssid.back() = '\0';
+  size_t ssid_copy_len = std::min(ssid.size(), s_current_ssid.size() - 1);
+  std::memcpy(s_current_ssid.data(), ssid.data(), ssid_copy_len);
+  s_current_ssid[ssid_copy_len] = '\0';
 
   save_credentials(ssid, password);
 
   wifi_config_t wifi_cfg{};
-  strncpy(reinterpret_cast<char*>(wifi_cfg.sta.ssid), ssid,
-          sizeof(wifi_cfg.sta.ssid) - 1);
-  if (password && strlen(password) > 0) {
-    strncpy(reinterpret_cast<char*>(wifi_cfg.sta.password), password,
-            sizeof(wifi_cfg.sta.password) - 1);
+  size_t cfg_ssid_len = std::min(ssid.size(), sizeof(wifi_cfg.sta.ssid) - 1);
+  std::memcpy(wifi_cfg.sta.ssid, ssid.data(), cfg_ssid_len);
+  wifi_cfg.sta.ssid[cfg_ssid_len] = '\0';
+
+  if (!password.empty()) {
+    size_t cfg_pass_len =
+        std::min(password.size(), sizeof(wifi_cfg.sta.password) - 1);
+    std::memcpy(wifi_cfg.sta.password, password.data(), cfg_pass_len);
+    wifi_cfg.sta.password[cfg_pass_len] = '\0';
     wifi_cfg.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
   } else {
     wifi_cfg.sta.threshold.authmode = WIFI_AUTH_OPEN;
@@ -178,8 +192,8 @@ void wifi_connect(const char* ssid, const char* password) {
 
 bool wifi_is_connected() { return s_connected; }
 
-const char* wifi_get_ip() { return s_ip_str.data(); }
+std::string_view wifi_get_ip() { return s_ip_str.data(); }
 
-const char* wifi_get_ssid() { return s_current_ssid.data(); }
+std::string_view wifi_get_ssid() { return s_current_ssid.data(); }
 
 }  // namespace coprocessor

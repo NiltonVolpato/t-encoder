@@ -5,6 +5,7 @@
 
 #include <array>
 #include <cstring>
+#include <string_view>
 #include <vector>
 
 #include "driver/uart.h"
@@ -121,8 +122,14 @@ void handle_rx_packet(const uint8_t* payload, size_t payload_len) {
     case CoprocessorProto::Request_WifiConnectRequest: {
       auto req = req_env->message_as_WifiConnectRequest();
       if (req && s_wifi_connect_cb) {
-        const char* ssid = req->ssid() ? req->ssid()->c_str() : "";
-        const char* pass = req->password() ? req->password()->c_str() : "";
+        std::string_view ssid =
+            req->ssid()
+                ? std::string_view(req->ssid()->data(), req->ssid()->size())
+                : std::string_view{};
+        std::string_view pass = req->password()
+                                    ? std::string_view(req->password()->data(),
+                                                       req->password()->size())
+                                    : std::string_view{};
         s_wifi_connect_cb(ssid, pass);
       }
       break;
@@ -220,11 +227,11 @@ void uart_rx_task(void* pvParameters) {
 
 }  // namespace
 
-void uart_send_wifi_status(bool connected, const char* ssid,
-                           const char* ip_addr, int16_t rssi) {
+void uart_send_wifi_status(bool connected, std::string_view ssid,
+                           std::string_view ip_addr, int16_t rssi) {
   flatbuffers::FlatBufferBuilder fbb(256);
-  auto ssid_str = ssid ? fbb.CreateString(ssid) : fbb.CreateString("");
-  auto ip_str = ip_addr ? fbb.CreateString(ip_addr) : fbb.CreateString("");
+  auto ssid_str = fbb.CreateString(ssid.data(), ssid.size());
+  auto ip_str = fbb.CreateString(ip_addr.data(), ip_addr.size());
   auto wifi_status = CoprocessorProto::CreateWifiStatus(fbb, connected, ip_str,
                                                         ssid_str, rssi);
   auto env = CoprocessorProto::CreateResponseEnvelope(

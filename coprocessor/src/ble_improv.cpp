@@ -74,9 +74,9 @@ const ble_uuid128_t s_caps_chr_uuid =
                      0x28, 0x62, 0x68, 0x77, 0x46, 0x00);
 
 int gatt_svr_access(uint16_t conn_handle, uint16_t attr_handle,
-                    struct ble_gatt_access_ctxt* ctxt, void* arg);
+                    ble_gatt_access_ctxt* ctxt, void* arg);
 
-const std::array<struct ble_gatt_chr_def, 6> s_improv_chrs = {
+const std::array<ble_gatt_chr_def, 6> s_improv_chrs = {
     {{
          // Status Characteristic (00467768-6228-2272-4663-277478268001)
          .uuid = &s_status_chr_uuid.u,
@@ -114,7 +114,7 @@ const std::array<struct ble_gatt_chr_def, 6> s_improv_chrs = {
      },
      {.uuid = nullptr}}};
 
-const std::array<struct ble_gatt_svc_def, 2> s_gatt_svcs = {
+const std::array<ble_gatt_svc_def, 2> s_gatt_svcs = {
     {{
          .type = BLE_GATT_SVC_TYPE_PRIMARY,
          .uuid = &s_improv_svc_uuid.u,
@@ -124,7 +124,7 @@ const std::array<struct ble_gatt_svc_def, 2> s_gatt_svcs = {
 
 void ble_advertise();
 
-int ble_gap_event(struct ble_gap_event* event, void* arg) {
+int ble_gap_event(ble_gap_event* event, void* arg) {
   switch (event->type) {
     case BLE_GAP_EVENT_CONNECT:
       ESP_LOGI(TAG, "BLE connection %s; status=%d",
@@ -162,13 +162,11 @@ void ble_advertise() {
     return;
   }
 
-  struct ble_gap_adv_params adv_params;
-  memset(&adv_params, 0, sizeof(adv_params));
+  ble_gap_adv_params adv_params{};
   adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;
   adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
 
-  struct ble_hs_adv_fields adv_fields;
-  memset(&adv_fields, 0, sizeof(adv_fields));
+  ble_hs_adv_fields adv_fields{};
 
   adv_fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
   adv_fields.uuids128 = &s_improv_svc_uuid;
@@ -181,8 +179,7 @@ void ble_advertise() {
     return;
   }
 
-  struct ble_hs_adv_fields rsp_fields;
-  memset(&rsp_fields, 0, sizeof(rsp_fields));
+  ble_hs_adv_fields rsp_fields{};
   const char* name = ble_svc_gap_device_name();
   rsp_fields.name = reinterpret_cast<const uint8_t*>(name);
   rsp_fields.name_len = strlen(name);
@@ -204,7 +201,7 @@ void ble_advertise() {
 }
 
 int gatt_svr_access(uint16_t conn_handle, uint16_t attr_handle,
-                    struct ble_gatt_access_ctxt* ctxt, void* arg) {
+                    ble_gatt_access_ctxt* ctxt, void* arg) {
   if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
     if (attr_handle == s_status_val_handle) {
       return os_mbuf_append(ctxt->om, &s_state, 1) == 0
@@ -244,7 +241,7 @@ int gatt_svr_access(uint16_t conn_handle, uint16_t attr_handle,
           ble_gatts_chr_updated(s_status_val_handle);
 
           if (s_connect_cb) {
-            s_connect_cb(cmd.ssid.c_str(), cmd.password.c_str());
+            s_connect_cb(cmd.ssid, cmd.password);
           }
           break;
         }
@@ -380,7 +377,7 @@ void ble_stop() {
   }
 }
 
-void ble_on_wifi_connected(const char* ip_addr) {
+void ble_on_wifi_connected(std::string_view ip_addr) {
   if (!s_active || s_status_val_handle == 0) {
     return;
   }
@@ -388,7 +385,8 @@ void ble_on_wifi_connected(const char* ip_addr) {
   s_state = improv::STATE_PROVISIONED;
   s_error = improv::ERROR_NONE;
 
-  std::string url = std::string("http://") + (ip_addr ? ip_addr : "");
+  std::string url = "http://";
+  url.append(ip_addr.data(), ip_addr.size());
   std::vector<std::string> urls = {url};
   s_rpc_result =
       improv::build_rpc_response(improv::Command::WIFI_SETTINGS, urls);
