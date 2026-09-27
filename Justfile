@@ -23,6 +23,8 @@ export DEVICE := env('DEVICE', "waveshare_knob_1_8")
 # Interactive mode for flashing and monitoring (defaults to true; set INTERACTIVE=false for automated/CI runs)
 export INTERACTIVE := env('INTERACTIVE', "true")
 
+mod coprocessor
+
 _default:
     @just --list
 
@@ -160,7 +162,7 @@ check: check-native check-device
 
 [doc("Run all verification steps: formatting check, lints, tests, and build.")]
 [group("verification")]
-verify: fmt-check lint lint-device test (build "waveshare_knob_1_8") (build "lilygo_t_encoder_pro")
+verify: fmt-check lint lint-device test (build "waveshare_knob_1_8") (build "lilygo_t_encoder_pro") coprocessor::verify
 
 [doc("Print toolchain and environment diagnostic info.")]
 [group("debug")]
@@ -171,120 +173,3 @@ env-info:
     @echo "=== Device Toolchain (esp32-devices) ==="
     @echo "xtensa bin = {{xtensa_bin}}"
     @cd esp32-devices && rustc --version
-
-# -----------------------------------------------------------------------------
-# Co-Processor Recipes (ESP32-U4WDH Wi-Fi/BT)
-# -----------------------------------------------------------------------------
-
-[doc("Build co-processor firmware with PlatformIO.")]
-[group("coprocessor")]
-build-coprocessor *ARGS:
-    cd coprocessor && \
-        pio run {{ARGS}}
-
-[doc("Generate compile_commands.json for clangd and Zed IDE integration.")]
-[group("coprocessor")]
-compiledb:
-    cd coprocessor && pio run -t compiledb
-
-[private]
-_monitor-coprocessor-expect PORT="/dev/cu.usbserial-10" TIMEOUT='15' TAIL='5':
-    #!/usr/bin/env expect -f
-    proc shutdown {pid code} {
-        global spawn_id
-        catch { send \003 }
-        expect -timeout 5 {
-            eof {}
-            timeout {
-                catch { exec kill -TERM -$pid }
-                catch { expect -timeout 3 eof }
-            }
-        }
-        catch { wait }
-        exit $code
-    }
-
-    set timeout {{TIMEOUT}}
-    set pid [spawn pio device monitor -d coprocessor --port {{PORT}} --baud 115200]
-    expect {
-        "Co-Processor initialized" {
-            # Device initialized: keep streaming for TAIL seconds to catch post-boot panics, crashes, or bootloops
-            set timeout {{TAIL}}
-            expect {
-                -re "(Guru Meditation Error|abort\\(\\)|assert failed|Backtrace:)" {
-                    send_user "\n*** Panic/crash detected after initialization!\n"
-                    shutdown $pid 1
-                }
-                timeout {
-                    send_user "\n=== Co-processor initialized and stable ===\n"
-                    shutdown $pid 0
-                }
-                eof {
-                    send_user "\n*** Serial port closed unexpectedly\n"
-                    shutdown $pid 1
-                }
-            }
-        }
-        -re "(Guru Meditation Error|abort\\(\\)|assert failed|Backtrace:)" {
-            send_user "\n*** Panic/crash detected during boot!\n"
-            shutdown $pid 1
-        }
-        timeout {
-            send_user "\n*** Timed out waiting for co-processor initialization ({{TIMEOUT}}s)\n"
-            shutdown $pid 1
-        }
-        eof {
-            send_user "\n*** Serial monitor exited before initialization\n"
-            exit 1
-        }
-    }
-
-[doc("Flash co-processor firmware via CH340 and monitor output (interactive, or automated via INTERACTIVE=false).")]
-[group("coprocessor")]
-flash-coprocessor PORT="/dev/cu.usbserial-10" *ARGS:
-    cd coprocessor && pio run -t upload --upload-port {{PORT}} {{ARGS}}
-    if [ "$INTERACTIVE" = "true" ]; then \
-        cd coprocessor && pio device monitor --port {{PORT}} --baud 115200; \
-    else \
-        just _monitor-coprocessor-expect {{PORT}}; \
-    fi
-
-[doc("Monitor co-processor UART output via CH340 (interactive, or automated via INTERACTIVE=false).")]
-[group("coprocessor")]
-monitor-coprocessor PORT="/dev/cu.usbserial-10" *ARGS:
-    if [ "$INTERACTIVE" = "true" ]; then \
-        cd coprocessor && pio device monitor --port {{PORT}} --baud 115200 {{ARGS}}; \
-    else \
-        just _monitor-coprocessor-expect {{PORT}}; \
-    fi
-
-[doc("Reset the co-processor into normal running mode without attaching.")]
-[group("coprocessor")]
-reset-coprocessor PORT="/dev/cu.usbserial-10":
-    esptool -p {{PORT}} run
-
-[doc("Run clang-tidy on co-processor C++ sources.")]
-[group("coprocessor")]
-tidy-coprocessor *ARGS:
-    @cd coprocessor && PATH="/opt/homebrew/opt/llvm@22/bin:$PATH" /opt/homebrew/opt/llvm@22/bin/run-clang-tidy \
-        -clang-tidy-binary=/opt/homebrew/opt/llvm@22/bin/clang-tidy \
-        -clang-apply-replacements-binary=/opt/homebrew/opt/llvm@22/bin/clang-apply-replacements \
-        -p . \
-        -quiet \
-        -hide-progress \
-        -source-filter '.*/coprocessor/src/.*' \
-        -header-filter '^(coprocessor/)?src/.*\.h$' \
-        -removed-arg='-mlongcalls' \
-        -removed-arg='-fno-shrink-wrap' \
-        -removed-arg='-fno-tree-switch-conversion' \
-        -removed-arg='-fstrict-volatile-bitfields' \
-        -extra-arg='--target=xtensa-esp-elf' \
-        -extra-arg='-Qunused-arguments' \
-        -extra-arg='-Wno-error' \
-        -extra-arg='--sysroot=/Users/nilton/.platformio/packages/toolchain-xtensa-esp-elf/xtensa-esp-elf' \
-        -extra-arg='-isystem/Users/nilton/.platformio/packages/toolchain-xtensa-esp-elf/picolibc/include' \
-        -extra-arg='-isystem/Users/nilton/.platformio/packages/toolchain-xtensa-esp-elf/xtensa-esp-elf/include/c++/15.2.0' \
-        -extra-arg='-isystem/Users/nilton/.platformio/packages/toolchain-xtensa-esp-elf/xtensa-esp-elf/include/c++/15.2.0/xtensa-esp-elf/esp32' \
-        -extra-arg='-isystem/Users/nilton/.platformio/packages/toolchain-xtensa-esp-elf/lib/gcc/xtensa-esp-elf/15.2.0/include' \
-        -extra-arg='-isystem/Users/nilton/.platformio/packages/toolchain-xtensa-esp-elf/xtensa-esp-elf/include' \
-        {{ARGS}}

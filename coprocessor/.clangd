@@ -9,10 +9,3 @@ CompileFlags:
   Add:
     - -isysroot
     - /Users/nilton/.platformio/packages/toolchain-xtensa-esp-elf/xtensa-esp-elf
-Diagnostics:
-  Includes:
-    IgnoreHeader:
-      - .*FreeRTOS\.h
-  ClangTidy:
-      Add: modernize*
-      Remove: modernize-use-trailing-return-type
