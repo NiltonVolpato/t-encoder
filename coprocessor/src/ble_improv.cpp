@@ -21,58 +21,62 @@
 #include "services/gap/ble_svc_gap.h"
 #include "services/gatt/ble_svc_gatt.h"
 
-static const char* TAG = "ble_improv";
+namespace coprocessor {
 
-static ble_improv_wifi_connect_cb_t s_connect_cb = nullptr;
-static ble_improv_status_cb_t s_status_cb = nullptr;
-static uint8_t s_own_addr_type;
+namespace {
 
-static bool s_synced = false;
-static bool s_active = false;
-static uint16_t s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+constexpr const char* TAG = "ble_improv";
 
-static TimerHandle_t s_timeout_timer = nullptr;
-static TimerHandle_t s_grace_timer = nullptr;
+ble_wifi_connect_cb_t s_connect_cb = nullptr;
+ble_status_cb_t s_status_cb = nullptr;
+uint8_t s_own_addr_type = 0;
 
-static uint8_t s_state = improv::STATE_STOPPED;
-static uint8_t s_error = improv::ERROR_NONE;
-static std::vector<uint8_t> s_rpc_result;
-static std::string s_device_name = "Smart Dial";
+bool s_synced = false;
+bool s_active = false;
+uint16_t s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 
-static uint16_t s_status_val_handle = 0;
-static uint16_t s_error_val_handle = 0;
-static uint16_t s_rpc_cmd_val_handle = 0;
-static uint16_t s_rpc_result_val_handle = 0;
-static uint16_t s_caps_val_handle = 0;
+TimerHandle_t s_timeout_timer = nullptr;
+TimerHandle_t s_grace_timer = nullptr;
 
-static const ble_uuid128_t s_improv_svc_uuid =
+uint8_t s_state = improv::STATE_STOPPED;
+uint8_t s_error = improv::ERROR_NONE;
+std::vector<uint8_t> s_rpc_result;
+std::string s_device_name = "Smart Dial";
+
+uint16_t s_status_val_handle = 0;
+uint16_t s_error_val_handle = 0;
+uint16_t s_rpc_cmd_val_handle = 0;
+uint16_t s_rpc_result_val_handle = 0;
+uint16_t s_caps_val_handle = 0;
+
+const ble_uuid128_t s_improv_svc_uuid =
     BLE_UUID128_INIT(0x00, 0x80, 0x26, 0x78, 0x74, 0x27, 0x63, 0x46, 0x72, 0x22,
                      0x28, 0x62, 0x68, 0x77, 0x46, 0x00);
 
-static const ble_uuid128_t s_status_chr_uuid =
+const ble_uuid128_t s_status_chr_uuid =
     BLE_UUID128_INIT(0x01, 0x80, 0x26, 0x78, 0x74, 0x27, 0x63, 0x46, 0x72, 0x22,
                      0x28, 0x62, 0x68, 0x77, 0x46, 0x00);
 
-static const ble_uuid128_t s_error_chr_uuid =
+const ble_uuid128_t s_error_chr_uuid =
     BLE_UUID128_INIT(0x02, 0x80, 0x26, 0x78, 0x74, 0x27, 0x63, 0x46, 0x72, 0x22,
                      0x28, 0x62, 0x68, 0x77, 0x46, 0x00);
 
-static const ble_uuid128_t s_rpc_cmd_chr_uuid =
+const ble_uuid128_t s_rpc_cmd_chr_uuid =
     BLE_UUID128_INIT(0x03, 0x80, 0x26, 0x78, 0x74, 0x27, 0x63, 0x46, 0x72, 0x22,
                      0x28, 0x62, 0x68, 0x77, 0x46, 0x00);
 
-static const ble_uuid128_t s_rpc_result_chr_uuid =
+const ble_uuid128_t s_rpc_result_chr_uuid =
     BLE_UUID128_INIT(0x04, 0x80, 0x26, 0x78, 0x74, 0x27, 0x63, 0x46, 0x72, 0x22,
                      0x28, 0x62, 0x68, 0x77, 0x46, 0x00);
 
-static const ble_uuid128_t s_caps_chr_uuid =
+const ble_uuid128_t s_caps_chr_uuid =
     BLE_UUID128_INIT(0x05, 0x80, 0x26, 0x78, 0x74, 0x27, 0x63, 0x46, 0x72, 0x22,
                      0x28, 0x62, 0x68, 0x77, 0x46, 0x00);
 
-static int gatt_svr_access(uint16_t conn_handle, uint16_t attr_handle,
-                           struct ble_gatt_access_ctxt* ctxt, void* arg);
+int gatt_svr_access(uint16_t conn_handle, uint16_t attr_handle,
+                    struct ble_gatt_access_ctxt* ctxt, void* arg);
 
-static const std::array<struct ble_gatt_chr_def, 6> s_improv_chrs = {
+const std::array<struct ble_gatt_chr_def, 6> s_improv_chrs = {
     {{
          // Status Characteristic (00467768-6228-2272-4663-277478268001)
          .uuid = &s_status_chr_uuid.u,
@@ -110,7 +114,7 @@ static const std::array<struct ble_gatt_chr_def, 6> s_improv_chrs = {
      },
      {.uuid = nullptr}}};
 
-static const std::array<struct ble_gatt_svc_def, 2> s_gatt_svcs = {
+const std::array<struct ble_gatt_svc_def, 2> s_gatt_svcs = {
     {{
          .type = BLE_GATT_SVC_TYPE_PRIMARY,
          .uuid = &s_improv_svc_uuid.u,
@@ -118,9 +122,9 @@ static const std::array<struct ble_gatt_svc_def, 2> s_gatt_svcs = {
      },
      {.type = 0}}};
 
-static void ble_advertise();
+void ble_advertise();
 
-static int ble_gap_event(struct ble_gap_event* event, void* arg) {
+int ble_gap_event(struct ble_gap_event* event, void* arg) {
   switch (event->type) {
     case BLE_GAP_EVENT_CONNECT:
       ESP_LOGI(TAG, "BLE connection %s; status=%d",
@@ -153,7 +157,7 @@ static int ble_gap_event(struct ble_gap_event* event, void* arg) {
   return 0;
 }
 
-static void ble_advertise() {
+void ble_advertise() {
   if (!s_active || !s_synced) {
     return;
   }
@@ -199,8 +203,8 @@ static void ble_advertise() {
   }
 }
 
-static int gatt_svr_access(uint16_t conn_handle, uint16_t attr_handle,
-                           struct ble_gatt_access_ctxt* ctxt, void* arg) {
+int gatt_svr_access(uint16_t conn_handle, uint16_t attr_handle,
+                    struct ble_gatt_access_ctxt* ctxt, void* arg) {
   if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
     if (attr_handle == s_status_val_handle) {
       return os_mbuf_append(ctxt->om, &s_state, 1) == 0
@@ -269,7 +273,7 @@ static int gatt_svr_access(uint16_t conn_handle, uint16_t attr_handle,
   return BLE_ATT_ERR_UNLIKELY;
 }
 
-static void on_timeout_timer(TimerHandle_t xTimer) {
+void on_timeout_timer(TimerHandle_t xTimer) {
   ESP_LOGI(TAG, "Provisioning window timed out after window expired");
   if (s_active) {
     s_active = false;
@@ -284,7 +288,7 @@ static void on_timeout_timer(TimerHandle_t xTimer) {
   }
 }
 
-static void on_grace_timer(TimerHandle_t xTimer) {
+void on_grace_timer(TimerHandle_t xTimer) {
   ESP_LOGI(TAG, "Provisioning grace period ended, turning off BLE");
   if (s_active) {
     s_active = false;
@@ -299,9 +303,30 @@ static void on_grace_timer(TimerHandle_t xTimer) {
   }
 }
 
-bool ble_improv_is_active() { return s_active; }
+void ble_on_sync() {
+  int rc = ble_hs_util_ensure_addr(0);
+  assert(rc == 0);
+  rc = ble_hs_id_infer_auto(0, &s_own_addr_type);
+  assert(rc == 0);
+  s_synced = true;
 
-void ble_improv_start(uint32_t timeout_seconds) {
+  // Only advertise if an explicit provisioning session was requested
+  if (s_active) {
+    ble_advertise();
+  }
+}
+
+void ble_host_task(void* param) {
+  ESP_LOGI(TAG, "BLE Host Task Started");
+  nimble_port_run();
+  nimble_port_freertos_deinit();
+}
+
+}  // namespace
+
+bool ble_is_active() { return s_active; }
+
+void ble_start(uint32_t timeout_seconds) {
   if (timeout_seconds == 0) {
     timeout_seconds = 180;
   }
@@ -330,7 +355,7 @@ void ble_improv_start(uint32_t timeout_seconds) {
   }
 }
 
-void ble_improv_stop() {
+void ble_stop() {
   if (!s_active) {
     return;
   }
@@ -355,7 +380,7 @@ void ble_improv_stop() {
   }
 }
 
-void ble_improv_on_wifi_connected(const char* ip_addr) {
+void ble_on_wifi_connected(const char* ip_addr) {
   if (!s_active || s_status_val_handle == 0) {
     return;
   }
@@ -383,7 +408,7 @@ void ble_improv_on_wifi_connected(const char* ip_addr) {
   }
 }
 
-void ble_improv_on_wifi_failed() {
+void ble_on_wifi_failed() {
   if (!s_active || s_status_val_handle == 0) {
     return;
   }
@@ -396,27 +421,7 @@ void ble_improv_on_wifi_failed() {
   ESP_LOGW(TAG, "Improv state updated to ERROR_UNABLE_TO_CONNECT");
 }
 
-static void ble_on_sync() {
-  int rc = ble_hs_util_ensure_addr(0);
-  assert(rc == 0);
-  rc = ble_hs_id_infer_auto(0, &s_own_addr_type);
-  assert(rc == 0);
-  s_synced = true;
-
-  // Only advertise if an explicit provisioning session was requested
-  if (s_active) {
-    ble_advertise();
-  }
-}
-
-static void ble_host_task(void* param) {
-  ESP_LOGI(TAG, "BLE Host Task Started");
-  nimble_port_run();
-  nimble_port_freertos_deinit();
-}
-
-void ble_improv_init(ble_improv_wifi_connect_cb_t connect_cb,
-                     ble_improv_status_cb_t status_cb) {
+void ble_init(ble_wifi_connect_cb_t connect_cb, ble_status_cb_t status_cb) {
   s_connect_cb = connect_cb;
   s_status_cb = status_cb;
   s_active = false;
@@ -452,3 +457,5 @@ void ble_improv_init(ble_improv_wifi_connect_cb_t connect_cb,
 
   nimble_port_freertos_init(ble_host_task);
 }
+
+}  // namespace coprocessor

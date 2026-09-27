@@ -6,6 +6,7 @@
 #include <array>
 #include <cstring>
 #include <string>
+#include <vector>
 
 #include "esp_event.h"
 #include "esp_log.h"
@@ -13,21 +14,25 @@
 #include "esp_wifi.h"
 #include "nvs.h"
 
-static const char* TAG = "wifi_mgr";
+namespace coprocessor {
 
-static wifi_status_changed_cb_t s_status_cb = nullptr;
-static bool s_connected = false;
-static std::array<char, 33> s_current_ssid{};
-static std::array<char, 16> s_ip_str{};
-static esp_netif_t* s_sta_netif = nullptr;
-static constexpr int MAX_RETRY_COUNT = 5;
-static int s_retry_count = 0;
+namespace {
 
-static constexpr const char* NVS_NAMESPACE = "wifi_store";
-static constexpr const char* NVS_KEY_SSID = "ssid";
-static constexpr const char* NVS_KEY_PASS = "pass";
+constexpr const char* TAG = "wifi_mgr";
 
-static void save_credentials(const char* ssid, const char* password) {
+wifi_status_cb_t s_status_cb = nullptr;
+bool s_connected = false;
+std::array<char, 33> s_current_ssid{};
+std::array<char, 16> s_ip_str{};
+esp_netif_t* s_sta_netif = nullptr;
+constexpr int MAX_RETRY_COUNT = 5;
+int s_retry_count = 0;
+
+constexpr const char* NVS_NAMESPACE = "wifi_store";
+constexpr const char* NVS_KEY_SSID = "ssid";
+constexpr const char* NVS_KEY_PASS = "pass";
+
+void save_credentials(const char* ssid, const char* password) {
   nvs_handle_t handle;
   if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle) == ESP_OK) {
     nvs_set_str(handle, NVS_KEY_SSID, ssid);
@@ -40,34 +45,8 @@ static void save_credentials(const char* ssid, const char* password) {
   }
 }
 
-bool wifi_manager_get_saved_credentials(std::string& ssid,
-                                        std::string& password) {
-  nvs_handle_t handle;
-  if (nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle) != ESP_OK) {
-    return false;
-  }
-
-  size_t ssid_len = 0;
-  size_t pass_len = 0;
-  if (nvs_get_str(handle, NVS_KEY_SSID, nullptr, &ssid_len) != ESP_OK ||
-      nvs_get_str(handle, NVS_KEY_PASS, nullptr, &pass_len) != ESP_OK) {
-    nvs_close(handle);
-    return false;
-  }
-
-  std::vector<char> ssid_buf(ssid_len);
-  std::vector<char> pass_buf(pass_len);
-  nvs_get_str(handle, NVS_KEY_SSID, ssid_buf.data(), &ssid_len);
-  nvs_get_str(handle, NVS_KEY_PASS, pass_buf.data(), &pass_len);
-  nvs_close(handle);
-
-  ssid = ssid_buf.data();
-  password = pass_buf.data();
-  return !ssid.empty();
-}
-
-static void wifi_event_handler(void* arg, esp_event_base_t event_base,
-                               int32_t event_id, void* event_data) {
+void wifi_event_handler(void* arg, esp_event_base_t event_base,
+                        int32_t event_id, void* event_data) {
   if (event_base == WIFI_EVENT) {
     switch (event_id) {
       case WIFI_EVENT_STA_START:
@@ -113,7 +92,34 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
   }
 }
 
-void wifi_manager_init(wifi_status_changed_cb_t status_cb) {
+}  // namespace
+
+bool wifi_get_saved_credentials(std::string& ssid, std::string& password) {
+  nvs_handle_t handle;
+  if (nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle) != ESP_OK) {
+    return false;
+  }
+
+  size_t ssid_len = 0;
+  size_t pass_len = 0;
+  if (nvs_get_str(handle, NVS_KEY_SSID, nullptr, &ssid_len) != ESP_OK ||
+      nvs_get_str(handle, NVS_KEY_PASS, nullptr, &pass_len) != ESP_OK) {
+    nvs_close(handle);
+    return false;
+  }
+
+  std::vector<char> ssid_buf(ssid_len);
+  std::vector<char> pass_buf(pass_len);
+  nvs_get_str(handle, NVS_KEY_SSID, ssid_buf.data(), &ssid_len);
+  nvs_get_str(handle, NVS_KEY_PASS, pass_buf.data(), &pass_len);
+  nvs_close(handle);
+
+  ssid = ssid_buf.data();
+  password = pass_buf.data();
+  return !ssid.empty();
+}
+
+void wifi_init(wifi_status_cb_t status_cb) {
   s_status_cb = status_cb;
 
   ESP_ERROR_CHECK(esp_netif_init());
@@ -131,16 +137,17 @@ void wifi_manager_init(wifi_status_changed_cb_t status_cb) {
   ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
   ESP_ERROR_CHECK(esp_wifi_start());
 
-  std::string saved_ssid, saved_pass;
-  if (wifi_manager_get_saved_credentials(saved_ssid, saved_pass)) {
+  std::string saved_ssid;
+  std::string saved_pass;
+  if (wifi_get_saved_credentials(saved_ssid, saved_pass)) {
     ESP_LOGI(TAG, "Auto-connecting to saved network: %s", saved_ssid.c_str());
-    wifi_manager_connect(saved_ssid.c_str(), saved_pass.c_str());
+    wifi_connect(saved_ssid.c_str(), saved_pass.c_str());
   } else {
     ESP_LOGI(TAG, "No saved Wi-Fi credentials found");
   }
 }
 
-void wifi_manager_connect(const char* ssid, const char* password) {
+void wifi_connect(const char* ssid, const char* password) {
   if (!ssid || strlen(ssid) == 0) {
     return;
   }
@@ -169,8 +176,10 @@ void wifi_manager_connect(const char* ssid, const char* password) {
   esp_wifi_connect();
 }
 
-bool wifi_manager_is_connected() { return s_connected; }
+bool wifi_is_connected() { return s_connected; }
 
-const char* wifi_manager_get_ip() { return s_ip_str.data(); }
+const char* wifi_get_ip() { return s_ip_str.data(); }
 
-const char* wifi_manager_get_ssid() { return s_current_ssid.data(); }
+const char* wifi_get_ssid() { return s_current_ssid.data(); }
+
+}  // namespace coprocessor

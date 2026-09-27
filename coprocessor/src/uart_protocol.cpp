@@ -13,13 +13,17 @@
 #include "esp_timer.h"
 #include "freertos/task.h"
 
-static const char* TAG = "uart_proto";
+namespace coprocessor {
 
-static wifi_connect_request_cb_t s_wifi_connect_cb = nullptr;
-static start_provisioning_cb_t s_start_provisioning_cb = nullptr;
-static stop_provisioning_cb_t s_stop_provisioning_cb = nullptr;
+namespace {
 
-static size_t cobs_encode(const uint8_t* src, size_t src_len, uint8_t* dst) {
+constexpr const char* TAG = "uart_proto";
+
+uart_wifi_connect_cb_t s_wifi_connect_cb = nullptr;
+uart_start_provisioning_cb_t s_start_provisioning_cb = nullptr;
+uart_stop_provisioning_cb_t s_stop_provisioning_cb = nullptr;
+
+size_t cobs_encode(const uint8_t* src, size_t src_len, uint8_t* dst) {
   size_t read_idx = 0;
   size_t write_idx = 1;
   size_t code_idx = 0;
@@ -45,7 +49,7 @@ static size_t cobs_encode(const uint8_t* src, size_t src_len, uint8_t* dst) {
   return write_idx;
 }
 
-static size_t cobs_decode(const uint8_t* src, size_t src_len, uint8_t* dst) {
+size_t cobs_decode(const uint8_t* src, size_t src_len, uint8_t* dst) {
   if (src_len == 0) return 0;
   size_t read_idx = 0;
   size_t write_idx = 0;
@@ -64,7 +68,7 @@ static size_t cobs_decode(const uint8_t* src, size_t src_len, uint8_t* dst) {
   return write_idx;
 }
 
-static uint32_t crc32_ieee(const uint8_t* data, size_t length) {
+uint32_t crc32_ieee(const uint8_t* data, size_t length) {
   uint32_t crc = 0xFFFFFFFF;
   for (size_t i = 0; i < length; i++) {
     crc ^= data[i];
@@ -75,7 +79,7 @@ static uint32_t crc32_ieee(const uint8_t* data, size_t length) {
   return ~crc;
 }
 
-static void send_response_envelope(
+void send_response_envelope(
     flatbuffers::FlatBufferBuilder& fbb,
     flatbuffers::Offset<CoprocessorProto::ResponseEnvelope> env) {
   fbb.FinishSizePrefixed(env);
@@ -96,39 +100,11 @@ static void send_response_envelope(
       cobs_encode(unencoded.data(), unencoded.size(), encoded.data());
   encoded[encoded_len++] = 0x00;
 
-  uart_write_bytes(COPROCESSOR_UART_PORT,
-                   reinterpret_cast<const char*>(encoded.data()), encoded_len);
+  uart_write_bytes(UART_PORT, reinterpret_cast<const char*>(encoded.data()),
+                   encoded_len);
 }
 
-void uart_send_wifi_status(bool connected, const char* ssid,
-                           const char* ip_addr, int16_t rssi) {
-  flatbuffers::FlatBufferBuilder fbb(256);
-  auto ssid_str = ssid ? fbb.CreateString(ssid) : fbb.CreateString("");
-  auto ip_str = ip_addr ? fbb.CreateString(ip_addr) : fbb.CreateString("");
-  auto wifi_status = CoprocessorProto::CreateWifiStatus(fbb, connected, ip_str,
-                                                        ssid_str, rssi);
-  auto env = CoprocessorProto::CreateResponseEnvelope(
-      fbb, CoprocessorProto::Response_WifiStatus, wifi_status.Union());
-  send_response_envelope(fbb, env);
-}
-
-void uart_send_heartbeat_response(uint64_t uptime_ms, uint32_t heap_free) {
-  flatbuffers::FlatBufferBuilder fbb(128);
-  auto hb = CoprocessorProto::CreateHeartbeat(fbb, uptime_ms, heap_free);
-  auto env = CoprocessorProto::CreateResponseEnvelope(
-      fbb, CoprocessorProto::Response_Heartbeat, hb.Union());
-  send_response_envelope(fbb, env);
-}
-
-void uart_send_provisioning_status(CoprocessorProto::ProvisioningState state) {
-  flatbuffers::FlatBufferBuilder fbb(128);
-  auto status = CoprocessorProto::CreateProvisioningStatus(fbb, state);
-  auto env = CoprocessorProto::CreateResponseEnvelope(
-      fbb, CoprocessorProto::Response_ProvisioningStatus, status.Union());
-  send_response_envelope(fbb, env);
-}
-
-static void handle_rx_packet(const uint8_t* payload, size_t payload_len) {
+void handle_rx_packet(const uint8_t* payload, size_t payload_len) {
   auto req_env = CoprocessorProto::GetSizePrefixedRequestEnvelope(payload);
   if (!req_env) {
     ESP_LOGW(TAG, "Failed to parse RequestEnvelope");
@@ -171,20 +147,19 @@ static void handle_rx_packet(const uint8_t* payload, size_t payload_len) {
   }
 }
 
-static void uart_rx_task(void* pvParameters) {
-  static constexpr size_t BUFFER_CAPACITY = 2048;
-  static std::array<uint8_t, 128> rx_raw{};
-  static std::array<uint8_t, BUFFER_CAPACITY> frame_buf{};
-  static std::array<uint8_t, BUFFER_CAPACITY> scratch{};
+void uart_rx_task(void* pvParameters) {
+  constexpr size_t BUFFER_CAPACITY = 2048;
+  std::array<uint8_t, 128> rx_raw{};
+  std::array<uint8_t, BUFFER_CAPACITY> frame_buf{};
+  std::array<uint8_t, BUFFER_CAPACITY> scratch{};
   size_t frame_pos = 0;
 
-  ESP_LOGI(TAG, "UART RX task started on %d (TX=%d, RX=%d)",
-           COPROCESSOR_UART_PORT, COPROCESSOR_UART_TX_PIN,
-           COPROCESSOR_UART_RX_PIN);
+  ESP_LOGI(TAG, "UART RX task started on %d (TX=%d, RX=%d)", UART_PORT,
+           UART_TX_PIN, UART_RX_PIN);
 
   while (true) {
-    int len = uart_read_bytes(COPROCESSOR_UART_PORT, rx_raw.data(),
-                              rx_raw.size(), pdMS_TO_TICKS(50));
+    int len = uart_read_bytes(UART_PORT, rx_raw.data(), rx_raw.size(),
+                              pdMS_TO_TICKS(50));
     if (len <= 0) {
       continue;
     }
@@ -243,28 +218,58 @@ static void uart_rx_task(void* pvParameters) {
   }
 }
 
-void uart_protocol_init(wifi_connect_request_cb_t wifi_cb,
-                        start_provisioning_cb_t start_prov_cb,
-                        stop_provisioning_cb_t stop_prov_cb) {
+}  // namespace
+
+void uart_send_wifi_status(bool connected, const char* ssid,
+                           const char* ip_addr, int16_t rssi) {
+  flatbuffers::FlatBufferBuilder fbb(256);
+  auto ssid_str = ssid ? fbb.CreateString(ssid) : fbb.CreateString("");
+  auto ip_str = ip_addr ? fbb.CreateString(ip_addr) : fbb.CreateString("");
+  auto wifi_status = CoprocessorProto::CreateWifiStatus(fbb, connected, ip_str,
+                                                        ssid_str, rssi);
+  auto env = CoprocessorProto::CreateResponseEnvelope(
+      fbb, CoprocessorProto::Response_WifiStatus, wifi_status.Union());
+  send_response_envelope(fbb, env);
+}
+
+void uart_send_heartbeat_response(uint64_t uptime_ms, uint32_t heap_free) {
+  flatbuffers::FlatBufferBuilder fbb(128);
+  auto hb = CoprocessorProto::CreateHeartbeat(fbb, uptime_ms, heap_free);
+  auto env = CoprocessorProto::CreateResponseEnvelope(
+      fbb, CoprocessorProto::Response_Heartbeat, hb.Union());
+  send_response_envelope(fbb, env);
+}
+
+void uart_send_provisioning_status(CoprocessorProto::ProvisioningState state) {
+  flatbuffers::FlatBufferBuilder fbb(128);
+  auto status = CoprocessorProto::CreateProvisioningStatus(fbb, state);
+  auto env = CoprocessorProto::CreateResponseEnvelope(
+      fbb, CoprocessorProto::Response_ProvisioningStatus, status.Union());
+  send_response_envelope(fbb, env);
+}
+
+void uart_init(uart_wifi_connect_cb_t wifi_cb,
+               uart_start_provisioning_cb_t start_prov_cb,
+               uart_stop_provisioning_cb_t stop_prov_cb) {
   s_wifi_connect_cb = wifi_cb;
   s_start_provisioning_cb = start_prov_cb;
   s_stop_provisioning_cb = stop_prov_cb;
 
   uart_config_t uart_config = {};
-  uart_config.baud_rate = COPROCESSOR_UART_BAUD;
+  uart_config.baud_rate = UART_BAUD;
   uart_config.data_bits = UART_DATA_8_BITS;
   uart_config.parity = UART_PARITY_DISABLE;
   uart_config.stop_bits = UART_STOP_BITS_1;
   uart_config.flow_ctrl = UART_HW_FLOWCTRL_DISABLE;
   uart_config.source_clk = UART_SCLK_DEFAULT;
 
-  ESP_ERROR_CHECK(uart_param_config(COPROCESSOR_UART_PORT, &uart_config));
-  ESP_ERROR_CHECK(uart_set_pin(COPROCESSOR_UART_PORT, COPROCESSOR_UART_TX_PIN,
-                               COPROCESSOR_UART_RX_PIN, UART_PIN_NO_CHANGE,
-                               UART_PIN_NO_CHANGE));
-  ESP_ERROR_CHECK(
-      uart_driver_install(COPROCESSOR_UART_PORT, 2048, 2048, 0, nullptr, 0));
+  ESP_ERROR_CHECK(uart_param_config(UART_PORT, &uart_config));
+  ESP_ERROR_CHECK(uart_set_pin(UART_PORT, UART_TX_PIN, UART_RX_PIN,
+                               UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
+  ESP_ERROR_CHECK(uart_driver_install(UART_PORT, 2048, 2048, 0, nullptr, 0));
 
   xTaskCreatePinnedToCore(uart_rx_task, "uart_rx_task", 4096, nullptr, 10,
                           nullptr, 1);
 }
+
+}  // namespace coprocessor
