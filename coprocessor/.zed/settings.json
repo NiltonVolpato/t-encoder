@@ -1,0 +1,15 @@
+{
+  "lsp": {
+    "clangd": {
+      "binary": {
+        "env": {
+          "PATH": "/Users/nilton/.platformio/packages/toolchain-xtensa-esp32/bin:/opt/homebrew/opt/llvm@22/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        },
+        "path": "/opt/homebrew/opt/llvm@22/bin/clangd",
+        "arguments": [
+          "--query-driver=**/.platformio/**"
+        ]
+      }
+    }
+  }
+}

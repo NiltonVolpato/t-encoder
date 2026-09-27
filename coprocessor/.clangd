@@ -1,6 +1,6 @@
 CompileFlags:
   CompilationDatabase: .
-  Compiler: /Users/nilton/.platformio/packages/toolchain-xtensa-esp-elf/bin/xtensa-esp32-elf-g++
+  BuiltinHeaders: QueryDriver
   Remove:
     - -mlongcalls
     - -fno-shrink-wrap
