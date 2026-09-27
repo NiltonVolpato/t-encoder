@@ -262,3 +262,29 @@ monitor-coprocessor PORT="/dev/cu.usbserial-10" *ARGS:
 [group("coprocessor")]
 reset-coprocessor PORT="/dev/cu.usbserial-10":
     esptool -p {{PORT}} run
+
+[doc("Run clang-tidy on co-processor C++ sources.")]
+[group("coprocessor")]
+tidy-coprocessor *ARGS:
+    @cd coprocessor && PATH="/opt/homebrew/opt/llvm@22/bin:$PATH" /opt/homebrew/opt/llvm@22/bin/run-clang-tidy \
+        -clang-tidy-binary=/opt/homebrew/opt/llvm@22/bin/clang-tidy \
+        -clang-apply-replacements-binary=/opt/homebrew/opt/llvm@22/bin/clang-apply-replacements \
+        -p . \
+        -quiet \
+        -hide-progress \
+        -source-filter '.*/coprocessor/src/.*' \
+        -header-filter '^(coprocessor/)?src/.*\.h$' \
+        -removed-arg='-mlongcalls' \
+        -removed-arg='-fno-shrink-wrap' \
+        -removed-arg='-fno-tree-switch-conversion' \
+        -removed-arg='-fstrict-volatile-bitfields' \
+        -extra-arg='--target=xtensa-esp-elf' \
+        -extra-arg='-Qunused-arguments' \
+        -extra-arg='-Wno-error' \
+        -extra-arg='--sysroot=/Users/nilton/.platformio/packages/toolchain-xtensa-esp-elf/xtensa-esp-elf' \
+        -extra-arg='-isystem/Users/nilton/.platformio/packages/toolchain-xtensa-esp-elf/picolibc/include' \
+        -extra-arg='-isystem/Users/nilton/.platformio/packages/toolchain-xtensa-esp-elf/xtensa-esp-elf/include/c++/15.2.0' \
+        -extra-arg='-isystem/Users/nilton/.platformio/packages/toolchain-xtensa-esp-elf/xtensa-esp-elf/include/c++/15.2.0/xtensa-esp-elf/esp32' \
+        -extra-arg='-isystem/Users/nilton/.platformio/packages/toolchain-xtensa-esp-elf/lib/gcc/xtensa-esp-elf/15.2.0/include' \
+        -extra-arg='-isystem/Users/nilton/.platformio/packages/toolchain-xtensa-esp-elf/xtensa-esp-elf/include' \
+        {{ARGS}}

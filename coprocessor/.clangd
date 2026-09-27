@@ -15,3 +15,4 @@ Diagnostics:
       - .*FreeRTOS\.h
   ClangTidy:
       Add: modernize*
+      Remove: modernize-use-trailing-return-type

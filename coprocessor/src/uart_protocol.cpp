@@ -5,6 +5,7 @@
 
 #include <cstring>
 #include <vector>
+#include <array>
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_system.h"
@@ -67,7 +68,7 @@ static uint32_t crc32_ieee(const uint8_t *data, size_t length) {
     for (size_t i = 0; i < length; i++) {
         crc ^= data[i];
         for (int k = 0; k < 8; k++) {
-            crc = (crc >> 1) ^ (0xEDB88320 & (-(int)(crc & 1)));
+            crc = (crc >> 1) ^ (0xEDB88320 & (-static_cast<int>(crc & 1)));
         }
     }
     return ~crc;
@@ -136,7 +137,7 @@ static void handle_rx_packet(const uint8_t *payload, size_t payload_len) {
 
     switch (req_env->message_type()) {
         case CoprocessorProto::Request_Heartbeat: {
-            uint64_t uptime_ms = static_cast<uint64_t>(esp_timer_get_time() / 1000);
+            auto uptime_ms = static_cast<uint64_t>(esp_timer_get_time() / 1000);
             uint32_t heap_free = esp_get_free_heap_size();
             uart_send_heartbeat_response(uptime_ms, heap_free);
             break;
@@ -171,16 +172,16 @@ static void handle_rx_packet(const uint8_t *payload, size_t payload_len) {
 
 static void uart_rx_task(void *pvParameters) {
     static constexpr size_t BUFFER_CAPACITY = 2048;
-    static uint8_t rx_raw[128];
-    static uint8_t frame_buf[BUFFER_CAPACITY];
-    static uint8_t scratch[BUFFER_CAPACITY];
+    static std::array<uint8_t, 128> rx_raw{};
+    static std::array<uint8_t, BUFFER_CAPACITY> frame_buf{};
+    static std::array<uint8_t, BUFFER_CAPACITY> scratch{};
     size_t frame_pos = 0;
 
     ESP_LOGI(TAG, "UART RX task started on %d (TX=%d, RX=%d)",
              COPROCESSOR_UART_PORT, COPROCESSOR_UART_TX_PIN, COPROCESSOR_UART_RX_PIN);
 
     while (true) {
-        int len = uart_read_bytes(COPROCESSOR_UART_PORT, rx_raw, sizeof(rx_raw), pdMS_TO_TICKS(50));
+        int len = uart_read_bytes(COPROCESSOR_UART_PORT, rx_raw.data(), rx_raw.size(), pdMS_TO_TICKS(50));
         if (len <= 0) {
             continue;
         }
@@ -192,7 +193,7 @@ static void uart_rx_task(void *pvParameters) {
                     continue; // Skip consecutive delimiters
                 }
 
-                size_t decoded_len = cobs_decode(frame_buf, frame_pos, scratch);
+                size_t decoded_len = cobs_decode(frame_buf.data(), frame_pos, scratch.data());
                 frame_pos = 0;
 
                 if (decoded_len < 8) {
@@ -262,7 +263,7 @@ void uart_protocol_init(wifi_connect_request_cb_t wifi_cb,
                                  COPROCESSOR_UART_RX_PIN,
                                  UART_PIN_NO_CHANGE,
                                  UART_PIN_NO_CHANGE));
-    ESP_ERROR_CHECK(uart_driver_install(COPROCESSOR_UART_PORT, 2048, 2048, 0, NULL, 0));
+    ESP_ERROR_CHECK(uart_driver_install(COPROCESSOR_UART_PORT, 2048, 2048, 0, nullptr, 0));
 
-    xTaskCreatePinnedToCore(uart_rx_task, "uart_rx_task", 4096, NULL, 10, NULL, 1);
+    xTaskCreatePinnedToCore(uart_rx_task, "uart_rx_task", 4096, nullptr, 10, nullptr, 1);
 }

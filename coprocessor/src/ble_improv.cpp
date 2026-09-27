@@ -7,6 +7,7 @@
 #include <vector>
 #include <string>
 #include <cstring>
+#include <array>
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "freertos/FreeRTOS.h"
@@ -70,51 +71,53 @@ static const ble_uuid128_t s_caps_chr_uuid =
 static int gatt_svr_access(uint16_t conn_handle, uint16_t attr_handle,
                            struct ble_gatt_access_ctxt *ctxt, void *arg);
 
-static const struct ble_gatt_svc_def s_gatt_svcs[] = {
+static const std::array<struct ble_gatt_chr_def, 6> s_improv_chrs = {{
+    {
+        // Status Characteristic (00467768-6228-2272-4663-277478268001)
+        .uuid = &s_status_chr_uuid.u,
+        .access_cb = gatt_svr_access,
+        .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY,
+        .val_handle = &s_status_val_handle,
+    },
+    {
+        // Error Characteristic (00467768-6228-2272-4663-277478268002)
+        .uuid = &s_error_chr_uuid.u,
+        .access_cb = gatt_svr_access,
+        .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY,
+        .val_handle = &s_error_val_handle,
+    },
+    {
+        // RPC Command Characteristic (00467768-6228-2272-4663-277478268003)
+        .uuid = &s_rpc_cmd_chr_uuid.u,
+        .access_cb = gatt_svr_access,
+        .flags = BLE_GATT_CHR_F_WRITE,
+        .val_handle = &s_rpc_cmd_val_handle,
+    },
+    {
+        // RPC Result Characteristic (00467768-6228-2272-4663-277478268004)
+        .uuid = &s_rpc_result_chr_uuid.u,
+        .access_cb = gatt_svr_access,
+        .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY,
+        .val_handle = &s_rpc_result_val_handle,
+    },
+    {
+        // Capabilities Characteristic (00467768-6228-2272-4663-277478268005)
+        .uuid = &s_caps_chr_uuid.u,
+        .access_cb = gatt_svr_access,
+        .flags = BLE_GATT_CHR_F_READ,
+        .val_handle = &s_caps_val_handle,
+    },
+    { .uuid = nullptr }
+}};
+
+static const std::array<struct ble_gatt_svc_def, 2> s_gatt_svcs = {{
     {
         .type = BLE_GATT_SVC_TYPE_PRIMARY,
         .uuid = &s_improv_svc_uuid.u,
-        .characteristics = (struct ble_gatt_chr_def[]) {
-            {
-                // Status Characteristic (00467768-6228-2272-4663-277478268001)
-                .uuid = &s_status_chr_uuid.u,
-                .access_cb = gatt_svr_access,
-                .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY,
-                .val_handle = &s_status_val_handle,
-            },
-            {
-                // Error Characteristic (00467768-6228-2272-4663-277478268002)
-                .uuid = &s_error_chr_uuid.u,
-                .access_cb = gatt_svr_access,
-                .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY,
-                .val_handle = &s_error_val_handle,
-            },
-            {
-                // RPC Command Characteristic (00467768-6228-2272-4663-277478268003)
-                .uuid = &s_rpc_cmd_chr_uuid.u,
-                .access_cb = gatt_svr_access,
-                .flags = BLE_GATT_CHR_F_WRITE,
-                .val_handle = &s_rpc_cmd_val_handle,
-            },
-            {
-                // RPC Result Characteristic (00467768-6228-2272-4663-277478268004)
-                .uuid = &s_rpc_result_chr_uuid.u,
-                .access_cb = gatt_svr_access,
-                .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY,
-                .val_handle = &s_rpc_result_val_handle,
-            },
-            {
-                // Capabilities Characteristic (00467768-6228-2272-4663-277478268005)
-                .uuid = &s_caps_chr_uuid.u,
-                .access_cb = gatt_svr_access,
-                .flags = BLE_GATT_CHR_F_READ,
-                .val_handle = &s_caps_val_handle,
-            },
-            { 0 }
-        }
+        .characteristics = s_improv_chrs.data(),
     },
-    { 0 }
-};
+    { .type = 0 }
+}};
 
 static void ble_advertise();
 
@@ -188,8 +191,8 @@ static void ble_advertise() {
         return;
     }
 
-    rc = ble_gap_adv_start(s_own_addr_type, NULL, BLE_HS_FOREVER,
-                           &adv_params, ble_gap_event, NULL);
+    rc = ble_gap_adv_start(s_own_addr_type, nullptr, BLE_HS_FOREVER,
+                           &adv_params, ble_gap_event, nullptr);
     if (rc != 0) {
         ESP_LOGE(TAG, "Error starting advertising: rc=%d", rc);
     } else {
@@ -386,7 +389,7 @@ void ble_improv_on_wifi_failed() {
     ESP_LOGW(TAG, "Improv state updated to ERROR_UNABLE_TO_CONNECT");
 }
 
-static void ble_on_sync(void) {
+static void ble_on_sync() {
     int rc = ble_hs_util_ensure_addr(0);
     assert(rc == 0);
     rc = ble_hs_id_infer_auto(0, &s_own_addr_type);
@@ -418,11 +421,11 @@ void ble_improv_init(ble_improv_wifi_connect_cb_t connect_cb, ble_improv_status_
 
     ble_hs_cfg.sync_cb = ble_on_sync;
 
-    uint8_t mac[6] = {0};
-    if (esp_read_mac(mac, ESP_MAC_WIFI_STA) == ESP_OK) {
-        char name_buf[32];
-        snprintf(name_buf, sizeof(name_buf), "Smart Dial %02X%02X", mac[4], mac[5]);
-        s_device_name = name_buf;
+    std::array<uint8_t, 6> mac{};
+    if (esp_read_mac(mac.data(), ESP_MAC_WIFI_STA) == ESP_OK) {
+        std::array<char, 32> name_buf{};
+        snprintf(name_buf.data(), name_buf.size(), "Smart Dial %02X%02X", mac[4], mac[5]);
+        s_device_name = name_buf.data();
     }
 
     ble_svc_gap_init();
@@ -431,9 +434,9 @@ void ble_improv_init(ble_improv_wifi_connect_cb_t connect_cb, ble_improv_status_
     ESP_ERROR_CHECK(ble_svc_gap_device_name_set(s_device_name.c_str()));
     ESP_LOGI(TAG, "Device name set to: %s", s_device_name.c_str());
 
-    int rc = ble_gatts_count_cfg(s_gatt_svcs);
+    int rc = ble_gatts_count_cfg(s_gatt_svcs.data());
     assert(rc == 0);
-    rc = ble_gatts_add_svcs(s_gatt_svcs);
+    rc = ble_gatts_add_svcs(s_gatt_svcs.data());
     assert(rc == 0);
 
     nimble_port_freertos_init(ble_host_task);

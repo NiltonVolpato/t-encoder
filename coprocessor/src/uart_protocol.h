@@ -4,17 +4,18 @@
 #pragma once
 
 #include <cstdint>
+#include "hal/uart_types.h"
 #include "coprocessor_generated.h"
 
 // Hardware pinout for ESP32-U4WDH inter-MCU UART to ESP32-S3
-#define COPROCESSOR_UART_PORT   UART_NUM_1
-#define COPROCESSOR_UART_TX_PIN 18
-#define COPROCESSOR_UART_RX_PIN 23
-#define COPROCESSOR_UART_BAUD   115200
+constexpr uart_port_t COPROCESSOR_UART_PORT = UART_NUM_1;
+constexpr int COPROCESSOR_UART_TX_PIN = 18;
+constexpr int COPROCESSOR_UART_RX_PIN = 23;
+constexpr int COPROCESSOR_UART_BAUD = 115200;
 
-typedef void (*wifi_connect_request_cb_t)(const char *ssid, const char *password);
-typedef void (*start_provisioning_cb_t)(uint32_t timeout_seconds);
-typedef void (*stop_provisioning_cb_t)();
+using wifi_connect_request_cb_t = void (*)(const char *ssid, const char *password);
+using start_provisioning_cb_t = void (*)(uint32_t timeout_seconds);
+using stop_provisioning_cb_t = void (*)();
 
 void uart_protocol_init(wifi_connect_request_cb_t wifi_cb,
                         start_provisioning_cb_t start_prov_cb,

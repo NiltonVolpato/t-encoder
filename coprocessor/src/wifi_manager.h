@@ -7,10 +7,10 @@
 #include <string>
 #include "coprocessor_generated.h"
 
-typedef void (*wifi_status_changed_cb_t)(bool connected,
-                                         const char *ssid,
-                                         const char *ip_addr,
-                                         int16_t rssi);
+using wifi_status_changed_cb_t = void (*)(bool connected,
+                                        const char *ssid,
+                                        const char *ip_addr,
+                                        int16_t rssi);
 
 void wifi_manager_init(wifi_status_changed_cb_t status_cb);
 void wifi_manager_connect(const char *ssid, const char *password);

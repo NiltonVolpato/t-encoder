@@ -6,8 +6,8 @@
 #include <cstdint>
 #include "coprocessor_generated.h"
 
-typedef void (*ble_improv_wifi_connect_cb_t)(const char *ssid, const char *password);
-typedef void (*ble_improv_status_cb_t)(CoprocessorProto::ProvisioningState state);
+using ble_improv_wifi_connect_cb_t = void (*)(const char *ssid, const char *password);
+using ble_improv_status_cb_t = void (*)(CoprocessorProto::ProvisioningState state);
 
 void ble_improv_init(ble_improv_wifi_connect_cb_t connect_cb, ble_improv_status_cb_t status_cb);
 void ble_improv_start(uint32_t timeout_seconds);

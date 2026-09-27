@@ -5,6 +5,7 @@
 
 #include <string>
 #include <cstring>
+#include <array>
 #include "esp_log.h"
 #include "esp_wifi.h"
 #include "esp_event.h"
@@ -15,8 +16,8 @@ static const char *TAG = "wifi_mgr";
 
 static wifi_status_changed_cb_t s_status_cb = nullptr;
 static bool s_connected = false;
-static char s_current_ssid[33] = {0};
-static char s_ip_str[16] = {0};
+static std::array<char, 33> s_current_ssid{};
+static std::array<char, 16> s_ip_str{};
 static esp_netif_t *s_sta_netif = nullptr;
 static constexpr int MAX_RETRY_COUNT = 5;
 static int s_retry_count = 0;
@@ -85,7 +86,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
                     s_connected = false;
                     s_ip_str[0] = '\0';
                     if (s_status_cb) {
-                        s_status_cb(false, s_current_ssid, "", 0);
+                        s_status_cb(false, s_current_ssid.data(), "", 0);
                     }
                 }
                 break;
@@ -93,9 +94,9 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
                 break;
         }
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
-        ip_event_got_ip_t *event = reinterpret_cast<ip_event_got_ip_t *>(event_data);
-        esp_ip4addr_ntoa(&event->ip_info.ip, s_ip_str, sizeof(s_ip_str));
-        ESP_LOGI(TAG, "Got IP address: %s", s_ip_str);
+        auto *event = reinterpret_cast<ip_event_got_ip_t *>(event_data);
+        esp_ip4addr_ntoa(&event->ip_info.ip, s_ip_str.data(), s_ip_str.size());
+        ESP_LOGI(TAG, "Got IP address: %s", s_ip_str.data());
 
         s_connected = true;
         int8_t rssi = 0;
@@ -105,7 +106,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
         }
 
         if (s_status_cb) {
-            s_status_cb(true, s_current_ssid, s_ip_str, rssi);
+            s_status_cb(true, s_current_ssid.data(), s_ip_str.data(), rssi);
         }
     }
 }
@@ -142,13 +143,12 @@ void wifi_manager_connect(const char *ssid, const char *password) {
         return;
     }
 
-    strncpy(s_current_ssid, ssid, sizeof(s_current_ssid) - 1);
-    s_current_ssid[sizeof(s_current_ssid) - 1] = '\0';
+    strncpy(s_current_ssid.data(), ssid, s_current_ssid.size() - 1);
+    s_current_ssid.back() = '\0';
 
     save_credentials(ssid, password);
 
-    wifi_config_t wifi_cfg;
-    memset(&wifi_cfg, 0, sizeof(wifi_cfg));
+    wifi_config_t wifi_cfg{};
     strncpy(reinterpret_cast<char *>(wifi_cfg.sta.ssid), ssid, sizeof(wifi_cfg.sta.ssid) - 1);
     if (password && strlen(password) > 0) {
         strncpy(reinterpret_cast<char *>(wifi_cfg.sta.password), password, sizeof(wifi_cfg.sta.password) - 1);
@@ -170,9 +170,10 @@ bool wifi_manager_is_connected() {
 }
 
 const char *wifi_manager_get_ip() {
-    return s_ip_str;
+    return s_ip_str.data();
 }
 
 const char *wifi_manager_get_ssid() {
-    return s_current_ssid;
+    return s_current_ssid.data();
 }
+

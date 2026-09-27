@@ -55,7 +55,7 @@ static void on_stop_provisioning_request() {
 }
 
 static void periodic_status_log_timer(TimerHandle_t xTimer) {
-    uint32_t uptime_sec = static_cast<uint32_t>(esp_timer_get_time() / 1000000);
+    auto uptime_sec = static_cast<uint32_t>(esp_timer_get_time() / 1000000);
     uint32_t free_heap_kb = esp_get_free_heap_size() / 1024;
     bool connected = wifi_manager_is_connected();
     const char *ssid = wifi_manager_get_ssid();
