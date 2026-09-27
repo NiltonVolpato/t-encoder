@@ -4,7 +4,7 @@
       "binary": {
         "path": "slint-lsp",
         "arguments": [
-          "-L", "theme=crates/theme/ui/theme.slint"
+          "-L", "theme=portable/crates/theme/ui/theme.slint"
         ],
         "env": {}
       }

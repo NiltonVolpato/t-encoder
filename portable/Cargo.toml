@@ -1,7 +1,6 @@
 [workspace]
 resolver = "3"
 members = ["apps/*", "crates/*"]
-exclude = ["esp32-devices"]
 
 [workspace.package]
 edition = "2024"
@@ -12,7 +11,7 @@ publish = false
 [workspace.dependencies]
 slint = {
     # version = "=1.17.1",
-    path = "../forks/slint/api/rs/slint",
+    path = "../../forks/slint/api/rs/slint",
     default-features = false,
     features = [
         "compat-1-2",
@@ -24,7 +23,7 @@ slint = {
 }
 slint-build = {
     # version = "=1.17.1",
-    path = "../forks/slint/api/rs/build",
+    path = "../../forks/slint/api/rs/build",
     features = [
         "experimental-module-builds",
         "sdf-fonts",

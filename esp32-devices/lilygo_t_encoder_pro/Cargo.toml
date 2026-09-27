@@ -53,9 +53,9 @@ i-slint-renderer-software = {
     features = ["experimental"],
 }
 
-app-launcher = { path = "../../apps/launcher", default-features = false, features = ["apps"] }
-app-shell = { path = "../../crates/app-shell", default-features = false }
-detent-decoder = { path = "../../crates/detent-decoder" }
+app-launcher = { workspace = true }
+app-shell = { workspace = true }
+detent-decoder = { workspace = true }
 common = { workspace = true }
 
 esp-hal = { version = "~1.1.0", features = ["defmt", "esp32s3", "unstable"] }

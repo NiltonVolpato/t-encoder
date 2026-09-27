@@ -206,11 +206,9 @@ mod tests {
     fn block_on<F: core::future::Future>(f: F) -> F::Output {
         let mut cx = core::task::Context::from_waker(core::task::Waker::noop());
         let mut pinned = core::pin::pin!(f);
-        loop {
-            match pinned.as_mut().poll(&mut cx) {
-                core::task::Poll::Ready(val) => return val,
-                core::task::Poll::Pending => panic!("Future remained pending"),
-            }
+        match pinned.as_mut().poll(&mut cx) {
+            core::task::Poll::Ready(val) => val,
+            core::task::Poll::Pending => panic!("Future remained pending"),
         }
     }
 

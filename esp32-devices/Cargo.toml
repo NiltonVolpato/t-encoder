@@ -55,13 +55,13 @@ critical-section = "1.2"
 panic-rtt-target = { version = "0.2.0", features = ["defmt"] }
 rtt-target = { version = "0.6.2", features = ["defmt"] }
 
-app-launcher = { path = "../apps/launcher", default-features = false, features = ["apps"] }
-app-shell = { path = "../crates/app-shell", default-features = false }
-detent-decoder = { path = "../crates/detent-decoder" }
-cst816 = { path = "../crates/cst816", features = ["defmt"] }
-drv2605 = { path = "../crates/drv2605", features = ["defmt"] }
+app-launcher = { path = "../portable/apps/launcher", default-features = false, features = ["apps"] }
+app-shell = { path = "../portable/crates/app-shell", default-features = false }
+detent-decoder = { path = "../portable/crates/detent-decoder" }
+cst816 = { path = "../portable/crates/cst816", features = ["defmt"] }
+drv2605 = { path = "../portable/crates/drv2605", features = ["defmt"] }
 allocator-api2 = { version = "0.3", default-features = false, features = ["alloc"] }
-coprocessor = { path = "../crates/coprocessor" }
+coprocessor = { path = "../portable/crates/coprocessor" }
 common = { path = "common" }
 
 [workspace.lints.clippy]

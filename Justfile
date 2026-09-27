@@ -27,51 +27,51 @@ _default:
     @just --list
 
 # -----------------------------------------------------------------------------
-# Host Workspace Recipes (pure crates, apps, tests)
+# Portable Workspace Recipes (pure crates, apps, tests)
 # -----------------------------------------------------------------------------
 
-[doc("Run host unit tests for apps and pure crates.")]
+[doc("Run host unit tests for apps and pure crates in portable workspace.")]
 [group("verification")]
 test *ARGS:
-    cargo test --workspace {{ARGS}}
+    cd portable && cargo test --workspace {{ARGS}}
 
-[doc("Clippy on host crates (warnings are errors).")]
+[doc("Clippy on portable workspace crates (warnings are errors).")]
 [group("verification")]
 lint *ARGS:
-    cargo clippy --workspace --all-targets {{ARGS}} -- -D warnings
+    cd portable && cargo clippy --workspace --all-targets {{ARGS}} -- -D warnings
 
-[doc("Typecheck host crates.")]
+[doc("Typecheck portable workspace crates.")]
 [group("verification")]
 check-native *ARGS:
-    cargo check --workspace --all-targets {{ARGS}}
+    cd portable && cargo check --workspace --all-targets {{ARGS}}
 
 [doc("Format all Rust files in both workspaces.")]
 [group("verification")]
 fmt:
-    cargo +nightly fmt --all
+    cd portable && cargo +nightly fmt --all
     cd esp32-devices && cargo +nightly fmt --all
 
 [doc("Check formatting without modifying files.")]
 [group("verification")]
 fmt-check:
-    cargo +nightly fmt --all -- --check
+    cd portable && cargo +nightly fmt --all -- --check
     cd esp32-devices && cargo +nightly fmt --all -- --check
 
 # -----------------------------------------------------------------------------
-# Apps & Simulators (host with Slint MCP)
+# Apps & Simulators (portable apps with Slint MCP)
 # -----------------------------------------------------------------------------
 
-[doc("Run a host app simulator with Slint MCP enabled (e.g. just test-app clock, default port: 3450).")]
+[doc("Run a portable app simulator with Slint MCP enabled (e.g. just test-app clock, default port: 3450).")]
 [group("apps")]
 test-app APP="app-clock" PORT="3450" *ARGS:
     #!/usr/bin/env bash
     set -euo pipefail
     pkg="{{APP}}"
-    if [[ ! "$pkg" =~ ^app- ]] && [[ -d "apps/$pkg" ]]; then
+    if [[ ! "$pkg" =~ ^app- ]] && [[ -d "portable/apps/$pkg" ]]; then
         pkg="app-$pkg"
     fi
     echo "Starting simulator for $pkg on Slint MCP port {{PORT}}..."
-    SLINT_EMIT_DEBUG_INFO=1 SLINT_MCP_PORT="{{PORT}}" cargo run -p "$pkg" {{ARGS}}
+    cd portable && SLINT_EMIT_DEBUG_INFO=1 SLINT_MCP_PORT="{{PORT}}" cargo run -p "$pkg" {{ARGS}}
 
 alias run-app := test-app
 
