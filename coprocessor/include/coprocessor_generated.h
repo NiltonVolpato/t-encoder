@@ -39,6 +39,9 @@ struct ProvisioningStatusBuilder;
 struct Hello;
 struct HelloBuilder;
 
+struct TimeSync;
+struct TimeSyncBuilder;
+
 struct RequestEnvelope;
 struct RequestEnvelopeBuilder;
 
@@ -166,37 +169,40 @@ enum Response : uint8_t {
   Response_ProvisioningStatus = 3,
   Response_StreamChunk = 4,
   Response_Hello = 5,
+  Response_TimeSync = 6,
   Response_MIN = Response_NONE,
-  Response_MAX = Response_Hello
+  Response_MAX = Response_TimeSync
 };
 
-inline const Response (&EnumValuesResponse())[6] {
+inline const Response (&EnumValuesResponse())[7] {
   static const Response values[] = {
     Response_NONE,
     Response_Heartbeat,
     Response_WifiStatus,
     Response_ProvisioningStatus,
     Response_StreamChunk,
-    Response_Hello
+    Response_Hello,
+    Response_TimeSync
   };
   return values;
 }
 
 inline const char * const *EnumNamesResponse() {
-  static const char * const names[7] = {
+  static const char * const names[8] = {
     "NONE",
     "Heartbeat",
     "WifiStatus",
     "ProvisioningStatus",
     "StreamChunk",
     "Hello",
+    "TimeSync",
     nullptr
   };
   return names;
 }
 
 inline const char *EnumNameResponse(Response e) {
-  if (::flatbuffers::IsOutRange(e, Response_NONE, Response_Hello)) return "";
+  if (::flatbuffers::IsOutRange(e, Response_NONE, Response_TimeSync)) return "";
   const size_t index = static_cast<size_t>(e);
   return EnumNamesResponse()[index];
 }
@@ -223,6 +229,10 @@ template<> struct ResponseTraits<CoprocessorProto::StreamChunk> {
 
 template<> struct ResponseTraits<CoprocessorProto::Hello> {
   static const Response enum_value = Response_Hello;
+};
+
+template<> struct ResponseTraits<CoprocessorProto::TimeSync> {
+  static const Response enum_value = Response_TimeSync;
 };
 
 template <bool B = false>
@@ -670,6 +680,58 @@ inline ::flatbuffers::Offset<Hello> CreateHello(
   return builder_.Finish();
 }
 
+struct TimeSync FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef TimeSyncBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_EPOCH_SECONDS = 4,
+    VT_SUBSEC_MICROS = 6
+  };
+  uint64_t epoch_seconds() const {
+    return GetField<uint64_t>(VT_EPOCH_SECONDS, 0);
+  }
+  uint32_t subsec_micros() const {
+    return GetField<uint32_t>(VT_SUBSEC_MICROS, 0);
+  }
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<uint64_t>(verifier, VT_EPOCH_SECONDS, 8) &&
+           VerifyField<uint32_t>(verifier, VT_SUBSEC_MICROS, 4) &&
+           verifier.EndTable();
+  }
+};
+
+struct TimeSyncBuilder {
+  typedef TimeSync Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_epoch_seconds(uint64_t epoch_seconds) {
+    fbb_.AddElement<uint64_t>(TimeSync::VT_EPOCH_SECONDS, epoch_seconds, 0);
+  }
+  void add_subsec_micros(uint32_t subsec_micros) {
+    fbb_.AddElement<uint32_t>(TimeSync::VT_SUBSEC_MICROS, subsec_micros, 0);
+  }
+  explicit TimeSyncBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<TimeSync> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<TimeSync>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<TimeSync> CreateTimeSync(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    uint64_t epoch_seconds = 0,
+    uint32_t subsec_micros = 0) {
+  TimeSyncBuilder builder_(_fbb);
+  builder_.add_epoch_seconds(epoch_seconds);
+  builder_.add_subsec_micros(subsec_micros);
+  return builder_.Finish();
+}
+
 struct RequestEnvelope FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   typedef RequestEnvelopeBuilder Builder;
   enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
@@ -794,6 +856,9 @@ struct ResponseEnvelope FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   const CoprocessorProto::Hello *message_as_Hello() const {
     return message_type() == CoprocessorProto::Response_Hello ? static_cast<const CoprocessorProto::Hello *>(message()) : nullptr;
   }
+  const CoprocessorProto::TimeSync *message_as_TimeSync() const {
+    return message_type() == CoprocessorProto::Response_TimeSync ? static_cast<const CoprocessorProto::TimeSync *>(message()) : nullptr;
+  }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
@@ -822,6 +887,10 @@ template<> inline const CoprocessorProto::StreamChunk *ResponseEnvelope::message
 
 template<> inline const CoprocessorProto::Hello *ResponseEnvelope::message_as<CoprocessorProto::Hello>() const {
   return message_as_Hello();
+}
+
+template<> inline const CoprocessorProto::TimeSync *ResponseEnvelope::message_as<CoprocessorProto::TimeSync>() const {
+  return message_as_TimeSync();
 }
 
 struct ResponseEnvelopeBuilder {
@@ -926,6 +995,10 @@ inline bool VerifyResponse(::flatbuffers::VerifierTemplate<B> &verifier, const v
     }
     case Response_Hello: {
       auto ptr = reinterpret_cast<const CoprocessorProto::Hello *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case Response_TimeSync: {
+      auto ptr = reinterpret_cast<const CoprocessorProto::TimeSync *>(obj);
       return verifier.VerifyTable(ptr);
     }
     default: return true;

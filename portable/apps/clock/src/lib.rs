@@ -36,20 +36,72 @@ impl app_shell::AppFactory for ClockAppFactory {
 
     fn launch(&self, context: app_shell::ShellContext) -> Box<dyn Any> {
         let app = ClockApp::new().expect("Failed to create ClockApp");
-        let initial_time = Time::new(10, 42, 35);
+        let initial_time = if let Some(now) = app_shell::time::now() {
+            Time::new(now.hours, now.minutes, now.seconds)
+        } else {
+            Time::new(10, 42, 35)
+        };
         setup_clock(&app, &initial_time);
+
+        if let Some(now) = app_shell::time::now() {
+            let mut date_str = alloc::string::String::new();
+            use core::fmt::Write;
+            let _ = write!(date_str, "{}, {} {:02}", now.weekday_str(), now.month_str(), now.day);
+            app.set_date_str(date_str.as_str().into());
+        }
+
+        let manual_offset_minutes = alloc::rc::Rc::new(core::cell::RefCell::new(0i32));
+        let manual_offset_cb = manual_offset_minutes.clone();
+        let weak_app_for_adj = app.as_weak();
+        app.on_adjust_minutes(move |delta| {
+            if let Some(app) = weak_app_for_adj.upgrade() {
+                *manual_offset_cb.borrow_mut() += delta;
+                let mut time = Time::new(
+                    app.get_hours() as u8,
+                    app.get_minutes() as u8,
+                    app.get_seconds() as u8,
+                );
+                time.adjust_minutes(delta);
+                app.set_hours(time.hours as i32);
+                app.set_minutes(time.minutes as i32);
+            }
+        });
 
         let app_weak = app.as_weak();
         let timer = slint::Timer::default();
         let time = alloc::rc::Rc::new(core::cell::RefCell::new(initial_time));
         let time_clone = time.clone();
+        let manual_offset_timer = manual_offset_minutes.clone();
         timer.start(slint::TimerMode::Repeated, core::time::Duration::from_secs(1), move || {
             if let Some(app) = app_weak.upgrade() {
-                let mut time = time_clone.borrow_mut();
-                time.tick();
-                app.set_hours(time.hours as i32);
-                app.set_minutes(time.minutes as i32);
-                app.set_seconds(time.seconds as i32);
+                if let Some(now) = app_shell::time::now() {
+                    let mut time = time_clone.borrow_mut();
+                    *time = Time::new(now.hours, now.minutes, now.seconds);
+                    let offset = *manual_offset_timer.borrow();
+                    if offset != 0 {
+                        time.adjust_minutes(offset);
+                    }
+                    app.set_hours(time.hours as i32);
+                    app.set_minutes(time.minutes as i32);
+                    app.set_seconds(time.seconds as i32);
+
+                    let mut date_str = alloc::string::String::new();
+                    use core::fmt::Write;
+                    let _ = write!(
+                        date_str,
+                        "{}, {} {:02}",
+                        now.weekday_str(),
+                        now.month_str(),
+                        now.day
+                    );
+                    app.set_date_str(date_str.as_str().into());
+                } else {
+                    let mut time = time_clone.borrow_mut();
+                    time.tick();
+                    app.set_hours(time.hours as i32);
+                    app.set_minutes(time.minutes as i32);
+                    app.set_seconds(time.seconds as i32);
+                }
             }
         });
 

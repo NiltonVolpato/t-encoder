@@ -265,3 +265,29 @@ fn test_roundtrip_hello() {
     assert_eq!(parsed_resp.message_type(), proto::Response::Hello);
     assert!(parsed_resp.message_as_hello().is_some());
 }
+
+#[test]
+fn test_roundtrip_time_sync() {
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let time_sync = proto::TimeSync::create(
+        &mut builder,
+        &proto::TimeSyncArgs { epoch_seconds: 1790596867, subsec_micros: 123456 },
+    );
+    let env = proto::ResponseEnvelope::create(
+        &mut builder,
+        &proto::ResponseEnvelopeArgs {
+            message_type: proto::Response::TimeSync,
+            message: Some(time_sync.as_union_value()),
+        },
+    );
+    builder.finish_size_prefixed(env, None);
+    let packet = encode_packet(builder.finished_data());
+
+    let mut decoded = [0u8; 128];
+    let payload = decode_packet(&packet, &mut decoded).unwrap();
+    let parsed = crate::parse_response_envelope(payload).unwrap();
+    assert_eq!(parsed.message_type(), proto::Response::TimeSync);
+    let sync = parsed.message_as_time_sync().unwrap();
+    assert_eq!(sync.epoch_seconds(), 1790596867);
+    assert_eq!(sync.subsec_micros(), 123456);
+}

@@ -54,6 +54,7 @@ static_cell = "2.1"
 critical-section = "1.2"
 panic-rtt-target = { version = "0.2.0", features = ["defmt"] }
 rtt-target = { version = "0.6.2", features = ["defmt"] }
+jiff = { version = "0.2.10", default-features = false, features = ["static"] }
 
 app-launcher = { path = "../portable/apps/launcher", default-features = false, features = ["apps"] }
 app-shell = { path = "../portable/crates/app-shell", default-features = false }

@@ -11,6 +11,7 @@ pub mod feedback;
 pub mod lifecycle;
 pub mod perf;
 pub mod profile;
+pub mod time;
 
 pub use feedback::Feedback;
 pub use lifecycle::{
@@ -18,6 +19,7 @@ pub use lifecycle::{
 };
 pub use perf::{FrameCycles, PerfSummary, PerfTracker};
 pub use profile::{DEFAULT_TABLE_CAPACITY, PcSample, SampleTable};
+pub use time::WallTime;
 
 #[cfg(test)]
 mod tests {

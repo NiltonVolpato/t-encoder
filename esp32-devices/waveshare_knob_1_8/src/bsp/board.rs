@@ -57,6 +57,7 @@ pub struct Core0Peripherals {
     pub profiler_timer: TIMG1<'static>,
     pub coprocessor: CoprocessorUartPeripherals,
     pub battery: BatteryPeripherals,
+    pub lpwr: LPWR<'static>,
 }
 
 /// Hardware peripherals serviced by Core 1 (display rendering and DMA flushing).
@@ -104,6 +105,7 @@ impl Board {
                     rx: p.GPIO48,
                 },
                 battery: BatteryPeripherals { adc: p.ADC1, pin: p.GPIO1 },
+                lpwr: p.LPWR,
             },
             core1: Core1Peripherals {
                 display: DisplayPeripherals {

@@ -3595,10 +3595,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "378268a1116ad67ae6228701118ac9f491d78fda38a40a1f1a9e1348de6f7212"
 dependencies = [
  "jiff-core",
+ "jiff-tzdb",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
 ]
+
+[[package]]
+name = "jiff-tzdb"
+version = "0.1.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "142bd39932ad231f10513df9ab62661fead8719872150b7ad02a2df79f4e141e"
 
 [[package]]
 name = "jni"
@@ -6568,6 +6575,7 @@ dependencies = [
  "esp-rtos",
  "heapless 0.8.0",
  "i-slint-renderer-software",
+ "jiff",
  "nb 1.1.0",
  "panic-rtt-target",
  "rtt-target",

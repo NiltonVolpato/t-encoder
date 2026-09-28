@@ -11,6 +11,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/timers.h"
 #include "nvs_flash.h"
+#include "sntp_service.h"
 #include "uart_protocol.h"
 #include "wifi_manager.h"
 
@@ -30,6 +31,13 @@ void on_wifi_status_changed(bool connected, std::string_view ssid,
 
   // Forward status event to ESP32-S3 over UART
   uart_send_wifi_status(connected, ssid, ip_addr, rssi);
+
+  // Synchronize network time via SNTP when connected
+  if (connected) {
+    sntp_service_start();
+  } else {
+    sntp_service_stop();
+  }
 
   // Update BLE Improv status if provisioning session is active
   if (ble_is_active()) {

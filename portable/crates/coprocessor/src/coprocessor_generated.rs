@@ -228,19 +228,20 @@ pub mod coprocessor_proto {
         since = "2.0.0",
         note = "Use associated constants instead. This will no longer be generated in 2021."
     )]
-    pub const ENUM_MAX_RESPONSE: u8 = 5;
+    pub const ENUM_MAX_RESPONSE: u8 = 6;
     #[deprecated(
         since = "2.0.0",
         note = "Use associated constants instead. This will no longer be generated in 2021."
     )]
     #[allow(non_camel_case_types)]
-    pub const ENUM_VALUES_RESPONSE: [Response; 6] = [
+    pub const ENUM_VALUES_RESPONSE: [Response; 7] = [
         Response::NONE,
         Response::Heartbeat,
         Response::WifiStatus,
         Response::ProvisioningStatus,
         Response::StreamChunk,
         Response::Hello,
+        Response::TimeSync,
     ];
 
     #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -254,9 +255,10 @@ pub mod coprocessor_proto {
         pub const ProvisioningStatus: Self = Self(3);
         pub const StreamChunk: Self = Self(4);
         pub const Hello: Self = Self(5);
+        pub const TimeSync: Self = Self(6);
 
         pub const ENUM_MIN: u8 = 0;
-        pub const ENUM_MAX: u8 = 5;
+        pub const ENUM_MAX: u8 = 6;
         pub const ENUM_VALUES: &'static [Self] = &[
             Self::NONE,
             Self::Heartbeat,
@@ -264,6 +266,7 @@ pub mod coprocessor_proto {
             Self::ProvisioningStatus,
             Self::StreamChunk,
             Self::Hello,
+            Self::TimeSync,
         ];
         /// Returns the variant's name or "" if unknown.
         pub fn variant_name(self) -> Option<&'static str> {
@@ -274,6 +277,7 @@ pub mod coprocessor_proto {
                 Self::ProvisioningStatus => Some("ProvisioningStatus"),
                 Self::StreamChunk => Some("StreamChunk"),
                 Self::Hello => Some("Hello"),
+                Self::TimeSync => Some("TimeSync"),
                 _ => None,
             }
         }
@@ -1259,6 +1263,120 @@ pub mod coprocessor_proto {
             ds.finish()
         }
     }
+    pub enum TimeSyncOffset {}
+    #[derive(Copy, Clone, PartialEq)]
+
+    pub struct TimeSync<'a> {
+        pub _tab: ::flatbuffers::Table<'a>,
+    }
+
+    impl<'a> ::flatbuffers::Follow<'a> for TimeSync<'a> {
+        type Inner = TimeSync<'a>;
+        #[inline]
+        unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+            Self { _tab: unsafe { ::flatbuffers::Table::new(buf, loc) } }
+        }
+    }
+
+    impl<'a> TimeSync<'a> {
+        pub const VT_EPOCH_SECONDS: ::flatbuffers::VOffsetT = 4;
+        pub const VT_SUBSEC_MICROS: ::flatbuffers::VOffsetT = 6;
+
+        #[inline]
+        pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
+            TimeSync { _tab: table }
+        }
+        #[allow(unused_mut)]
+        pub fn create<
+            'bldr: 'args,
+            'args: 'mut_bldr,
+            'mut_bldr,
+            A: ::flatbuffers::Allocator + 'bldr,
+        >(
+            _fbb: &'mut_bldr mut ::flatbuffers::FlatBufferBuilder<'bldr, A>,
+            args: &'args TimeSyncArgs,
+        ) -> ::flatbuffers::WIPOffset<TimeSync<'bldr>> {
+            let mut builder = TimeSyncBuilder::new(_fbb);
+            builder.add_epoch_seconds(args.epoch_seconds);
+            builder.add_subsec_micros(args.subsec_micros);
+            builder.finish()
+        }
+
+        #[inline]
+        pub fn epoch_seconds(&self) -> u64 {
+            // Safety:
+            // Created from valid Table for this object
+            // which contains a valid value in this slot
+            unsafe { self._tab.get::<u64>(TimeSync::VT_EPOCH_SECONDS, Some(0)).unwrap() }
+        }
+        #[inline]
+        pub fn subsec_micros(&self) -> u32 {
+            // Safety:
+            // Created from valid Table for this object
+            // which contains a valid value in this slot
+            unsafe { self._tab.get::<u32>(TimeSync::VT_SUBSEC_MICROS, Some(0)).unwrap() }
+        }
+    }
+
+    impl ::flatbuffers::Verifiable for TimeSync<'_> {
+        #[inline]
+        fn run_verifier(
+            v: &mut ::flatbuffers::Verifier,
+            pos: usize,
+        ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
+            v.visit_table(pos)?
+                .visit_field::<u64>("epoch_seconds", Self::VT_EPOCH_SECONDS, false)?
+                .visit_field::<u32>("subsec_micros", Self::VT_SUBSEC_MICROS, false)?
+                .finish();
+            Ok(())
+        }
+    }
+    pub struct TimeSyncArgs {
+        pub epoch_seconds: u64,
+        pub subsec_micros: u32,
+    }
+    impl<'a> Default for TimeSyncArgs {
+        #[inline]
+        fn default() -> Self {
+            TimeSyncArgs { epoch_seconds: 0, subsec_micros: 0 }
+        }
+    }
+
+    pub struct TimeSyncBuilder<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> {
+        fbb_: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+        start_: ::flatbuffers::WIPOffset<::flatbuffers::TableUnfinishedWIPOffset>,
+    }
+    impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> TimeSyncBuilder<'a, 'b, A> {
+        #[inline]
+        pub fn add_epoch_seconds(&mut self, epoch_seconds: u64) {
+            self.fbb_.push_slot::<u64>(TimeSync::VT_EPOCH_SECONDS, epoch_seconds, 0);
+        }
+        #[inline]
+        pub fn add_subsec_micros(&mut self, subsec_micros: u32) {
+            self.fbb_.push_slot::<u32>(TimeSync::VT_SUBSEC_MICROS, subsec_micros, 0);
+        }
+        #[inline]
+        pub fn new(
+            _fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+        ) -> TimeSyncBuilder<'a, 'b, A> {
+            let start = _fbb.start_table();
+            TimeSyncBuilder { fbb_: _fbb, start_: start }
+        }
+        #[inline]
+        pub fn finish(self) -> ::flatbuffers::WIPOffset<TimeSync<'a>> {
+            let o = self.fbb_.end_table(self.start_);
+            ::flatbuffers::WIPOffset::new(o.value())
+        }
+    }
+
+    impl ::core::fmt::Debug for TimeSync<'_> {
+        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+            let mut ds = f.debug_struct("TimeSync");
+            ds.field("epoch_seconds", &self.epoch_seconds());
+            ds.field("subsec_micros", &self.subsec_micros());
+            ds.finish()
+        }
+    }
     pub enum RequestEnvelopeOffset {}
     #[derive(Copy, Clone, PartialEq)]
 
@@ -1695,6 +1813,21 @@ pub mod coprocessor_proto {
                 None
             }
         }
+
+        #[inline]
+        #[allow(non_snake_case)]
+        pub fn message_as_time_sync(&self) -> Option<TimeSync<'a>> {
+            if self.message_type() == Response::TimeSync {
+                self.message().map(|t| {
+                    // Safety:
+                    // Created from a valid Table for this object
+                    // Which contains a valid union in this slot
+                    unsafe { TimeSync::init_from_table(t) }
+                })
+            } else {
+                None
+            }
+        }
     }
 
     impl ::flatbuffers::Verifiable for ResponseEnvelope<'_> {
@@ -1711,6 +1844,7 @@ pub mod coprocessor_proto {
           Response::ProvisioningStatus => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<ProvisioningStatus>>("Response::ProvisioningStatus", pos),
           Response::StreamChunk => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<StreamChunk>>("Response::StreamChunk", pos),
           Response::Hello => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<Hello>>("Response::Hello", pos),
+          Response::TimeSync => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<TimeSync>>("Response::TimeSync", pos),
           _ => Ok(()),
         }
      })?
@@ -1813,6 +1947,16 @@ pub mod coprocessor_proto {
                 }
                 Response::Hello => {
                     if let Some(x) = self.message_as_hello() {
+                        ds.field("message", &x)
+                    } else {
+                        ds.field(
+                            "message",
+                            &"InvalidFlatbuffer: Union discriminant does not match value.",
+                        )
+                    }
+                }
+                Response::TimeSync => {
+                    if let Some(x) = self.message_as_time_sync() {
                         ds.field("message", &x)
                     } else {
                         ds.field(

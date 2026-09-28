@@ -55,6 +55,12 @@ table ProvisioningStatus {
 // Handshake message sent on boot to establish link and detect peer reboots
 table Hello {}
 
+// Network time synchronization event from co-processor to S3
+table TimeSync {
+    epoch_seconds: uint64;
+    subsec_micros: uint32;
+}
+
 // Union of all Requests (S3 -> Co-processor)
 union Request {
     Heartbeat,
@@ -72,6 +78,7 @@ union Response {
     ProvisioningStatus,
     StreamChunk,
     Hello,
+    TimeSync,
 }
 
 table RequestEnvelope {

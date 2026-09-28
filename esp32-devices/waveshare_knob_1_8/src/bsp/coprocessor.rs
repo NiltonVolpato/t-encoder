@@ -135,6 +135,11 @@ fn handle_coprocessor_response(payload: &[u8], last_uptime: &mut u64) {
                     );
                 }
             }
+            proto::Response::TimeSync => {
+                if let Some(sync) = env.message_as_time_sync() {
+                    crate::bsp::rtc::sync_rtc(sync.epoch_seconds(), sync.subsec_micros());
+                }
+            }
             _ => {
                 debug!("[COPROCESSOR] Received response type: {:?}", env.message_type().0);
             }

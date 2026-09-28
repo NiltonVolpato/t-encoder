@@ -30,6 +30,7 @@ void uart_send_wifi_status(bool connected, std::string_view ssid,
 void uart_send_heartbeat_response(uint64_t uptime_ms, uint32_t heap_free);
 void uart_send_provisioning_status(CoprocessorProto::ProvisioningState state);
 void uart_send_hello();
+void uart_send_time_sync(uint64_t epoch_seconds, uint32_t subsec_micros);
 bool uart_is_linked();
 
 }  // namespace coprocessor

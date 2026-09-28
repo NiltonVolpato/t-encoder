@@ -10,6 +10,7 @@ pub mod display;
 pub mod haptics;
 pub mod platform;
 pub mod rotary;
+pub mod rtc;
 pub mod touch;
 
 pub use battery::{battery_task, get_battery_percent};
@@ -33,6 +34,7 @@ use embassy_sync::mutex::Mutex;
 use esp_hal::gpio::{Input, InputConfig, Pull};
 use esp_hal::i2c::master::{BusTimeout, Config as I2cConfig, I2c};
 use esp_hal::time::Rate;
+pub use rtc::sync_rtc;
 
 pub type SharedI2cBus = Mutex<CriticalSectionRawMutex, I2c<'static, esp_hal::Async>>;
 pub type SharedI2c = I2cDevice<'static, CriticalSectionRawMutex, I2c<'static, esp_hal::Async>>;
@@ -95,6 +97,9 @@ impl Bsp {
 
         // 4. Enable PIE SIMD coprocessor
         simd::enable_pie();
+
+        // 5. Initialize hardware RTC
+        rtc::init(core0.lpwr);
 
         Self {
             window,

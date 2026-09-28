@@ -3,6 +3,8 @@
 
 #include "uart_protocol.h"
 
+#include <sys/time.h>
+
 #include <array>
 #include <cinttypes>
 #include <cstring>
@@ -138,6 +140,14 @@ void handle_rx_packet(const uint8_t* payload, size_t payload_len) {
             rssi = ap_info.rssi;
           }
           uart_send_wifi_status(true, wifi_get_ssid(), wifi_get_ip(), rssi);
+        }
+        struct timeval tv;
+        gettimeofday(&tv, nullptr);
+        if (tv.tv_sec > 1700000000) {
+          ESP_LOGI(TAG, "Sending current synced time on Hello link: %lld",
+                   static_cast<long long>(tv.tv_sec));
+          uart_send_time_sync(static_cast<uint64_t>(tv.tv_sec),
+                              static_cast<uint32_t>(tv.tv_usec));
         }
       }
       break;
@@ -311,6 +321,15 @@ void uart_send_hello() {
   auto hello = CoprocessorProto::CreateHello(fbb);
   auto env = CoprocessorProto::CreateResponseEnvelope(
       fbb, CoprocessorProto::Response_Hello, hello.Union());
+  send_response_envelope(fbb, env);
+}
+
+void uart_send_time_sync(uint64_t epoch_seconds, uint32_t subsec_micros) {
+  flatbuffers::FlatBufferBuilder fbb(128);
+  auto time_sync =
+      CoprocessorProto::CreateTimeSync(fbb, epoch_seconds, subsec_micros);
+  auto env = CoprocessorProto::CreateResponseEnvelope(
+      fbb, CoprocessorProto::Response_TimeSync, time_sync.Union());
   send_response_envelope(fbb, env);
 }
 

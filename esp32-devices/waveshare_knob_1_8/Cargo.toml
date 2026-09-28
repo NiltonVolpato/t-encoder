@@ -29,6 +29,7 @@ drv2605 = { workspace = true }
 coprocessor = { workspace = true }
 theme = { workspace = true }
 nb = { workspace = true }
+jiff = { workspace = true }
 
 esp-hal = { workspace = true }
 esp-rtos = { workspace = true }
