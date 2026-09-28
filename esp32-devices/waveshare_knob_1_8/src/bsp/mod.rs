@@ -13,7 +13,7 @@ pub mod rotary;
 pub mod rtc;
 pub mod touch;
 
-pub use battery::{battery_task, get_battery_percent};
+pub use battery::{battery_task, get_battery_percent, is_plugged_in};
 pub use board::{
     BatteryPeripherals, Board, CoprocessorUartPeripherals, Core0Peripherals, Core1Peripherals,
     DisplayPeripherals, EncoderPeripherals, I2c0Peripherals, SystemPeripherals,

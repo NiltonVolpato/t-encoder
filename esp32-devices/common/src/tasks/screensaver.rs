@@ -65,6 +65,12 @@ pub async fn screensaver_task() {
             // Timer expired without interaction; report and wait for next timeout.
             TimeoutState::TimedOut => {
                 if let Some(stage) = current_stage {
+                    if stage.action == ScreenEvent::TurnOff
+                        && theme::get_system_menu_state().is_plugged_in
+                    {
+                        // Stop at 25% dimming when plugged in; do not turn off display panel.
+                        continue;
+                    }
                     send_screen_event(stage.action);
                 }
             }

@@ -6,7 +6,7 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use coprocessor::{FrameAccumulator, encode_packet, flatbuffers, parse_response_envelope, proto};
-use defmt::{debug, error, info, warn};
+use defmt::{debug, error, info, trace, warn};
 use embassy_futures::join::join;
 use embassy_futures::select::{Either, select};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
@@ -128,7 +128,7 @@ fn handle_coprocessor_response(payload: &[u8], last_uptime: &mut u64) {
                         esp_hal::system::software_reset();
                     }
                     *last_uptime = uptime;
-                    debug!(
+                    trace!(
                         "[COPROCESSOR] Heartbeat ACK: uptime={}ms, free_heap={}",
                         uptime,
                         hb.heap_free()
@@ -175,12 +175,12 @@ pub async fn coprocessor_task(
         loop {
             match rx.read_async(&mut buf).await {
                 Ok(n) => {
-                    debug!("[COPROCESSOR] UART RX: read {} bytes", n);
+                    trace!("[COPROCESSOR] UART RX: read {} bytes", n);
                     for &b in &buf[..n] {
                         if let Some(res) = accumulator.push_byte(b) {
                             match res {
                                 Ok(payload) => {
-                                    debug!(
+                                    trace!(
                                         "[COPROCESSOR] Frame assembled ({} bytes), handling response",
                                         payload.len()
                                     );
@@ -250,7 +250,7 @@ pub async fn coprocessor_task(
                     );
                     builder.finish_size_prefixed(env, None);
                     let packet = encode_packet(builder.finished_data());
-                    debug!("[COPROCESSOR] TX Heartbeat request sent ({} bytes)", packet.len());
+                    trace!("[COPROCESSOR] TX Heartbeat request sent ({} bytes)", packet.len());
                     if let Err(e) = tx.write_async(&packet).await {
                         error!("[COPROCESSOR] UART TX error: {:?}", defmt::Debug2Format(&e));
                     }
