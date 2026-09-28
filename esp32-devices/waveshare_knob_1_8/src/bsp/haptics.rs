@@ -10,17 +10,21 @@ use embassy_sync::signal::Signal;
 
 static HAPTIC_WAKER: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 
+fn wake_haptics() {
+    HAPTIC_WAKER.signal(());
+}
+
 /// Queues a feedback event and wakes the parked haptic task.
 pub fn signal_feedback(feedback: Feedback) {
     if !app_shell::feedback::signal(feedback) {
         defmt::error!("feedback queue full, dropped {}", defmt::Debug2Format(&feedback));
     }
-    HAPTIC_WAKER.signal(());
 }
 
 /// Asynchronous Embassy task serving haptic feedback requests via DRV2605.
 #[embassy_executor::task]
 pub async fn haptic_task(i2c: super::SharedI2c) {
+    app_shell::feedback::register_waker(wake_haptics);
     let mut drv = Drv2605::new(i2c);
 
     if let Err(e) = drv.init().await {

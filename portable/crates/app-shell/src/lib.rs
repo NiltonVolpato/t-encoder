@@ -162,5 +162,16 @@ mod tests {
         assert_eq!(feedback::try_receive(), Some(Feedback::Haptic));
         assert_eq!(feedback::try_receive(), Some(Feedback::Tone { hz: 440, ms: 100 }));
         assert_eq!(feedback::try_receive(), None);
+
+        static WAKE_COUNT: core::sync::atomic::AtomicUsize =
+            core::sync::atomic::AtomicUsize::new(0);
+        fn test_waker() {
+            WAKE_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        }
+
+        feedback::register_waker(test_waker);
+        feedback::signal(Feedback::Click);
+        assert_eq!(WAKE_COUNT.load(core::sync::atomic::Ordering::Relaxed), 1);
+        let _ = feedback::try_receive();
     }
 }

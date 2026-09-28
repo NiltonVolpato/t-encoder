@@ -242,11 +242,7 @@ impl Co5300 {
         self.command(0x28, &[]).await
     }
 
-    async fn command<'a>(
-        &'a mut self,
-        command: u8,
-        parameters: &[u8],
-    ) -> Result<(), esp_hal::spi::Error> {
+    async fn command(&mut self, command: u8, parameters: &[u8]) -> Result<(), esp_hal::spi::Error> {
         let Port { spi, mut tx } = self.port.take().unwrap();
         let len = parameters.len();
         if len > 0 {

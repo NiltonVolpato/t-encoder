@@ -16,6 +16,27 @@ use esp_hal::peripherals::{GPIO38, GPIO48, UART1};
 use esp_hal::uart::{Config, Uart};
 
 static IS_LINKED: AtomicBool = AtomicBool::new(false);
+static WIFI_CONNECTED: AtomicBool = AtomicBool::new(false);
+static IS_PROVISIONING: AtomicBool = AtomicBool::new(false);
+static WIFI_SSID: embassy_sync::blocking_mutex::Mutex<
+    CriticalSectionRawMutex,
+    core::cell::RefCell<heapless::String<32>>,
+> = embassy_sync::blocking_mutex::Mutex::new(core::cell::RefCell::new(heapless::String::new()));
+
+/// Returns true if currently connected to Wi-Fi.
+pub fn is_wifi_connected() -> bool {
+    WIFI_CONNECTED.load(Ordering::Relaxed)
+}
+
+/// Returns true if BLE Improv provisioning session is active.
+pub fn is_provisioning() -> bool {
+    IS_PROVISIONING.load(Ordering::Relaxed)
+}
+
+/// Returns the current connected SSID, if any.
+pub fn get_wifi_ssid() -> heapless::String<32> {
+    WIFI_SSID.lock(|cell| cell.borrow().clone())
+}
 
 #[derive(Debug, Clone)]
 pub enum CoprocessorCommand {
@@ -50,6 +71,16 @@ fn handle_coprocessor_response(payload: &[u8], last_uptime: &mut u64) {
         Ok(env) => match env.message_type() {
             proto::Response::WifiStatus => {
                 if let Some(status) = env.message_as_wifi_status() {
+                    WIFI_CONNECTED.store(status.connected(), Ordering::Relaxed);
+                    let mut s = heapless::String::new();
+                    if let Some(ssid) = status.ssid() {
+                        let _ = s.push_str(ssid);
+                        WIFI_SSID.lock(|cell| *cell.borrow_mut() = s.clone());
+                    }
+                    theme::update_system_menu_state(|menu| {
+                        menu.wifi_connected = status.connected();
+                        menu.wifi_ssid = s;
+                    });
                     debug!(
                         "[COPROCESSOR] Wi-Fi Status: connected={}, ssid={}, ip={}, rssi={}",
                         status.connected(),
@@ -61,6 +92,11 @@ fn handle_coprocessor_response(payload: &[u8], last_uptime: &mut u64) {
             }
             proto::Response::ProvisioningStatus => {
                 if let Some(status) = env.message_as_provisioning_status() {
+                    let active = status.state() == proto::ProvisioningState::Active;
+                    IS_PROVISIONING.store(active, Ordering::Relaxed);
+                    theme::update_system_menu_state(|menu| {
+                        menu.is_provisioning = active;
+                    });
                     debug!(
                         "[COPROCESSOR] Provisioning Status: {:?}",
                         defmt::Debug2Format(&status.state())

@@ -19,17 +19,15 @@ use esp_hal::time::Rate;
 /// Signal used to park and wake the buzzer task with zero CPU polling when idle.
 static BUZZER_WAKER: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 
+fn wake_buzzer() {
+    BUZZER_WAKER.signal(());
+}
+
 /// Queues a feedback event and wakes the parked buzzer task to play it.
-///
-/// This is the only entry point callers should use. `app_shell::feedback::signal`
-/// merely queues the event (it's platform-agnostic and doesn't know about
-/// `BUZZER_WAKER`); calling it directly would leave the event queued but the
-/// buzzer task parked until something else happens to wake it.
 pub fn signal_feedback(feedback: Feedback) {
     if !app_shell::feedback::signal(feedback) {
         defmt::error!("feedback queue full, dropped {}", defmt::Debug2Format(&feedback));
     }
-    BUZZER_WAKER.signal(());
 }
 
 /// A wrapper around `esp_hal::ledc::timer::Timer` that provides interior mutability
@@ -104,6 +102,8 @@ pub async fn buzzer_task(ledc_periph: LEDC<'static>, pin: GPIO17<'static>) {
             }
         }};
     }
+
+    app_shell::feedback::register_waker(wake_buzzer);
 
     // Initial boot beep (1,100 Hz for 80ms)
     pulse!(1100, 50, 80);

@@ -106,6 +106,7 @@ pub async fn run_event_loop(window_holder: WindowHolder) -> ! {
                     .await;
             }
         },
+        async |_action| {},
         async |window: Rc<MinimalSoftwareWindow>| {
             window
                 .draw_async_if_needed(async |renderer| {

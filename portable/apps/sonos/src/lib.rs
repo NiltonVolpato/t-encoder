@@ -37,7 +37,13 @@ impl app_shell::AppFactory for SonosAppFactory {
     fn launch(&self, context: app_shell::ShellContext) -> Box<dyn Any> {
         let app = SonosApp::new().expect("Failed to create SonosApp");
         let ctx = context.clone();
-        theme::setup_navigation(&app, move || ctx.exit());
+        theme::setup_navigation(
+            &app,
+            move || ctx.exit(),
+            || {
+                app_shell::feedback::signal(app_shell::Feedback::Click);
+            },
+        );
         app.on_exit(move || context.exit());
         let _ = app.show();
         Box::new(app)

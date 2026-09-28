@@ -72,6 +72,14 @@ impl AppFactory for LauncherAppFactory {
             }
         });
 
+        theme::setup_navigation(
+            &launcher,
+            || {},
+            || {
+                app_shell::feedback::signal(app_shell::Feedback::Click);
+            },
+        );
+
         let _ = launcher.show();
         Box::new(launcher)
     }

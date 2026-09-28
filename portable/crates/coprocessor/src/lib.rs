@@ -6,6 +6,7 @@
 extern crate alloc;
 
 pub mod codec;
+#[allow(clippy::all)]
 pub mod coprocessor_generated;
 
 pub use codec::{CodecError, FrameAccumulator, decode_packet, encode_packet};

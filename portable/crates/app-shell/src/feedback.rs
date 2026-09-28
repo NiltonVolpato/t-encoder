@@ -26,6 +26,18 @@ pub enum Feedback {
 }
 
 static QUEUE: Mutex<RefCell<VecDeque<Feedback>>> = Mutex::new(RefCell::new(VecDeque::new()));
+type WakerSlot = Mutex<RefCell<Option<fn()>>>;
+static WAKER: WakerSlot = Mutex::new(RefCell::new(None));
+
+/// Registers a callback to be invoked whenever a feedback event is signaled.
+///
+/// Embedded drivers (such as DRV2605 haptics or piezo buzzer) can register
+/// a function here that wakes their parked async Embassy task.
+pub fn register_waker(waker: fn()) {
+    critical_section::with(|cs| {
+        *WAKER.borrow(cs).borrow_mut() = Some(waker);
+    });
+}
 
 /// Signals a feedback event to the system.
 ///
@@ -33,15 +45,19 @@ static QUEUE: Mutex<RefCell<VecDeque<Feedback>>> = Mutex::new(RefCell::new(VecDe
 /// and `false` is returned so the caller can report it (this crate is platform-agnostic
 /// and has no logging facility of its own).
 pub fn signal(feedback: Feedback) -> bool {
-    critical_section::with(|cs| {
+    let (queued, waker) = critical_section::with(|cs| {
         let mut queue = QUEUE.borrow(cs).borrow_mut();
         if queue.len() < MAX_QUEUE_CAPACITY {
             queue.push_back(feedback);
-            true
+            (true, *WAKER.borrow(cs).borrow())
         } else {
-            false
+            (false, None)
         }
-    })
+    });
+    if let Some(w) = waker {
+        w();
+    }
+    queued
 }
 
 /// Attempts to receive the next queued feedback event.

@@ -294,12 +294,7 @@ const SETTLE_TIME: Duration = Duration::from_micros(40);
 /// accumulates every edge in the meantime.
 pub async fn rotary_decode_once() {
     ROTARY_SIGNAL.wait().await;
-    loop {
-        match select(ROTARY_SIGNAL.wait(), Timer::after(SETTLE_TIME)).await {
-            Either::First(()) => {}
-            Either::Second(()) => break,
-        }
-    }
+    while let Either::First(()) = select(ROTARY_SIGNAL.wait(), Timer::after(SETTLE_TIME)).await {}
     let (_raw, detents) = critical_section::with(|cs| {
         let mut state = ROTARY.borrow_ref_mut(cs);
         let Some(state) = state.as_mut() else {

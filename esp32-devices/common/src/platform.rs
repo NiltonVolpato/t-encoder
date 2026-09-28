@@ -157,17 +157,20 @@ async fn next_event(timeout: Option<Duration>) -> Option<Event> {
 ///
 /// Handles event draining, Slint timers and animations, input dispatching,
 /// sleep/wake state management, and delegates frame rendering to `render_frame`.
-pub async fn run_event_loop<F, S, SF, RF, RFF>(
+pub async fn run_event_loop<F, S, SF, M, MF, RF, RFF>(
     window_holder: WindowHolder,
     feedback: &F,
-    base_brightness: u8,
+    mut base_brightness: u8,
     mut on_screen_event: S,
+    mut on_menu_action: M,
     mut render_frame: RF,
 ) -> !
 where
     F: FeedbackSink,
     S: FnMut(ScreenEvent) -> SF,
     SF: Future<Output = ()>,
+    M: FnMut(theme::SystemMenuAction) -> MF,
+    MF: Future<Output = ()>,
     RF: FnMut(Rc<MinimalSoftwareWindow>) -> RFF,
     RFF: Future<Output = bool>,
 {
@@ -186,7 +189,28 @@ where
             continue;
         };
 
-        // 2. Process ALL pending events before drawing
+        // 2a. Process SystemMenu actions from the UI
+        while let Some(action) = theme::try_receive_system_menu_action() {
+            match action {
+                theme::SystemMenuAction::BrightnessChanged(percent) => {
+                    let duty = theme::brightness_percent_to_duty(percent);
+                    base_brightness = duty;
+                    on_screen_event(ScreenEvent::DimAbsolute(duty)).await;
+                }
+                theme::SystemMenuAction::DrawerClosed => {
+                    let percent = theme::get_system_menu_state().brightness_percent as u8;
+                    let _ = crate::storage::save_settings(crate::storage::SystemSettings {
+                        brightness_percent: percent,
+                    })
+                    .await;
+                }
+                other => {
+                    on_menu_action(other).await;
+                }
+            }
+        }
+
+        // 2b. Process ALL pending events before drawing
         let mut event = pending_event.take().or_else(try_receive_event);
         while let Some(current_event) = event {
             match current_event {

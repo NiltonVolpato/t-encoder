@@ -44,12 +44,19 @@ pub struct CoprocessorUartPeripherals {
     pub rx: GPIO48<'static>,
 }
 
+/// Peripherals required for battery voltage ADC measurement.
+pub struct BatteryPeripherals {
+    pub adc: ADC1<'static>,
+    pub pin: GPIO1<'static>,
+}
+
 /// Hardware peripherals serviced by Core 0 (inputs, profiling, haptics, co-processor).
 pub struct Core0Peripherals {
     pub i2c0: I2c0Peripherals,
     pub encoder: EncoderPeripherals,
     pub profiler_timer: TIMG1<'static>,
     pub coprocessor: CoprocessorUartPeripherals,
+    pub battery: BatteryPeripherals,
 }
 
 /// Hardware peripherals serviced by Core 1 (display rendering and DMA flushing).
@@ -96,6 +103,7 @@ impl Board {
                     tx: p.GPIO38,
                     rx: p.GPIO48,
                 },
+                battery: BatteryPeripherals { adc: p.ADC1, pin: p.GPIO1 },
             },
             core1: Core1Peripherals {
                 display: DisplayPeripherals {

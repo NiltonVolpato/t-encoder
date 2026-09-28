@@ -70,7 +70,11 @@ pub async fn run_event_loop(window_holder: WindowHolder) -> ! {
         .try_send(fb)
         .expect("FLUSH_RETURN_CHANNEL full while seeding framebuffer");
 
-    let base_brightness: u8 = 255;
+    let settings = common::storage::init().await;
+    theme::update_system_menu_state(|s| {
+        s.brightness_percent = settings.brightness_percent as i32;
+    });
+    let base_brightness = theme::brightness_percent_to_duty(settings.brightness_percent as i32);
 
     run_common_event_loop(
         window_holder,
@@ -97,6 +101,17 @@ pub async fn run_event_loop(window_holder: WindowHolder) -> ! {
                     .send(DisplayCommand::SetBrightness(base_brightness))
                     .await;
             }
+        },
+        async |menu_action| match menu_action {
+            theme::SystemMenuAction::RequestProvisioning => {
+                defmt::info!("[MENU] Starting co-processor BLE provisioning (60s)");
+                crate::bsp::coprocessor::start_provisioning(60);
+            }
+            theme::SystemMenuAction::StopProvisioning => {
+                defmt::info!("[MENU] Stopping co-processor BLE provisioning");
+                crate::bsp::coprocessor::stop_provisioning();
+            }
+            _ => {}
         },
         async |window: Rc<MinimalSoftwareWindow>| {
             window

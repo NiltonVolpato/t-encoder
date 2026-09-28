@@ -20,8 +20,8 @@ use esp_hal::time::Instant;
 use esp_hal::timer::timg::TimerGroup;
 use panic_rtt_target as _;
 use waveshare_knob_1_8::bsp::{
-    Board, Bsp, Core1Peripherals, Sh8601, coprocessor_task, display_task, haptic_task, rotary_task,
-    run_event_loop, simd, touch_task,
+    Board, Bsp, Core1Peripherals, Sh8601, battery_task, coprocessor_task, display_task,
+    haptic_task, rotary_task, run_event_loop, simd, touch_task,
 };
 use waveshare_knob_1_8::tasks::{PROFILER_ENABLED, profiler_task, screensaver_task};
 
@@ -98,6 +98,9 @@ async fn main(spawner: Spawner) -> ! {
     spawner.spawn(
         coprocessor_task(bsp.coprocessor.uart, bsp.coprocessor.tx, bsp.coprocessor.rx)
             .expect("Failed to create coprocessor task"),
+    );
+    spawner.spawn(
+        battery_task(bsp.battery.adc, bsp.battery.pin).expect("Failed to create battery task"),
     );
     spawner.spawn(screensaver_task().expect("Failed to create screensaver task"));
     if PROFILER_ENABLED {

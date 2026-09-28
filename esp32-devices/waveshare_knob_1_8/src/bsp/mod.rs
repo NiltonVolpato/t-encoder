@@ -3,6 +3,7 @@
 
 //! Board Support Package (BSP) for Waveshare ESP32-S3-Knob-Touch-LCD-1.8.
 
+pub mod battery;
 pub mod board;
 pub mod coprocessor;
 pub mod display;
@@ -11,9 +12,10 @@ pub mod platform;
 pub mod rotary;
 pub mod touch;
 
+pub use battery::{battery_task, get_battery_percent};
 pub use board::{
-    Board, CoprocessorUartPeripherals, Core0Peripherals, Core1Peripherals, DisplayPeripherals,
-    EncoderPeripherals, I2c0Peripherals, SystemPeripherals,
+    BatteryPeripherals, Board, CoprocessorUartPeripherals, Core0Peripherals, Core1Peripherals,
+    DisplayPeripherals, EncoderPeripherals, I2c0Peripherals, SystemPeripherals,
 };
 pub use common::channels::{
     EVENTS, receive_event, report_user_activity, send_event, send_input_event, send_screen_event,
@@ -38,7 +40,8 @@ pub type SharedI2c = I2cDevice<'static, CriticalSectionRawMutex, I2c<'static, es
 static I2C_BUS: static_cell::StaticCell<SharedI2cBus> = static_cell::StaticCell::new();
 
 pub use coprocessor::{
-    CoprocessorCommand, connect_wifi, coprocessor_task, start_provisioning, stop_provisioning,
+    CoprocessorCommand, connect_wifi, coprocessor_task, get_wifi_ssid, is_provisioning,
+    is_wifi_connected, start_provisioning, stop_provisioning,
 };
 pub use haptics::{Feedback, haptic_task, signal_feedback};
 pub use platform::{EspPlatform, WaveshareFeedback, WindowHolder, run_event_loop};
@@ -53,6 +56,7 @@ pub struct Bsp {
     pub rotary_b: Input<'static>,
     pub profiler_timer: esp_hal::peripherals::TIMG1<'static>,
     pub coprocessor: CoprocessorUartPeripherals,
+    pub battery: BatteryPeripherals,
 }
 
 impl Bsp {
@@ -100,6 +104,7 @@ impl Bsp {
             rotary_b,
             profiler_timer: core0.profiler_timer,
             coprocessor: core0.coprocessor,
+            battery: core0.battery,
         }
     }
 }

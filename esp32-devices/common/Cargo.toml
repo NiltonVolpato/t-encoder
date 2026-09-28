@@ -21,6 +21,13 @@ critical-section          = { workspace = true }
 app-shell                 = { workspace = true }
 esp-alloc                 = { workspace = true }
 allocator-api2            = { workspace = true }
+theme                     = { workspace = true }
+esp-storage               = { workspace = true }
+embedded-storage          = { workspace = true }
+embedded-storage-async    = { workspace = true }
+sequential-storage        = { workspace = true }
+postcard                  = { workspace = true }
+serde                     = { workspace = true }
 
 [build-dependencies]
 cc = "1.0"

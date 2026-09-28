@@ -118,20 +118,291 @@ export component RotaryKnob inherits FocusScope {
     }
 }
 
+export global SystemMenu {
+    in-out property <bool> is-open: false;
+    in-out property <int> battery-percent: 100;
+    in-out property <bool> wifi-connected: false;
+    in-out property <string> wifi-ssid: "";
+    in-out property <bool> is-provisioning: false;
+    in-out property <int> brightness-percent: 80;
+
+    callback request-provisioning();
+    callback stop-provisioning();
+    callback brightness-changed(int);
+    callback drawer-closed();
+}
+
 export global Navigation {
     callback back() -> bool;
     callback quit() -> bool;
     callback exit();
+    callback threshold-reached();
 
     public function trigger-back() {
+        if SystemMenu.is-open {
+            SystemMenu.is-open = false;
+            SystemMenu.drawer-closed();
+            return;
+        }
         if !self.back() {
             self.exit();
         }
     }
 
     public function trigger-quit() {
+        if SystemMenu.is-open {
+            SystemMenu.is-open = false;
+            SystemMenu.drawer-closed();
+            return;
+        }
         if !self.quit() {
             self.exit();
+        }
+    }
+}
+
+export component DeviceMenuCard inherits Rectangle {
+    width: Theme.screen-size;
+    height: 315px;
+    border-bottom-left-radius: 28px;
+    border-bottom-right-radius: 28px;
+    background: #0b1326f2;
+    border-width: 1px;
+    border-color: #33415588;
+    clip: true;
+
+    callback close-requested();
+
+    Rectangle {
+        width: 270px;
+        x: (parent.width - self.width) / 2;
+        y: 0px;
+        height: parent.height;
+
+        VerticalLayout {
+            padding-top: 42px;
+            padding-bottom: 12px;
+            spacing: 12px;
+            alignment: start;
+
+            // 1. Centered Battery Badge
+            HorizontalLayout {
+                alignment: center;
+
+                Rectangle {
+                    height: 26px;
+                    border-radius: 13px;
+                    background: #1e293b99;
+                    border-width: 1px;
+                    border-color: #334155;
+
+                    HorizontalLayout {
+                        padding-left: 10px;
+                        padding-right: 12px;
+                        spacing: 6px;
+                        alignment: center;
+
+                        // Battery Outline
+                        Rectangle {
+                            y: (parent.height - self.height) / 2;
+                            width: 22px;
+                            height: 12px;
+                            border-radius: 3px;
+                            border-width: 1px;
+                            border-color: #94a3b8;
+                            background: transparent;
+
+                            // Fill
+                            Rectangle {
+                                x: 2px;
+                                y: 2px;
+                                width: Math.max(2px, (parent.width - 4px) * Math.min(100, Math.max(0, SystemMenu.battery-percent)) / 100);
+                                height: parent.height - 4px;
+                                border-radius: 1px;
+                                background: SystemMenu.battery-percent <= 20 ? #ef4444 : #10b981;
+                            }
+
+                            // Pip (centered positive terminal)
+                            Rectangle {
+                                x: parent.width;
+                                y: (parent.height - self.height) / 2;
+                                width: 2px;
+                                height: 6px;
+                                border-radius: 1px;
+                                background: #94a3b8;
+                            }
+                        }
+
+                        TextSm {
+                            text: "\{SystemMenu.battery-percent}%";
+                            color: #f1f5f9;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+
+            // 2. Material You Wi-Fi Pill Tile
+            wifi-tile := Rectangle {
+                height: 56px;
+                border-radius: 28px;
+                background: SystemMenu.is-provisioning ? #0284c7 : (SystemMenu.wifi-connected ? #1e3a5f : #1e293b);
+                border-width: 1.5px;
+                border-color: (SystemMenu.is-provisioning || SystemMenu.wifi-connected) ? #38bdf8 : #334155;
+
+                animate background { duration: 150ms; }
+                animate border-color { duration: 150ms; }
+
+                TouchArea {
+                    clicked => {
+                        if SystemMenu.is-provisioning {
+                            SystemMenu.stop-provisioning();
+                        } else {
+                            SystemMenu.request-provisioning();
+                        }
+                    }
+                }
+
+                HorizontalLayout {
+                    padding-left: 16px;
+                    padding-right: 18px;
+                    spacing: 12px;
+                    alignment: space-between;
+
+                    HorizontalLayout {
+                        spacing: 12px;
+                        alignment: start;
+
+                        // Wi-Fi Icon
+                        Image {
+                            source: SystemMenu.wifi-connected ? @image-url("../assets/wifi.svg") : @image-url("../assets/wifi-disable.svg");
+                            width: 24px;
+                            height: 24px;
+                            y: (parent.height - self.height) / 2;
+                            colorize: (SystemMenu.is-provisioning || SystemMenu.wifi-connected) ? (SystemMenu.is-provisioning ? #000000 : #38bdf8) : #64748b;
+                        }
+
+                        // Text stack
+                        VerticalLayout {
+                            alignment: center;
+                            spacing: 2px;
+
+                            TextBaseBold {
+                                text: "Internet";
+                                color: SystemMenu.is-provisioning ? #000000 : #ffffff;
+                            }
+
+                            TextSm {
+                                text: SystemMenu.is-provisioning ? "Pairing... (Tap to Cancel)" : (SystemMenu.wifi-connected ? (SystemMenu.wifi-ssid != "" ? SystemMenu.wifi-ssid : "Connected") : "Tap to set up");
+                                color: SystemMenu.is-provisioning ? #0f172a : (SystemMenu.wifi-connected ? #93c5fd : #64748b);
+                                overflow: elide;
+                                max-width: 140px;
+                            }
+                        }
+                    }
+
+                    // Settings / Setup Gear Icon
+                    Image {
+                        source: @image-url("../assets/gear.svg");
+                        width: 20px;
+                        height: 20px;
+                        y: (parent.height - self.height) / 2;
+                        colorize: SystemMenu.is-provisioning ? #000000 : ((SystemMenu.wifi-connected) ? #38bdf8 : #64748b);
+                    }
+                }
+            }
+
+            // 3. Material You Brightness Capsule Slider
+            slider-box := Rectangle {
+                height: 46px;
+                border-radius: 23px;
+                background: #243044; // High-contrast slot well
+                border-width: 1px;
+                border-color: #3b4b66;
+                clip: true;
+
+                // Active Fill Track
+                fill-bar := Rectangle {
+                    x: 0px;
+                    y: 0px;
+                    height: 100%;
+                    width: Math.max(36px, parent.width * (SystemMenu.brightness-percent - 15) / 85);
+                    border-radius: 23px;
+                    background: #38bdf8;
+                }
+
+                // Content overlay inside the slider
+                HorizontalLayout {
+                    x: 0px;
+                    y: 0px;
+                    width: 100%;
+                    height: 100%;
+                    padding-left: 14px;
+                    padding-right: 16px;
+                    alignment: space-between;
+
+                    // Sun icon on leading edge
+                    Image {
+                        source: @image-url("../assets/sun.svg");
+                        width: 22px;
+                        height: 22px;
+                        y: (parent.height - self.height) / 2;
+                        colorize: SystemMenu.brightness-percent > 20 ? #0f172a : #94a3b8;
+                    }
+
+                    // Percentage on trailing edge
+                    TextBaseBold {
+                        text: "\{SystemMenu.brightness-percent}%";
+                        color: SystemMenu.brightness-percent >= 85 ? #0f172a : #ffffff;
+                        vertical-alignment: center;
+                    }
+                }
+
+                // Interactive TouchArea over slider
+                TouchArea {
+                    width: 100%;
+                    height: 100%;
+
+                    function update-brightness(pos-x: length) {
+                        let ratio = Math.max(0.0, Math.min(1.0, pos-x / slider-box.width));
+                        let val = Math.round(15.0 + ratio * 85.0);
+                        let clamped = Math.max(15, Math.min(100, val));
+                        SystemMenu.brightness-percent = clamped;
+                        SystemMenu.brightness-changed(clamped);
+                    }
+
+                    pointer-event(event) => {
+                        if event.button == PointerEventButton.left && event.kind == PointerEventKind.down {
+                            self.update-brightness(self.mouse-x);
+                        }
+                    }
+
+                    moved => {
+                        if self.enabled && self.pressed {
+                            self.update-brightness(self.mouse-x);
+                        }
+                    }
+                }
+            }
+
+            // 4. Close Handle Pill
+            Rectangle {
+                height: 20px;
+                TouchArea {
+                    clicked => {
+                        root.close-requested();
+                    }
+                }
+
+                Rectangle {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    width: 36px;
+                    height: 4px;
+                    border-radius: 2px;
+                    background: #64748b;
+                }
+            }
         }
     }
 }
@@ -147,13 +418,27 @@ export component AppWindow inherits Window {
 
     in-out property <bool> enable-gestures: true;
 
-    // 0: None, 1: Left-to-Right (Back), 2: Right-to-Left (Back), 3: Bottom-to-Top (Quit)
+    // 0: None, 1: Left-to-Right (Back), 2: Right-to-Left (Back), 3: Bottom-to-Top (Quit), 4: Top-to-Bottom (Menu)
     private property <int> active-edge: 0;
     private property <length> drag-dist: 0px;
+    private property <length> threshold: Theme.screen-size * 0.5; // 180px
+    private property <bool> threshold-haptic-triggered: false;
+
+    // Control Center Drawer state
+    private property <length> drawer-height: 315px;
+    private property <length> drawer-open-y: 0px;
+    private property <length> drawer-y: root.active-edge == 4 ?
+        Math.min(root.drawer-open-y, -root.drawer-height + (root.drag-dist / root.threshold) * root.drawer-height) :
+        (SystemMenu.is-open ? root.drawer-open-y : -root.drawer-height);
+
+    animate drawer-y {
+        duration: root.active-edge == 4 ? 0ms : 220ms;
+        easing: ease-out;
+    }
 
     @children
 
-    // Gesture feedback: circle arrow indicator (similar to Android back/home gesture)
+    // Gesture feedback: circle arrow indicator (for edges 1, 2, 3)
     Image {
         source: root.active-edge == 1 ? @image-url("../assets/arrow-circle-right.svg") :
                 root.active-edge == 2 ? @image-url("../assets/arrow-circle-left.svg") :
@@ -162,18 +447,49 @@ export component AppWindow inherits Window {
         height: 45px;
         image-fit: contain;
 
-        x: root.active-edge == 1 ? 16px + Math.min(24px, root.drag-dist * 0.15) :
-           root.active-edge == 2 ? Theme.screen-size - 45px - 16px - Math.min(24px, root.drag-dist * 0.15) :
+        private property <float> progress: Math.min(1.0, root.drag-dist / root.threshold);
+        private property <length> accel-offset: self.progress * self.progress * 36px;
+
+        x: root.active-edge == 1 ? 16px + self.accel-offset :
+           root.active-edge == 2 ? Theme.screen-size - 45px - 16px - self.accel-offset :
            (Theme.screen-size - 45px) / 2;
 
-        y: root.active-edge == 3 ? Theme.screen-size - 45px - 16px - Math.min(24px, root.drag-dist * 0.15) :
+        y: root.active-edge == 3 ? Theme.screen-size - 45px - 16px - self.accel-offset :
            (Theme.screen-size - 45px) / 2;
 
-        visible: root.active-edge != 0 && root.drag-dist > 15px;
+        visible: root.active-edge >= 1 && root.active-edge <= 3 && root.drag-dist > 15px;
     }
 
-    // Left Edge TouchArea (0px to 45px, middle vertical region)
-    if root.enable-gestures: TouchArea {
+    // --- Dimming Backdrop Scrim behind Drawer ---
+    if root.drawer-y > -root.drawer-height : Rectangle {
+        width: 100%;
+        height: 100%;
+        background: #000000;
+        opacity: 0.6 * Math.max(0.0, Math.min(1.0, (root.drawer-y + root.drawer-height) / root.drawer-height));
+
+        TouchArea {
+            clicked => {
+                if SystemMenu.is-open {
+                    SystemMenu.is-open = false;
+                    SystemMenu.drawer-closed();
+                }
+            }
+        }
+    }
+
+    // --- Pull-Down Control Center Drawer Card ---
+    if root.drawer-y > -root.drawer-height : DeviceMenuCard {
+        x: 0px;
+        y: root.drawer-y;
+
+        close-requested => {
+            SystemMenu.is-open = false;
+            SystemMenu.drawer-closed();
+        }
+    }
+
+    // Left Edge TouchArea (Edge 1: Back)
+    if root.enable-gestures && !SystemMenu.is-open: TouchArea {
         x: 0px;
         y: 60px;
         width: 45px;
@@ -183,14 +499,16 @@ export component AppWindow inherits Window {
             if event.button == PointerEventButton.left && event.kind == PointerEventKind.down {
                 root.active-edge = 1;
                 root.drag-dist = 0px;
+                root.threshold-haptic-triggered = false;
             }
             if event.button == PointerEventButton.left && (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
                 if root.active-edge == 1 {
-                    if root.drag-dist >= Theme.screen-size * 0.9 {
+                    if root.drag-dist >= root.threshold {
                         Navigation.trigger-back();
                     }
                     root.active-edge = 0;
                     root.drag-dist = 0px;
+                    root.threshold-haptic-triggered = false;
                 }
             }
         }
@@ -199,12 +517,16 @@ export component AppWindow inherits Window {
             if self.enabled && self.pressed && root.active-edge == 1 {
                 let d = self.mouse-x - self.pressed-x;
                 root.drag-dist = Math.max(0px, Math.min(Theme.screen-size, d));
+                if root.drag-dist >= root.threshold && !root.threshold-haptic-triggered {
+                    root.threshold-haptic-triggered = true;
+                    Navigation.threshold-reached();
+                }
             }
         }
     }
 
-    // Right Edge TouchArea (middle vertical region)
-    if root.enable-gestures: TouchArea {
+    // Right Edge TouchArea (Edge 2: Back)
+    if root.enable-gestures && !SystemMenu.is-open: TouchArea {
         x: Theme.screen-size - 45px;
         y: 60px;
         width: 45px;
@@ -214,14 +536,16 @@ export component AppWindow inherits Window {
             if event.button == PointerEventButton.left && event.kind == PointerEventKind.down {
                 root.active-edge = 2;
                 root.drag-dist = 0px;
+                root.threshold-haptic-triggered = false;
             }
             if event.button == PointerEventButton.left && (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
                 if root.active-edge == 2 {
-                    if root.drag-dist >= Theme.screen-size * 0.9 {
+                    if root.drag-dist >= root.threshold {
                         Navigation.trigger-back();
                     }
                     root.active-edge = 0;
                     root.drag-dist = 0px;
+                    root.threshold-haptic-triggered = false;
                 }
             }
         }
@@ -230,12 +554,16 @@ export component AppWindow inherits Window {
             if self.enabled && self.pressed && root.active-edge == 2 {
                 let d = self.pressed-x - self.mouse-x;
                 root.drag-dist = Math.max(0px, Math.min(Theme.screen-size, d));
+                if root.drag-dist >= root.threshold && !root.threshold-haptic-triggered {
+                    root.threshold-haptic-triggered = true;
+                    Navigation.threshold-reached();
+                }
             }
         }
     }
 
-    // Bottom Edge TouchArea (middle horizontal region)
-    if root.enable-gestures: TouchArea {
+    // Bottom Edge TouchArea (Edge 3: Quit)
+    if root.enable-gestures && !SystemMenu.is-open: TouchArea {
         x: 60px;
         y: Theme.screen-size - 45px;
         width: Theme.screen-size - 120px;
@@ -245,14 +573,16 @@ export component AppWindow inherits Window {
             if event.button == PointerEventButton.left && event.kind == PointerEventKind.down {
                 root.active-edge = 3;
                 root.drag-dist = 0px;
+                root.threshold-haptic-triggered = false;
             }
             if event.button == PointerEventButton.left && (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
                 if root.active-edge == 3 {
-                    if root.drag-dist >= Theme.screen-size * 0.9 {
+                    if root.drag-dist >= root.threshold {
                         Navigation.trigger-quit();
                     }
                     root.active-edge = 0;
                     root.drag-dist = 0px;
+                    root.threshold-haptic-triggered = false;
                 }
             }
         }
@@ -261,6 +591,47 @@ export component AppWindow inherits Window {
             if self.enabled && self.pressed && root.active-edge == 3 {
                 let d = self.pressed-y - self.mouse-y;
                 root.drag-dist = Math.max(0px, Math.min(Theme.screen-size, d));
+                if root.drag-dist >= root.threshold && !root.threshold-haptic-triggered {
+                    root.threshold-haptic-triggered = true;
+                    Navigation.threshold-reached();
+                }
+            }
+        }
+    }
+
+    // Top Edge TouchArea (Edge 4: Pull-down Control Center)
+    if !SystemMenu.is-open: TouchArea {
+        x: 60px;
+        y: 0px;
+        width: Theme.screen-size - 120px;
+        height: 45px;
+
+        pointer-event(event) => {
+            if event.button == PointerEventButton.left && event.kind == PointerEventKind.down {
+                root.active-edge = 4;
+                root.drag-dist = 0px;
+                root.threshold-haptic-triggered = false;
+            }
+            if event.button == PointerEventButton.left && (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
+                if root.active-edge == 4 {
+                    if root.drag-dist >= root.threshold {
+                        SystemMenu.is-open = true;
+                    }
+                    root.active-edge = 0;
+                    root.drag-dist = 0px;
+                    root.threshold-haptic-triggered = false;
+                }
+            }
+        }
+
+        moved => {
+            if self.enabled && self.pressed && root.active-edge == 4 {
+                let d = self.mouse-y - self.pressed-y;
+                root.drag-dist = Math.max(0px, Math.min(Theme.screen-size, d));
+                if root.drag-dist >= root.threshold && !root.threshold-haptic-triggered {
+                    root.threshold-haptic-triggered = true;
+                    Navigation.threshold-reached();
+                }
             }
         }
     }
