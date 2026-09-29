@@ -43,6 +43,7 @@ pub enum CoprocessorCommand {
     StartProvisioning { timeout_seconds: u32 },
     StopProvisioning,
     WifiConnect { ssid: heapless::String<32>, password: heapless::String<64> },
+    BatteryStatus(coprocessor::BatteryStatus),
 }
 
 static COMMAND_CHANNEL: Channel<CriticalSectionRawMutex, CoprocessorCommand, 4> = Channel::new();
@@ -64,6 +65,11 @@ pub fn connect_wifi(ssid: &str, password: &str) {
     let mut p = heapless::String::new();
     let _ = p.push_str(password);
     let _ = COMMAND_CHANNEL.try_send(CoprocessorCommand::WifiConnect { ssid: s, password: p });
+}
+
+/// Sends battery status update to the co-processor.
+pub fn send_battery_status(status: coprocessor::BatteryStatus) {
+    let _ = COMMAND_CHANNEL.try_send(CoprocessorCommand::BatteryStatus(status));
 }
 
 fn handle_coprocessor_response(payload: &[u8], last_uptime: &mut u64) {
@@ -232,6 +238,8 @@ pub async fn coprocessor_task(
             match select(Timer::after_secs(10), COMMAND_CHANNEL.receive()).await {
                 Either::First(_) => {
                     let mut builder = flatbuffers::FlatBufferBuilder::new();
+                    let batt_status = crate::bsp::battery::get_battery_status();
+                    let batt_off = proto::BatteryStatus::create(&mut builder, &batt_status.into());
                     let hb = proto::Heartbeat::create(
                         &mut builder,
                         &proto::HeartbeatArgs {
@@ -239,6 +247,7 @@ pub async fn coprocessor_task(
                                 .duration_since_epoch()
                                 .as_millis(),
                             heap_free: 0,
+                            battery: Some(batt_off),
                         },
                     );
                     let env = proto::RequestEnvelope::create(
@@ -300,6 +309,16 @@ pub async fn coprocessor_task(
                                 &proto::RequestEnvelopeArgs {
                                     message_type: proto::Request::WifiConnectRequest,
                                     message: Some(req.as_union_value()),
+                                },
+                            )
+                        }
+                        CoprocessorCommand::BatteryStatus(status) => {
+                            let batt = proto::BatteryStatus::create(&mut builder, &status.into());
+                            proto::RequestEnvelope::create(
+                                &mut builder,
+                                &proto::RequestEnvelopeArgs {
+                                    message_type: proto::Request::BatteryStatus,
+                                    message: Some(batt.as_union_value()),
                                 },
                             )
                         }

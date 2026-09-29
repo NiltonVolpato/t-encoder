@@ -15,7 +15,6 @@ slint::include_modules!();
 pub struct SystemMenuState {
     pub battery_percent: i32,
     pub is_plugged_in: bool,
-    pub low_battery_blink: bool,
     pub wifi_connected: bool,
     pub wifi_ssid: heapless::String<32>,
     pub is_provisioning: bool,
@@ -25,9 +24,8 @@ pub struct SystemMenuState {
 impl Default for SystemMenuState {
     fn default() -> Self {
         Self {
-            battery_percent: 100,
+            battery_percent: -1,
             is_plugged_in: false,
-            low_battery_blink: false,
             wifi_connected: false,
             wifi_ssid: heapless::String::new(),
             is_provisioning: false,
@@ -38,9 +36,8 @@ impl Default for SystemMenuState {
 
 static SYSTEM_MENU_STATE: Mutex<RefCell<SystemMenuState>> =
     Mutex::new(RefCell::new(SystemMenuState {
-        battery_percent: 100,
+        battery_percent: -1,
         is_plugged_in: false,
-        low_battery_blink: false,
         wifi_connected: false,
         wifi_ssid: heapless::String::new(),
         is_provisioning: false,
@@ -112,7 +109,6 @@ pub fn setup_navigation<T: ComponentHandle + 'static>(
     let state = get_system_menu_state();
     menu.set_battery_percent(state.battery_percent);
     menu.set_is_plugged_in(state.is_plugged_in);
-    menu.set_low_battery_blink(state.low_battery_blink);
     menu.set_wifi_connected(state.wifi_connected);
     menu.set_wifi_ssid(state.wifi_ssid.as_str().into());
     menu.set_is_provisioning(state.is_provisioning);
@@ -144,9 +140,6 @@ pub fn setup_navigation<T: ComponentHandle + 'static>(
             }
             if menu.get_is_plugged_in() != state.is_plugged_in {
                 menu.set_is_plugged_in(state.is_plugged_in);
-            }
-            if menu.get_low_battery_blink() != state.low_battery_blink {
-                menu.set_low_battery_blink(state.low_battery_blink);
             }
             if menu.get_wifi_connected() != state.wifi_connected {
                 menu.set_wifi_connected(state.wifi_connected);

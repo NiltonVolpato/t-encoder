@@ -120,9 +120,8 @@ export component RotaryKnob inherits FocusScope {
 
 export global SystemMenu {
     in-out property <bool> is-open: false;
-    in-out property <int> battery-percent: 100;
+    in-out property <int> battery-percent: -1;
     in-out property <bool> is-plugged-in: false;
-    in-out property <bool> low-battery-blink: false;
     in-out property <bool> wifi-connected: false;
     in-out property <string> wifi-ssid: "";
     in-out property <bool> is-provisioning: false;
@@ -181,9 +180,29 @@ export component DeviceMenuCard inherits Rectangle {
         y: 0px;
         height: parent.height;
 
+        // Close Handle Pill
+        handle := Rectangle {
+            y: parent.height - self.height - 12px;
+            height: 20px;
+            TouchArea {
+                clicked => {
+                    root.close-requested();
+                }
+            }
+
+            Rectangle {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                width: 36px;
+                height: 4px;
+                border-radius: 2px;
+                background: #64748b;
+            }
+        }
+
         VerticalLayout {
             padding-top: 42px;
-            padding-bottom: 12px;
+            padding-bottom: handle.height + 2 * 12px;
             spacing: 12px;
             alignment: start;
 
@@ -215,13 +234,22 @@ export component DeviceMenuCard inherits Rectangle {
                             background: transparent;
 
                             // Fill
-                            Rectangle {
+                            if !SystemMenu.is-plugged-in : Rectangle {
                                 x: 2px;
                                 y: 2px;
                                 width: Math.max(2px, (parent.width - 4px) * Math.min(100, Math.max(0, SystemMenu.battery-percent)) / 100);
                                 height: parent.height - 4px;
                                 border-radius: 1px;
                                 background: SystemMenu.battery-percent <= 20 ? #ef4444 : #10b981;
+                            }
+
+                            // Bolt Icon (Charging)
+                            if SystemMenu.is-plugged-in : Image {
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                                source: @image-url("../assets/bolt.svg");
+                                image-fit: contain;
+                                colorize: #38bdf8;
                             }
 
                             // Pip (centered positive terminal)
@@ -236,7 +264,7 @@ export component DeviceMenuCard inherits Rectangle {
                         }
 
                         TextSm {
-                            text: "\{SystemMenu.battery-percent}%";
+                            text: SystemMenu.is-plugged-in ? "Charging" : (SystemMenu.battery-percent < 0 ? "--%" : "\{SystemMenu.battery-percent}%");
                             color: #f1f5f9;
                             vertical-alignment: center;
                         }
@@ -278,8 +306,6 @@ export component DeviceMenuCard inherits Rectangle {
                         // Wi-Fi Icon
                         Image {
                             source: SystemMenu.wifi-connected ? @image-url("../assets/wifi.svg") : @image-url("../assets/wifi-disable.svg");
-                            width: 24px;
-                            height: 24px;
                             y: (parent.height - self.height) / 2;
                             colorize: (SystemMenu.is-provisioning || SystemMenu.wifi-connected) ? (SystemMenu.is-provisioning ? #000000 : #38bdf8) : #64748b;
                         }
@@ -306,8 +332,6 @@ export component DeviceMenuCard inherits Rectangle {
                     // Settings / Setup Gear Icon
                     Image {
                         source: @image-url("../assets/gear.svg");
-                        width: 20px;
-                        height: 20px;
                         y: (parent.height - self.height) / 2;
                         colorize: SystemMenu.is-provisioning ? #000000 : ((SystemMenu.wifi-connected) ? #38bdf8 : #64748b);
                     }
@@ -346,8 +370,6 @@ export component DeviceMenuCard inherits Rectangle {
                     // Sun icon on leading edge
                     Image {
                         source: @image-url("../assets/sun.svg");
-                        width: 22px;
-                        height: 22px;
                         y: (parent.height - self.height) / 2;
                         colorize: SystemMenu.brightness-percent > 20 ? #0f172a : #94a3b8;
                     }
@@ -386,25 +408,6 @@ export component DeviceMenuCard inherits Rectangle {
                     }
                 }
             }
-
-            // 4. Close Handle Pill
-            Rectangle {
-                height: 20px;
-                TouchArea {
-                    clicked => {
-                        root.close-requested();
-                    }
-                }
-
-                Rectangle {
-                    x: (parent.width - self.width) / 2;
-                    y: (parent.height - self.height) / 2;
-                    width: 36px;
-                    height: 4px;
-                    border-radius: 2px;
-                    background: #64748b;
-                }
-            }
         }
     }
 }
@@ -438,10 +441,20 @@ export component AppWindow inherits Window {
         easing: ease-out;
     }
 
+    private property <bool> low-battery-blink-state: false;
+
+    Timer {
+        interval: 1s;
+        running: !SystemMenu.is-plugged-in && SystemMenu.battery-percent >= 0 && SystemMenu.battery-percent <= 10;
+        triggered() => {
+            root.low-battery-blink-state = !root.low-battery-blink-state;
+        }
+    }
+
     @children
 
     // --- Low Battery Warning Indicator ---
-    if !SystemMenu.is-plugged-in && SystemMenu.battery-percent <= 10 && SystemMenu.low-battery-blink : Rectangle {
+    if !SystemMenu.is-plugged-in && SystemMenu.battery-percent >= 0 && SystemMenu.battery-percent <= 10 && root.low-battery-blink-state : Rectangle {
         x: (parent.width - self.width) / 2;
         y: 12px;
         width: 32px;

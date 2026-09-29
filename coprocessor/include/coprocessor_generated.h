@@ -21,6 +21,9 @@ struct WifiStatusBuilder;
 struct WifiConnectRequest;
 struct WifiConnectRequestBuilder;
 
+struct BatteryStatus;
+struct BatteryStatusBuilder;
+
 struct Heartbeat;
 struct HeartbeatBuilder;
 
@@ -92,11 +95,12 @@ enum Request : uint8_t {
   Request_StopProvisioning = 4,
   Request_StreamChunk = 5,
   Request_Hello = 6,
+  Request_BatteryStatus = 7,
   Request_MIN = Request_NONE,
-  Request_MAX = Request_Hello
+  Request_MAX = Request_BatteryStatus
 };
 
-inline const Request (&EnumValuesRequest())[7] {
+inline const Request (&EnumValuesRequest())[8] {
   static const Request values[] = {
     Request_NONE,
     Request_Heartbeat,
@@ -104,13 +108,14 @@ inline const Request (&EnumValuesRequest())[7] {
     Request_StartProvisioning,
     Request_StopProvisioning,
     Request_StreamChunk,
-    Request_Hello
+    Request_Hello,
+    Request_BatteryStatus
   };
   return values;
 }
 
 inline const char * const *EnumNamesRequest() {
-  static const char * const names[8] = {
+  static const char * const names[9] = {
     "NONE",
     "Heartbeat",
     "WifiConnectRequest",
@@ -118,13 +123,14 @@ inline const char * const *EnumNamesRequest() {
     "StopProvisioning",
     "StreamChunk",
     "Hello",
+    "BatteryStatus",
     nullptr
   };
   return names;
 }
 
 inline const char *EnumNameRequest(Request e) {
-  if (::flatbuffers::IsOutRange(e, Request_NONE, Request_Hello)) return "";
+  if (::flatbuffers::IsOutRange(e, Request_NONE, Request_BatteryStatus)) return "";
   const size_t index = static_cast<size_t>(e);
   return EnumNamesRequest()[index];
 }
@@ -155,6 +161,10 @@ template<> struct RequestTraits<CoprocessorProto::StreamChunk> {
 
 template<> struct RequestTraits<CoprocessorProto::Hello> {
   static const Request enum_value = Request_Hello;
+};
+
+template<> struct RequestTraits<CoprocessorProto::BatteryStatus> {
+  static const Request enum_value = Request_BatteryStatus;
 };
 
 template <bool B = false>
@@ -396,11 +406,74 @@ inline ::flatbuffers::Offset<WifiConnectRequest> CreateWifiConnectRequestDirect(
       password__);
 }
 
+struct BatteryStatus FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef BatteryStatusBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_MILLIVOLTS = 4,
+    VT_PERCENT = 6,
+    VT_IS_PLUGGED = 8
+  };
+  uint32_t millivolts() const {
+    return GetField<uint32_t>(VT_MILLIVOLTS, 0);
+  }
+  uint8_t percent() const {
+    return GetField<uint8_t>(VT_PERCENT, 0);
+  }
+  bool is_plugged() const {
+    return GetField<uint8_t>(VT_IS_PLUGGED, 0) != 0;
+  }
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<uint32_t>(verifier, VT_MILLIVOLTS, 4) &&
+           VerifyField<uint8_t>(verifier, VT_PERCENT, 1) &&
+           VerifyField<uint8_t>(verifier, VT_IS_PLUGGED, 1) &&
+           verifier.EndTable();
+  }
+};
+
+struct BatteryStatusBuilder {
+  typedef BatteryStatus Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_millivolts(uint32_t millivolts) {
+    fbb_.AddElement<uint32_t>(BatteryStatus::VT_MILLIVOLTS, millivolts, 0);
+  }
+  void add_percent(uint8_t percent) {
+    fbb_.AddElement<uint8_t>(BatteryStatus::VT_PERCENT, percent, 0);
+  }
+  void add_is_plugged(bool is_plugged) {
+    fbb_.AddElement<uint8_t>(BatteryStatus::VT_IS_PLUGGED, static_cast<uint8_t>(is_plugged), 0);
+  }
+  explicit BatteryStatusBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<BatteryStatus> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<BatteryStatus>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<BatteryStatus> CreateBatteryStatus(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    uint32_t millivolts = 0,
+    uint8_t percent = 0,
+    bool is_plugged = false) {
+  BatteryStatusBuilder builder_(_fbb);
+  builder_.add_millivolts(millivolts);
+  builder_.add_is_plugged(is_plugged);
+  builder_.add_percent(percent);
+  return builder_.Finish();
+}
+
 struct Heartbeat FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   typedef HeartbeatBuilder Builder;
   enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
     VT_UPTIME_MS = 4,
-    VT_HEAP_FREE = 6
+    VT_HEAP_FREE = 6,
+    VT_BATTERY = 8
   };
   uint64_t uptime_ms() const {
     return GetField<uint64_t>(VT_UPTIME_MS, 0);
@@ -408,11 +481,16 @@ struct Heartbeat FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   uint32_t heap_free() const {
     return GetField<uint32_t>(VT_HEAP_FREE, 0);
   }
+  const CoprocessorProto::BatteryStatus *battery() const {
+    return GetPointer<const CoprocessorProto::BatteryStatus *>(VT_BATTERY);
+  }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
            VerifyField<uint64_t>(verifier, VT_UPTIME_MS, 8) &&
            VerifyField<uint32_t>(verifier, VT_HEAP_FREE, 4) &&
+           VerifyOffset(verifier, VT_BATTERY) &&
+           verifier.VerifyTable(battery()) &&
            verifier.EndTable();
   }
 };
@@ -426,6 +504,9 @@ struct HeartbeatBuilder {
   }
   void add_heap_free(uint32_t heap_free) {
     fbb_.AddElement<uint32_t>(Heartbeat::VT_HEAP_FREE, heap_free, 0);
+  }
+  void add_battery(::flatbuffers::Offset<CoprocessorProto::BatteryStatus> battery) {
+    fbb_.AddOffset(Heartbeat::VT_BATTERY, battery);
   }
   explicit HeartbeatBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
@@ -441,9 +522,11 @@ struct HeartbeatBuilder {
 inline ::flatbuffers::Offset<Heartbeat> CreateHeartbeat(
     ::flatbuffers::FlatBufferBuilder &_fbb,
     uint64_t uptime_ms = 0,
-    uint32_t heap_free = 0) {
+    uint32_t heap_free = 0,
+    ::flatbuffers::Offset<CoprocessorProto::BatteryStatus> battery = 0) {
   HeartbeatBuilder builder_(_fbb);
   builder_.add_uptime_ms(uptime_ms);
+  builder_.add_battery(battery);
   builder_.add_heap_free(heap_free);
   return builder_.Finish();
 }
@@ -763,6 +846,9 @@ struct RequestEnvelope FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   const CoprocessorProto::Hello *message_as_Hello() const {
     return message_type() == CoprocessorProto::Request_Hello ? static_cast<const CoprocessorProto::Hello *>(message()) : nullptr;
   }
+  const CoprocessorProto::BatteryStatus *message_as_BatteryStatus() const {
+    return message_type() == CoprocessorProto::Request_BatteryStatus ? static_cast<const CoprocessorProto::BatteryStatus *>(message()) : nullptr;
+  }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
@@ -795,6 +881,10 @@ template<> inline const CoprocessorProto::StreamChunk *RequestEnvelope::message_
 
 template<> inline const CoprocessorProto::Hello *RequestEnvelope::message_as<CoprocessorProto::Hello>() const {
   return message_as_Hello();
+}
+
+template<> inline const CoprocessorProto::BatteryStatus *RequestEnvelope::message_as<CoprocessorProto::BatteryStatus>() const {
+  return message_as_BatteryStatus();
 }
 
 struct RequestEnvelopeBuilder {
@@ -952,6 +1042,10 @@ inline bool VerifyRequest(::flatbuffers::VerifierTemplate<B> &verifier, const vo
     }
     case Request_Hello: {
       auto ptr = reinterpret_cast<const CoprocessorProto::Hello *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case Request_BatteryStatus: {
+      auto ptr = reinterpret_cast<const CoprocessorProto::BatteryStatus *>(obj);
       return verifier.VerifyTable(ptr);
     }
     default: return true;

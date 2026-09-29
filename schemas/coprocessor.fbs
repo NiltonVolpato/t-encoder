@@ -17,10 +17,18 @@ table WifiConnectRequest {
     password: string;
 }
 
+// Battery status forwarded from S3 ADC to co-processor
+table BatteryStatus {
+    millivolts: uint32;
+    percent: uint8;
+    is_plugged: bool;
+}
+
 // Heartbeat for liveness and latency checks
 table Heartbeat {
     uptime_ms: uint64;
     heap_free: uint32;
+    battery: BatteryStatus;
 }
 
 // Streaming chunk for multiplexed large payloads (album art, OTA, etc.)
@@ -69,6 +77,7 @@ union Request {
     StopProvisioning,
     StreamChunk,
     Hello,
+    BatteryStatus,
 }
 
 // Union of all Responses / Events (Co-processor -> S3)

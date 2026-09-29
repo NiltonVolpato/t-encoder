@@ -17,6 +17,7 @@
 #include "esp_timer.h"
 #include "esp_wifi.h"
 #include "freertos/task.h"
+#include "web_server.h"
 #include "wifi_manager.h"
 
 namespace coprocessor {
@@ -164,6 +165,10 @@ void handle_rx_packet(const uint8_t* payload, size_t payload_len) {
           esp_restart();
         }
         s_last_s3_uptime = req->uptime_ms();
+
+        if (req->battery()) {
+          web_server_update_battery(req->battery());
+        }
       }
       auto uptime_ms = static_cast<uint64_t>(esp_timer_get_time() / 1000);
       uint32_t heap_free = esp_get_free_heap_size();
@@ -204,6 +209,22 @@ void handle_rx_packet(const uint8_t* payload, size_t payload_len) {
       if (s_stop_provisioning_cb) {
         ESP_LOGI(TAG, "StopProvisioning request received");
         s_stop_provisioning_cb();
+      }
+      break;
+    }
+    case CoprocessorProto::Request_BatteryStatus: {
+      auto req = req_env->message_as_BatteryStatus();
+      if (req) {
+        if (req->is_plugged() || req->percent() == 0xFF) {
+          ESP_LOGI(TAG, "BatteryStatus received: %lu mV, charging (plugged=%d)",
+                   static_cast<unsigned long>(req->millivolts()),
+                   static_cast<int>(req->is_plugged()));
+        } else {
+          ESP_LOGI(TAG, "BatteryStatus received: %lu mV, %u%%, plugged=0",
+                   static_cast<unsigned long>(req->millivolts()),
+                   static_cast<unsigned>(req->percent()));
+        }
+        web_server_update_battery(req);
       }
       break;
     }

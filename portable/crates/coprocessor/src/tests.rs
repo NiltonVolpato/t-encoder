@@ -8,9 +8,13 @@ use super::*;
 #[test]
 fn test_roundtrip_request_heartbeat() {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let batt = proto::BatteryStatus::create(
+        &mut builder,
+        &proto::BatteryStatusArgs { millivolts: 4120, percent: 92, is_plugged: false },
+    );
     let heartbeat = proto::Heartbeat::create(
         &mut builder,
-        &proto::HeartbeatArgs { uptime_ms: 123456789, heap_free: 250000 },
+        &proto::HeartbeatArgs { uptime_ms: 123456789, heap_free: 250000, battery: Some(batt) },
     );
     let envelope = proto::RequestEnvelope::create(
         &mut builder,
@@ -35,6 +39,10 @@ fn test_roundtrip_request_heartbeat() {
     let hb = parsed.message_as_heartbeat().expect("Must have heartbeat");
     assert_eq!(hb.uptime_ms(), 123456789);
     assert_eq!(hb.heap_free(), 250000);
+    let batt_parsed = hb.battery().expect("Must have battery");
+    assert_eq!(batt_parsed.millivolts(), 4120);
+    assert_eq!(batt_parsed.percent(), 92);
+    assert!(!batt_parsed.is_plugged());
 }
 
 #[test]
@@ -79,7 +87,7 @@ fn test_crc_corruption_detection() {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let hb = proto::Heartbeat::create(
         &mut builder,
-        &proto::HeartbeatArgs { uptime_ms: 42, heap_free: 1000 },
+        &proto::HeartbeatArgs { uptime_ms: 42, heap_free: 1000, battery: None },
     );
     let envelope = proto::RequestEnvelope::create(
         &mut builder,
@@ -112,7 +120,7 @@ fn test_stream_accumulator_resynchronization() {
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let hb1 = proto::Heartbeat::create(
         &mut builder,
-        &proto::HeartbeatArgs { uptime_ms: 100, heap_free: 5000 },
+        &proto::HeartbeatArgs { uptime_ms: 100, heap_free: 5000, battery: None },
     );
     let env1 = proto::RequestEnvelope::create(
         &mut builder,
@@ -147,7 +155,7 @@ fn test_stream_accumulator_resynchronization() {
     let mut builder2 = flatbuffers::FlatBufferBuilder::new();
     let hb2 = proto::Heartbeat::create(
         &mut builder2,
-        &proto::HeartbeatArgs { uptime_ms: 200, heap_free: 6000 },
+        &proto::HeartbeatArgs { uptime_ms: 200, heap_free: 6000, battery: None },
     );
     let env2 = proto::RequestEnvelope::create(
         &mut builder2,
@@ -290,4 +298,31 @@ fn test_roundtrip_time_sync() {
     let sync = parsed.message_as_time_sync().unwrap();
     assert_eq!(sync.epoch_seconds(), 1790596867);
     assert_eq!(sync.subsec_micros(), 123456);
+}
+
+#[test]
+fn test_roundtrip_battery_status() {
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let batt = proto::BatteryStatus::create(
+        &mut builder,
+        &proto::BatteryStatusArgs { millivolts: 4120, percent: 88, is_plugged: false },
+    );
+    let env = proto::RequestEnvelope::create(
+        &mut builder,
+        &proto::RequestEnvelopeArgs {
+            message_type: proto::Request::BatteryStatus,
+            message: Some(batt.as_union_value()),
+        },
+    );
+    builder.finish_size_prefixed(env, None);
+    let packet = encode_packet(builder.finished_data());
+
+    let mut decoded = [0u8; 128];
+    let payload = decode_packet(&packet, &mut decoded).unwrap();
+    let parsed = proto::size_prefixed_root_as_request_envelope(payload).unwrap();
+    assert_eq!(parsed.message_type(), proto::Request::BatteryStatus);
+    let batt_parsed = parsed.message_as_battery_status().unwrap();
+    assert_eq!(batt_parsed.millivolts(), 4120);
+    assert_eq!(batt_parsed.percent(), 88);
+    assert!(!batt_parsed.is_plugged());
 }

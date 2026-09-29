@@ -13,6 +13,7 @@
 #include "nvs_flash.h"
 #include "sntp_service.h"
 #include "uart_protocol.h"
+#include "web_server.h"
 #include "wifi_manager.h"
 
 namespace {
@@ -32,10 +33,12 @@ void on_wifi_status_changed(bool connected, std::string_view ssid,
   // Forward status event to ESP32-S3 over UART
   uart_send_wifi_status(connected, ssid, ip_addr, rssi);
 
-  // Synchronize network time via SNTP when connected
+  // Synchronize network time via SNTP and manage web server when connected
   if (connected) {
     sntp_service_start();
+    web_server_start();
   } else {
+    web_server_stop();
     sntp_service_stop();
   }
 

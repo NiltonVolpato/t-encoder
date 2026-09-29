@@ -112,13 +112,13 @@ pub mod coprocessor_proto {
         since = "2.0.0",
         note = "Use associated constants instead. This will no longer be generated in 2021."
     )]
-    pub const ENUM_MAX_REQUEST: u8 = 6;
+    pub const ENUM_MAX_REQUEST: u8 = 7;
     #[deprecated(
         since = "2.0.0",
         note = "Use associated constants instead. This will no longer be generated in 2021."
     )]
     #[allow(non_camel_case_types)]
-    pub const ENUM_VALUES_REQUEST: [Request; 7] = [
+    pub const ENUM_VALUES_REQUEST: [Request; 8] = [
         Request::NONE,
         Request::Heartbeat,
         Request::WifiConnectRequest,
@@ -126,6 +126,7 @@ pub mod coprocessor_proto {
         Request::StopProvisioning,
         Request::StreamChunk,
         Request::Hello,
+        Request::BatteryStatus,
     ];
 
     #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -140,9 +141,10 @@ pub mod coprocessor_proto {
         pub const StopProvisioning: Self = Self(4);
         pub const StreamChunk: Self = Self(5);
         pub const Hello: Self = Self(6);
+        pub const BatteryStatus: Self = Self(7);
 
         pub const ENUM_MIN: u8 = 0;
-        pub const ENUM_MAX: u8 = 6;
+        pub const ENUM_MAX: u8 = 7;
         pub const ENUM_VALUES: &'static [Self] = &[
             Self::NONE,
             Self::Heartbeat,
@@ -151,6 +153,7 @@ pub mod coprocessor_proto {
             Self::StopProvisioning,
             Self::StreamChunk,
             Self::Hello,
+            Self::BatteryStatus,
         ];
         /// Returns the variant's name or "" if unknown.
         pub fn variant_name(self) -> Option<&'static str> {
@@ -162,6 +165,7 @@ pub mod coprocessor_proto {
                 Self::StopProvisioning => Some("StopProvisioning"),
                 Self::StreamChunk => Some("StreamChunk"),
                 Self::Hello => Some("Hello"),
+                Self::BatteryStatus => Some("BatteryStatus"),
                 _ => None,
             }
         }
@@ -624,6 +628,136 @@ pub mod coprocessor_proto {
             ds.finish()
         }
     }
+    pub enum BatteryStatusOffset {}
+    #[derive(Copy, Clone, PartialEq)]
+
+    pub struct BatteryStatus<'a> {
+        pub _tab: ::flatbuffers::Table<'a>,
+    }
+
+    impl<'a> ::flatbuffers::Follow<'a> for BatteryStatus<'a> {
+        type Inner = BatteryStatus<'a>;
+        #[inline]
+        unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+            Self { _tab: unsafe { ::flatbuffers::Table::new(buf, loc) } }
+        }
+    }
+
+    impl<'a> BatteryStatus<'a> {
+        pub const VT_MILLIVOLTS: ::flatbuffers::VOffsetT = 4;
+        pub const VT_PERCENT: ::flatbuffers::VOffsetT = 6;
+        pub const VT_IS_PLUGGED: ::flatbuffers::VOffsetT = 8;
+
+        #[inline]
+        pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
+            BatteryStatus { _tab: table }
+        }
+        #[allow(unused_mut)]
+        pub fn create<
+            'bldr: 'args,
+            'args: 'mut_bldr,
+            'mut_bldr,
+            A: ::flatbuffers::Allocator + 'bldr,
+        >(
+            _fbb: &'mut_bldr mut ::flatbuffers::FlatBufferBuilder<'bldr, A>,
+            args: &'args BatteryStatusArgs,
+        ) -> ::flatbuffers::WIPOffset<BatteryStatus<'bldr>> {
+            let mut builder = BatteryStatusBuilder::new(_fbb);
+            builder.add_millivolts(args.millivolts);
+            builder.add_is_plugged(args.is_plugged);
+            builder.add_percent(args.percent);
+            builder.finish()
+        }
+
+        #[inline]
+        pub fn millivolts(&self) -> u32 {
+            // Safety:
+            // Created from valid Table for this object
+            // which contains a valid value in this slot
+            unsafe { self._tab.get::<u32>(BatteryStatus::VT_MILLIVOLTS, Some(0)).unwrap() }
+        }
+        #[inline]
+        pub fn percent(&self) -> u8 {
+            // Safety:
+            // Created from valid Table for this object
+            // which contains a valid value in this slot
+            unsafe { self._tab.get::<u8>(BatteryStatus::VT_PERCENT, Some(0)).unwrap() }
+        }
+        #[inline]
+        pub fn is_plugged(&self) -> bool {
+            // Safety:
+            // Created from valid Table for this object
+            // which contains a valid value in this slot
+            unsafe { self._tab.get::<bool>(BatteryStatus::VT_IS_PLUGGED, Some(false)).unwrap() }
+        }
+    }
+
+    impl ::flatbuffers::Verifiable for BatteryStatus<'_> {
+        #[inline]
+        fn run_verifier(
+            v: &mut ::flatbuffers::Verifier,
+            pos: usize,
+        ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
+            v.visit_table(pos)?
+                .visit_field::<u32>("millivolts", Self::VT_MILLIVOLTS, false)?
+                .visit_field::<u8>("percent", Self::VT_PERCENT, false)?
+                .visit_field::<bool>("is_plugged", Self::VT_IS_PLUGGED, false)?
+                .finish();
+            Ok(())
+        }
+    }
+    pub struct BatteryStatusArgs {
+        pub millivolts: u32,
+        pub percent: u8,
+        pub is_plugged: bool,
+    }
+    impl<'a> Default for BatteryStatusArgs {
+        #[inline]
+        fn default() -> Self {
+            BatteryStatusArgs { millivolts: 0, percent: 0, is_plugged: false }
+        }
+    }
+
+    pub struct BatteryStatusBuilder<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> {
+        fbb_: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+        start_: ::flatbuffers::WIPOffset<::flatbuffers::TableUnfinishedWIPOffset>,
+    }
+    impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> BatteryStatusBuilder<'a, 'b, A> {
+        #[inline]
+        pub fn add_millivolts(&mut self, millivolts: u32) {
+            self.fbb_.push_slot::<u32>(BatteryStatus::VT_MILLIVOLTS, millivolts, 0);
+        }
+        #[inline]
+        pub fn add_percent(&mut self, percent: u8) {
+            self.fbb_.push_slot::<u8>(BatteryStatus::VT_PERCENT, percent, 0);
+        }
+        #[inline]
+        pub fn add_is_plugged(&mut self, is_plugged: bool) {
+            self.fbb_.push_slot::<bool>(BatteryStatus::VT_IS_PLUGGED, is_plugged, false);
+        }
+        #[inline]
+        pub fn new(
+            _fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+        ) -> BatteryStatusBuilder<'a, 'b, A> {
+            let start = _fbb.start_table();
+            BatteryStatusBuilder { fbb_: _fbb, start_: start }
+        }
+        #[inline]
+        pub fn finish(self) -> ::flatbuffers::WIPOffset<BatteryStatus<'a>> {
+            let o = self.fbb_.end_table(self.start_);
+            ::flatbuffers::WIPOffset::new(o.value())
+        }
+    }
+
+    impl ::core::fmt::Debug for BatteryStatus<'_> {
+        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+            let mut ds = f.debug_struct("BatteryStatus");
+            ds.field("millivolts", &self.millivolts());
+            ds.field("percent", &self.percent());
+            ds.field("is_plugged", &self.is_plugged());
+            ds.finish()
+        }
+    }
     pub enum HeartbeatOffset {}
     #[derive(Copy, Clone, PartialEq)]
 
@@ -642,6 +776,7 @@ pub mod coprocessor_proto {
     impl<'a> Heartbeat<'a> {
         pub const VT_UPTIME_MS: ::flatbuffers::VOffsetT = 4;
         pub const VT_HEAP_FREE: ::flatbuffers::VOffsetT = 6;
+        pub const VT_BATTERY: ::flatbuffers::VOffsetT = 8;
 
         #[inline]
         pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
@@ -655,10 +790,13 @@ pub mod coprocessor_proto {
             A: ::flatbuffers::Allocator + 'bldr,
         >(
             _fbb: &'mut_bldr mut ::flatbuffers::FlatBufferBuilder<'bldr, A>,
-            args: &'args HeartbeatArgs,
+            args: &'args HeartbeatArgs<'args>,
         ) -> ::flatbuffers::WIPOffset<Heartbeat<'bldr>> {
             let mut builder = HeartbeatBuilder::new(_fbb);
             builder.add_uptime_ms(args.uptime_ms);
+            if let Some(x) = args.battery {
+                builder.add_battery(x);
+            }
             builder.add_heap_free(args.heap_free);
             builder.finish()
         }
@@ -677,6 +815,18 @@ pub mod coprocessor_proto {
             // which contains a valid value in this slot
             unsafe { self._tab.get::<u32>(Heartbeat::VT_HEAP_FREE, Some(0)).unwrap() }
         }
+        #[inline]
+        pub fn battery(&self) -> Option<BatteryStatus<'a>> {
+            // Safety:
+            // Created from valid Table for this object
+            // which contains a valid value in this slot
+            unsafe {
+                self._tab.get::<::flatbuffers::ForwardsUOffset<BatteryStatus>>(
+                    Heartbeat::VT_BATTERY,
+                    None,
+                )
+            }
+        }
     }
 
     impl ::flatbuffers::Verifiable for Heartbeat<'_> {
@@ -688,18 +838,24 @@ pub mod coprocessor_proto {
             v.visit_table(pos)?
                 .visit_field::<u64>("uptime_ms", Self::VT_UPTIME_MS, false)?
                 .visit_field::<u32>("heap_free", Self::VT_HEAP_FREE, false)?
+                .visit_field::<::flatbuffers::ForwardsUOffset<BatteryStatus>>(
+                    "battery",
+                    Self::VT_BATTERY,
+                    false,
+                )?
                 .finish();
             Ok(())
         }
     }
-    pub struct HeartbeatArgs {
+    pub struct HeartbeatArgs<'a> {
         pub uptime_ms: u64,
         pub heap_free: u32,
+        pub battery: Option<::flatbuffers::WIPOffset<BatteryStatus<'a>>>,
     }
-    impl<'a> Default for HeartbeatArgs {
+    impl<'a> Default for HeartbeatArgs<'a> {
         #[inline]
         fn default() -> Self {
-            HeartbeatArgs { uptime_ms: 0, heap_free: 0 }
+            HeartbeatArgs { uptime_ms: 0, heap_free: 0, battery: None }
         }
     }
 
@@ -715,6 +871,13 @@ pub mod coprocessor_proto {
         #[inline]
         pub fn add_heap_free(&mut self, heap_free: u32) {
             self.fbb_.push_slot::<u32>(Heartbeat::VT_HEAP_FREE, heap_free, 0);
+        }
+        #[inline]
+        pub fn add_battery(&mut self, battery: ::flatbuffers::WIPOffset<BatteryStatus<'b>>) {
+            self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<BatteryStatus>>(
+                Heartbeat::VT_BATTERY,
+                battery,
+            );
         }
         #[inline]
         pub fn new(
@@ -735,6 +898,7 @@ pub mod coprocessor_proto {
             let mut ds = f.debug_struct("Heartbeat");
             ds.field("uptime_ms", &self.uptime_ms());
             ds.field("heap_free", &self.heap_free());
+            ds.field("battery", &self.battery());
             ds.finish()
         }
     }
@@ -1530,6 +1694,21 @@ pub mod coprocessor_proto {
                 None
             }
         }
+
+        #[inline]
+        #[allow(non_snake_case)]
+        pub fn message_as_battery_status(&self) -> Option<BatteryStatus<'a>> {
+            if self.message_type() == Request::BatteryStatus {
+                self.message().map(|t| {
+                    // Safety:
+                    // Created from a valid Table for this object
+                    // Which contains a valid union in this slot
+                    unsafe { BatteryStatus::init_from_table(t) }
+                })
+            } else {
+                None
+            }
+        }
     }
 
     impl ::flatbuffers::Verifiable for RequestEnvelope<'_> {
@@ -1547,6 +1726,7 @@ pub mod coprocessor_proto {
           Request::StopProvisioning => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<StopProvisioning>>("Request::StopProvisioning", pos),
           Request::StreamChunk => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<StreamChunk>>("Request::StreamChunk", pos),
           Request::Hello => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<Hello>>("Request::Hello", pos),
+          Request::BatteryStatus => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<BatteryStatus>>("Request::BatteryStatus", pos),
           _ => Ok(()),
         }
      })?
@@ -1659,6 +1839,16 @@ pub mod coprocessor_proto {
                 }
                 Request::Hello => {
                     if let Some(x) = self.message_as_hello() {
+                        ds.field("message", &x)
+                    } else {
+                        ds.field(
+                            "message",
+                            &"InvalidFlatbuffer: Union discriminant does not match value.",
+                        )
+                    }
+                }
+                Request::BatteryStatus => {
+                    if let Some(x) = self.message_as_battery_status() {
                         ds.field("message", &x)
                     } else {
                         ds.field(

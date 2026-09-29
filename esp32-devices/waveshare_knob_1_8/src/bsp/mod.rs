@@ -13,7 +13,9 @@ pub mod rotary;
 pub mod rtc;
 pub mod touch;
 
-pub use battery::{battery_task, get_battery_percent, is_plugged_in};
+pub use battery::{
+    battery_task, get_battery_mv, get_battery_percent, get_battery_status, is_plugged_in,
+};
 pub use board::{
     BatteryPeripherals, Board, CoprocessorUartPeripherals, Core0Peripherals, Core1Peripherals,
     DisplayPeripherals, EncoderPeripherals, I2c0Peripherals, SystemPeripherals,
@@ -43,7 +45,7 @@ static I2C_BUS: static_cell::StaticCell<SharedI2cBus> = static_cell::StaticCell:
 
 pub use coprocessor::{
     CoprocessorCommand, connect_wifi, coprocessor_task, get_wifi_ssid, is_provisioning,
-    is_wifi_connected, start_provisioning, stop_provisioning,
+    is_wifi_connected, send_battery_status, start_provisioning, stop_provisioning,
 };
 pub use haptics::{Feedback, haptic_task, signal_feedback};
 pub use platform::{EspPlatform, WaveshareFeedback, WindowHolder, run_event_loop};
