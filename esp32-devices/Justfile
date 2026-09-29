@@ -23,12 +23,12 @@ _default:
 [doc("Format all Rust files in esp32-devices workspace.")]
 [group("verification")]
 fmt:
-    cargo +nightly fmt --all
+    make fmt
 
 [doc("Check formatting without modifying files.")]
 [group("verification")]
 fmt-check:
-    cargo +nightly fmt --all -- --check
+    make fmt-check
 
 [doc("Typecheck device firmware crates.")]
 [group("verification")]

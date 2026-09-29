@@ -19,12 +19,12 @@ check *ARGS:
 [doc("Format all Rust files in portable workspace.")]
 [group("verification")]
 fmt:
-    cargo +nightly fmt --all
+    make fmt
 
 [doc("Check formatting without modifying files.")]
 [group("verification")]
 fmt-check:
-    cargo +nightly fmt --all -- --check
+    make fmt-check
 
 # -----------------------------------------------------------------------------
 # Apps & Simulators (portable apps with Slint MCP)
