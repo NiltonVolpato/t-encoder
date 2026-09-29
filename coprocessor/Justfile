@@ -5,9 +5,9 @@ export INTERACTIVE := env('INTERACTIVE', "true")
 _default:
     @just --list
 
-[doc("Build co-processor firmware with PlatformIO.")]
+[doc("Build co-processor firmware with PlatformIO (make-backed incremental check).")]
 build *ARGS:
-    pio run {{ARGS}}
+    make {{ARGS}}
 
 [doc("Generate compile_commands.json for clangd and Zed IDE integration.")]
 compiledb:
@@ -15,39 +15,18 @@ compiledb:
 
 [doc("Format C++ sources and headers with clang-format (Google style).")]
 fmt *ARGS:
-    /opt/homebrew/opt/llvm@22/bin/clang-format -i src/*.cpp src/*.h {{ARGS}}
+    make fmt
 
 [doc("Check C++ sources and headers formatting without modifying.")]
 fmt-check *ARGS:
-    /opt/homebrew/opt/llvm@22/bin/clang-format --dry-run --Werror src/*.cpp src/*.h {{ARGS}}
+    make fmt-check
 
-[doc("Run clang-tidy on co-processor C++ sources.")]
+[doc("Run clang-tidy on co-processor C++ sources (make-backed incremental check).")]
 tidy *ARGS:
-    @PATH="/opt/homebrew/opt/llvm@22/bin:$PATH" /opt/homebrew/opt/llvm@22/bin/run-clang-tidy \
-        -clang-tidy-binary=/opt/homebrew/opt/llvm@22/bin/clang-tidy \
-        -clang-apply-replacements-binary=/opt/homebrew/opt/llvm@22/bin/clang-apply-replacements \
-        -p . \
-        -quiet \
-        -hide-progress \
-        -source-filter '.*/coprocessor/src/.*' \
-        -header-filter '^(coprocessor/)?src/.*\.h$' \
-        -removed-arg='-mlongcalls' \
-        -removed-arg='-fno-shrink-wrap' \
-        -removed-arg='-fno-tree-switch-conversion' \
-        -removed-arg='-fstrict-volatile-bitfields' \
-        -extra-arg='--target=xtensa-esp-elf' \
-        -extra-arg='-Qunused-arguments' \
-        -extra-arg='-Wno-error' \
-        -extra-arg='--sysroot=/Users/nilton/.platformio/packages/toolchain-xtensa-esp-elf/xtensa-esp-elf' \
-        -extra-arg='-isystem/Users/nilton/.platformio/packages/toolchain-xtensa-esp-elf/picolibc/include' \
-        -extra-arg='-isystem/Users/nilton/.platformio/packages/toolchain-xtensa-esp-elf/xtensa-esp-elf/include/c++/15.2.0' \
-        -extra-arg='-isystem/Users/nilton/.platformio/packages/toolchain-xtensa-esp-elf/xtensa-esp-elf/include/c++/15.2.0/xtensa-esp-elf/esp32' \
-        -extra-arg='-isystem/Users/nilton/.platformio/packages/toolchain-xtensa-esp-elf/lib/gcc/xtensa-esp-elf/15.2.0/include' \
-        -extra-arg='-isystem/Users/nilton/.platformio/packages/toolchain-xtensa-esp-elf/xtensa-esp-elf/include' \
-        {{ARGS}}
+    make tidy
 
 [doc("Run all verification steps for co-processor: formatting, lint, and build.")]
-verify: fmt-check tidy build
+verify: fmt tidy build
 
 [doc("Flash co-processor firmware via CH340 and monitor output (interactive, or automated via INTERACTIVE=false).")]
 flash PORT="/dev/cu.usbserial-10" *ARGS:

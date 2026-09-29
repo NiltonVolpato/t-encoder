@@ -12,6 +12,7 @@ path = "src/lib.rs"
 [[bin]]
 name = "launcher-simulator"
 path = "src/bin/main.rs"
+test = false
 
 [features]
 default = ["apps", "simulator"]

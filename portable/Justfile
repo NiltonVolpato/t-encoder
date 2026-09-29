@@ -1,0 +1,45 @@
+_default:
+    @just --list
+
+[doc("Run host unit tests for apps and pure crates in portable workspace.")]
+[group("verification")]
+test *ARGS='--lib --tests':
+    cargo nextest run --status-level fail --show-progress none --no-output-indent --cargo-quiet {{ARGS}}
+
+[doc("Clippy on portable workspace crates (warnings are errors).")]
+[group("verification")]
+lint *ARGS:
+    cargo clippy --workspace --all-targets {{ARGS}} -- -D warnings
+
+[doc("Typecheck portable workspace crates.")]
+[group("verification")]
+check *ARGS:
+    cargo check --workspace --all-targets {{ARGS}}
+
+[doc("Format all Rust files in portable workspace.")]
+[group("verification")]
+fmt:
+    cargo +nightly fmt --all
+
+[doc("Check formatting without modifying files.")]
+[group("verification")]
+fmt-check:
+    cargo +nightly fmt --all -- --check
+
+# -----------------------------------------------------------------------------
+# Apps & Simulators (portable apps with Slint MCP)
+# -----------------------------------------------------------------------------
+
+[doc("Run a portable app simulator with Slint MCP enabled (e.g. just test-app clock, default port: 3450).")]
+[group("apps")]
+test-app APP="app-clock" PORT="3450" *ARGS:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    pkg="{{APP}}"
+    if [[ ! "$pkg" =~ ^app- ]] && [[ -d "apps/$pkg" ]]; then
+        pkg="app-$pkg"
+    fi
+    echo "Starting simulator for $pkg on Slint MCP port {{PORT}}..."
+    SLINT_EMIT_DEBUG_INFO=1 SLINT_MCP_PORT="{{PORT}}" cargo run -p "$pkg" {{ARGS}}
+
+alias run-app := test-app

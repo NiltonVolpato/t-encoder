@@ -1,0 +1,105 @@
+set shell := ["bash", "-uc"]
+set unstable := true
+set lists := true
+set dotenv-load := true
+
+# Ensure xtensa GCC toolchain is in PATH for the linker
+xtensa_bin := `ls -d ~/.rustup/toolchains/esp/xtensa-esp-elf/*/xtensa-esp-elf/bin 2>/dev/null | head -1`
+export PATH := xtensa_bin + ":" + env('PATH')
+
+# Default target device (can be overridden with DEVICE=lilygo_t_encoder_pro or recipe argument)
+export DEVICE := env('DEVICE', "waveshare_knob_1_8")
+
+# Interactive mode for flashing and monitoring (defaults to true; set INTERACTIVE=false for automated/CI runs)
+export INTERACTIVE := env('INTERACTIVE', "true")
+
+_default:
+    @just --list
+
+# -----------------------------------------------------------------------------
+# Device Verification Recipes
+# -----------------------------------------------------------------------------
+
+[doc("Format all Rust files in esp32-devices workspace.")]
+[group("verification")]
+fmt:
+    cargo +nightly fmt --all
+
+[doc("Check formatting without modifying files.")]
+[group("verification")]
+fmt-check:
+    cargo +nightly fmt --all -- --check
+
+[doc("Typecheck device firmware crates.")]
+[group("verification")]
+check TARGET=DEVICE *ARGS:
+    cargo check -p {{TARGET}} {{ARGS}}
+
+[doc("Clippy on device firmware crates.")]
+[group("verification")]
+lint TARGET=DEVICE *ARGS:
+    cargo clippy -p {{TARGET}} {{ARGS}} -- -D warnings
+
+alias check-device := check
+alias lint-device := lint
+
+# -----------------------------------------------------------------------------
+# Build, Flash, and Diagnostics
+# -----------------------------------------------------------------------------
+
+[doc("Build device firmware in release mode (default: waveshare_knob_1_8).")]
+[group("device")]
+build TARGET=DEVICE *ARGS:
+    cargo build -p {{TARGET}} --release {{ARGS}}
+
+[doc("Build, flash, and monitor device firmware using probe-rs (cargo run).")]
+[group("device")]
+flash TARGET=DEVICE *ARGS:
+    cargo run -p {{TARGET}} --release {{ARGS}}
+
+[doc("Attach to a running device and monitor logs without reflashing.")]
+[group("device")]
+attach TARGET=DEVICE *ARGS:
+    probe-rs attach --chip=esp32s3 --always-print-stacktrace --log-format '{L:severity:bold:<1} {t:dimmed}] {s}' target/xtensa-esp32s3-none-elf/release/{{TARGET}} {{ARGS}}
+
+[doc("Show firmware size breakdown by sections and compile units using bloaty.")]
+[group("device")]
+size TARGET=DEVICE COUNT="20":
+    bloaty target/xtensa-esp32s3-none-elf/release/{{TARGET}} -d sections -n {{COUNT}}
+    @echo ""
+    bloaty target/xtensa-esp32s3-none-elf/release/{{TARGET}} -d compileunits -n {{COUNT}}
+
+[doc("Show firmware RAM usage breakdown by sections and symbols using bloaty (default: waveshare_knob_1_8).")]
+[group("device")]
+ram TARGET=DEVICE COUNT="30":
+    bloaty target/xtensa-esp32s3-none-elf/release/{{TARGET}} \
+        -d sections,symbols \
+        --source-filter='^\.(bss|data|rwdata|rwtext|dram)' \
+        -s vm --domain=vm -n {{COUNT}}
+
+[doc("Run any cargo or tool command inside the esp32-devices workspace.")]
+[group("device")]
+exec *COMMAND:
+    {{COMMAND}}
+
+# -----------------------------------------------------------------------------
+# Profiling & Diagnostics
+# -----------------------------------------------------------------------------
+
+[doc("Flash with profiler armed, pipe output to profile.log, and symbolize hotspots (e.g. just flash-profile 10s).")]
+[group("profile")]
+flash-profile OPTS="input,10s" TARGET=DEVICE *ARGS:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Starting profiling run with PROFILE={{OPTS}} on {{TARGET}}..."
+    PROFILE="{{OPTS}}" cargo run -p {{TARGET}} --release {{ARGS}} 2>&1 | tee profile.log || true
+    if [[ -s profile.log ]]; then
+        echo ""
+        echo "================ Symbolizing Captured Profile ================"
+        python3 ../tools/symbolize_profile.py < profile.log
+    fi
+
+[doc("Symbolize an existing profiler log file (default: profile.log).")]
+[group("profile")]
+symbolize LOG="profile.log":
+    python3 ../tools/symbolize_profile.py < {{LOG}}

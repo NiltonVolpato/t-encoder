@@ -1,10 +1,9 @@
 # T-Encoder Workspace Justfile
 #
-# Supports two decoupled workspaces:
-#  1. Host workspace (root `./`): Pure crates, apps, tests, and simulators.
-#  2. Device workspace (`./esp32-devices`): Embedded crates (waveshare_knob_1_8, lilygo_t_encoder_pro, common).
-#
-# Flashing and monitoring use probe-rs via `cargo run`.
+# Modular workspace structure:
+#  1. Host workspace: `portable`
+#  2. Device workspace: `esp32-devices` (aliased as `device`)
+#  3. Co-processor workspace: `coprocessor`
 
 set shell := ["bash", "-uc"]
 set unstable := true
@@ -13,156 +12,69 @@ set dotenv-load := true
 set dotenv-filename := [".env", ".env.local"]
 set dotenv-override := true
 
-# Ensure xtensa GCC toolchain is in PATH for the linker
-xtensa_bin := `ls -d ~/.rustup/toolchains/esp/xtensa-esp-elf/*/xtensa-esp-elf/bin 2>/dev/null | head -1`
-export PATH := xtensa_bin + ":" + env('PATH')
-
-# Default target device (can be overridden with DEVICE=lilygo_t_encoder_pro or recipe argument)
-export DEVICE := env('DEVICE', "waveshare_knob_1_8")
-
-# Interactive mode for flashing and monitoring (defaults to true; set INTERACTIVE=false for automated/CI runs)
-export INTERACTIVE := env('INTERACTIVE', "true")
-
+mod portable
+mod esp32-devices
 mod coprocessor
+
+alias device := esp32-devices
+alias host := portable
 
 _default:
     @just --list
 
 # -----------------------------------------------------------------------------
-# Portable Workspace Recipes (pure crates, apps, tests)
+# FlatBuffers Schema
 # -----------------------------------------------------------------------------
 
-[doc("Run host unit tests for apps and pure crates in portable workspace.")]
+[doc("Compile FlatBuffers schemas into C++ headers and Rust bindings (make-driven incremental).")]
+[group("codegen")]
+schema:
+    make -C schemas
+
+# -----------------------------------------------------------------------------
+# Parallel Aggregates
+# -----------------------------------------------------------------------------
+
+[doc("Format all Rust and C++ files across all subprojects.")]
+[group("verification")]
+[parallel]
+fmt: portable::fmt esp32-devices::fmt coprocessor::fmt
+
+[doc("Check formatting without modifying files across all subprojects.")]
+[group("verification")]
+[parallel]
+fmt-check: portable::fmt-check esp32-devices::fmt-check coprocessor::fmt-check
+
+[doc("Typecheck both portable workspace crates and device firmware in parallel.")]
+[group("verification")]
+[parallel]
+check: portable::check esp32-devices::check
+
+[doc("Run all linters in parallel (portable clippy, device clippy, coprocessor clang-tidy).")]
+[group("verification")]
+[parallel]
+lint: portable::lint esp32-devices::lint coprocessor::tidy
+
+[doc("Run host unit tests.")]
 [group("verification")]
 test *ARGS:
-    cd portable && cargo test --workspace {{ARGS}}
+    just portable::test {{ARGS}}
 
-[doc("Clippy on portable workspace crates (warnings are errors).")]
+# -----------------------------------------------------------------------------
+# Verification Suite
+# -----------------------------------------------------------------------------
+
+[doc("Run fast verification: format, typecheck, lint, test, and coprocessor build.")]
 [group("verification")]
-lint *ARGS:
-    cd portable && cargo clippy --workspace --all-targets {{ARGS}} -- -D warnings
+verify: fmt check lint test coprocessor::build
 
-[doc("Typecheck portable workspace crates.")]
+[doc("Run verify plus full release builds for all hardware targets.")]
 [group("verification")]
-check-native *ARGS:
-    cd portable && cargo check --workspace --all-targets {{ARGS}}
-
-[doc("Format all Rust files in both workspaces.")]
-[group("verification")]
-fmt:
-    cd portable && cargo +nightly fmt --all
-    cd esp32-devices && cargo +nightly fmt --all
-
-[doc("Check formatting without modifying files.")]
-[group("verification")]
-fmt-check:
-    cd portable && cargo +nightly fmt --all -- --check
-    cd esp32-devices && cargo +nightly fmt --all -- --check
+verify-all: verify (esp32-devices::build "waveshare_knob_1_8") (esp32-devices::build "lilygo_t_encoder_pro")
 
 # -----------------------------------------------------------------------------
-# Apps & Simulators (portable apps with Slint MCP)
+# Diagnostics & Info
 # -----------------------------------------------------------------------------
-
-[doc("Run a portable app simulator with Slint MCP enabled (e.g. just test-app clock, default port: 3450).")]
-[group("apps")]
-test-app APP="app-clock" PORT="3450" *ARGS:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    pkg="{{APP}}"
-    if [[ ! "$pkg" =~ ^app- ]] && [[ -d "portable/apps/$pkg" ]]; then
-        pkg="app-$pkg"
-    fi
-    echo "Starting simulator for $pkg on Slint MCP port {{PORT}}..."
-    cd portable && SLINT_EMIT_DEBUG_INFO=1 SLINT_MCP_PORT="{{PORT}}" cargo run -p "$pkg" {{ARGS}}
-
-alias run-app := test-app
-
-# -----------------------------------------------------------------------------
-# Device Workspace Recipes (esp32-devices)
-# -----------------------------------------------------------------------------
-
-
-[doc("Build device firmware in release mode (default: waveshare_knob_1_8).")]
-[group("device")]
-build TARGET=DEVICE *ARGS:
-    cd esp32-devices && cargo build -p {{TARGET}} --release {{ARGS}}
-
-[doc("Build, flash, and monitor device firmware using probe-rs (cargo run).")]
-[group("device")]
-flash TARGET=DEVICE *ARGS:
-    cd esp32-devices && cargo run -p {{TARGET}} --release {{ARGS}}
-
-[doc("Attach to a running device and monitor logs without reflashing.")]
-[group("device")]
-attach TARGET=DEVICE *ARGS:
-    probe-rs attach --chip=esp32s3 --always-print-stacktrace --log-format '{L:severity:bold:<1} {t:dimmed}] {s}' esp32-devices/target/xtensa-esp32s3-none-elf/release/{{TARGET}} {{ARGS}}
-
-[doc("Typecheck device firmware crates.")]
-[group("device")]
-check-device TARGET=DEVICE *ARGS:
-    cd esp32-devices && cargo check -p {{TARGET}} {{ARGS}}
-
-[doc("Clippy on device firmware crates.")]
-[group("device")]
-lint-device TARGET=DEVICE *ARGS:
-    cd esp32-devices && cargo clippy -p {{TARGET}} --release {{ARGS}} -- -D warnings
-
-[doc("Show firmware size breakdown by sections and compile units using bloaty.")]
-[group("device")]
-size TARGET=DEVICE COUNT="20":
-    bloaty esp32-devices/target/xtensa-esp32s3-none-elf/release/{{TARGET}} -d sections -n {{COUNT}}
-    @echo ""
-    bloaty esp32-devices/target/xtensa-esp32s3-none-elf/release/{{TARGET}} -d compileunits -n {{COUNT}}
-
-[doc("Show firmware RAM usage breakdown by sections and symbols using bloaty (default: waveshare_knob_1_8).")]
-[group("device")]
-ram TARGET=DEVICE COUNT="30":
-    bloaty esp32-devices/target/xtensa-esp32s3-none-elf/release/{{TARGET}} \
-        -d sections,symbols \
-        --source-filter='^\.(bss|data|rwdata|rwtext|dram)' \
-        -s vm --domain=vm -n {{COUNT}}
-
-[doc("Run any cargo or tool command inside the esp32-devices workspace.")]
-[group("device")]
-exec-device *COMMAND:
-    cd esp32-devices && {{COMMAND}}
-
-# -----------------------------------------------------------------------------
-# Profiling & Diagnostics
-# -----------------------------------------------------------------------------
-
-[doc("Flash with profiler armed, pipe output to profile.log, and symbolize hotspots (e.g. just flash-profile 10s).")]
-[group("profile")]
-flash-profile OPTS="input,10s" TARGET=DEVICE *ARGS:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    cd esp32-devices
-    echo "Starting profiling run with PROFILE={{OPTS}} on {{TARGET}}..."
-    # Allow probe-rs / cargo run to exit or be stopped via Ctrl-C without aborting symbolizing
-    PROFILE="{{OPTS}}" cargo run -p {{TARGET}} --release {{ARGS}} 2>&1 | tee profile.log || true
-    cd ..
-    if [[ -s esp32-devices/profile.log ]]; then
-        echo ""
-        echo "================ Symbolizing Captured Profile ================"
-        python3 tools/symbolize_profile.py < esp32-devices/profile.log
-    fi
-
-[doc("Symbolize an existing profiler log file (default: esp32-devices/profile.log).")]
-[group("profile")]
-symbolize LOG="esp32-devices/profile.log":
-    python3 tools/symbolize_profile.py < {{LOG}}
-
-# -----------------------------------------------------------------------------
-# Verification Suite & Info
-# -----------------------------------------------------------------------------
-
-[doc("Typecheck both native crates and device firmware.")]
-[group("verification")]
-check: check-native check-device
-
-[doc("Run all verification steps: formatting check, lints, tests, and build.")]
-[group("verification")]
-verify: fmt-check lint lint-device test (build "waveshare_knob_1_8") (build "lilygo_t_encoder_pro") coprocessor::verify
 
 [doc("Print toolchain and environment diagnostic info.")]
 [group("debug")]
@@ -171,5 +83,4 @@ env-info:
     @rustc --version
     @echo ""
     @echo "=== Device Toolchain (esp32-devices) ==="
-    @echo "xtensa bin = {{xtensa_bin}}"
     @cd esp32-devices && rustc --version

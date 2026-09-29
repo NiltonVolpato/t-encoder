@@ -12,6 +12,7 @@ path = "src/lib.rs"
 [[bin]]
 name = "sonos-simulator"
 path = "src/bin/main.rs"
+test = false
 
 [features]
 default = ["simulator"]
