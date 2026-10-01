@@ -13,6 +13,8 @@
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "esp_wifi.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "nvs.h"
 
 namespace coprocessor {
@@ -21,6 +23,7 @@ namespace {
 
 constexpr const char* TAG = "wifi_mgr";
 
+portMUX_TYPE s_wifi_mux = portMUX_INITIALIZER_UNLOCKED;
 wifi_status_cb_t s_status_cb = nullptr;
 bool s_connected = false;
 std::array<char, 33> s_current_ssid{};
@@ -68,10 +71,14 @@ void wifi_event_handler(void* arg, esp_event_base_t event_base,
           esp_wifi_connect();
         } else {
           ESP_LOGW(TAG, "Wi-Fi disconnected, max retries reached");
+          std::string ssid;
+          portENTER_CRITICAL(&s_wifi_mux);
           s_connected = false;
           s_ip_str[0] = '\0';
+          ssid = s_current_ssid.data();
+          portEXIT_CRITICAL(&s_wifi_mux);
           if (s_status_cb) {
-            s_status_cb(false, s_current_ssid.data(), "", 0);
+            s_status_cb(false, ssid, "", 0);
           }
         }
         break;
@@ -80,10 +87,17 @@ void wifi_event_handler(void* arg, esp_event_base_t event_base,
     }
   } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
     auto* event = reinterpret_cast<ip_event_got_ip_t*>(event_data);
+    std::string ssid;
+    std::string ip;
+    portENTER_CRITICAL(&s_wifi_mux);
     esp_ip4addr_ntoa(&event->ip_info.ip, s_ip_str.data(), s_ip_str.size());
-    ESP_LOGI(TAG, "Got IP address: %s", s_ip_str.data());
-
     s_connected = true;
+    ssid = s_current_ssid.data();
+    ip = s_ip_str.data();
+    portEXIT_CRITICAL(&s_wifi_mux);
+
+    ESP_LOGI(TAG, "Got IP address: %s", ip.c_str());
+
     int8_t rssi = 0;
     wifi_ap_record_t ap_info;
     if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
@@ -91,7 +105,7 @@ void wifi_event_handler(void* arg, esp_event_base_t event_base,
     }
 
     if (s_status_cb) {
-      s_status_cb(true, s_current_ssid.data(), s_ip_str.data(), rssi);
+      s_status_cb(true, ssid, ip, rssi);
     }
   }
 }
@@ -161,9 +175,14 @@ void wifi_connect(std::string_view ssid, std::string_view password) {
     return;
   }
 
+  portENTER_CRITICAL(&s_wifi_mux);
   size_t ssid_copy_len = std::min(ssid.size(), s_current_ssid.size() - 1);
   std::memcpy(s_current_ssid.data(), ssid.data(), ssid_copy_len);
   s_current_ssid[ssid_copy_len] = '\0';
+  s_retry_count = 0;
+  s_connected = false;
+  s_ip_str[0] = '\0';
+  portEXIT_CRITICAL(&s_wifi_mux);
 
   save_credentials(ssid, password);
 
@@ -181,19 +200,31 @@ void wifi_connect(std::string_view ssid, std::string_view password) {
   } else {
     wifi_cfg.sta.threshold.authmode = WIFI_AUTH_OPEN;
   }
-  s_retry_count = 0;
-  s_connected = false;
-  s_ip_str[0] = '\0';
 
   esp_wifi_disconnect();
   esp_wifi_set_config(WIFI_IF_STA, &wifi_cfg);
   esp_wifi_connect();
 }
 
-bool wifi_is_connected() { return s_connected; }
+bool wifi_is_connected() {
+  portENTER_CRITICAL(&s_wifi_mux);
+  bool connected = s_connected;
+  portEXIT_CRITICAL(&s_wifi_mux);
+  return connected;
+}
 
-std::string_view wifi_get_ip() { return s_ip_str.data(); }
+std::string wifi_get_ip() {
+  portENTER_CRITICAL(&s_wifi_mux);
+  std::string ip(s_ip_str.data());
+  portEXIT_CRITICAL(&s_wifi_mux);
+  return ip;
+}
 
-std::string_view wifi_get_ssid() { return s_current_ssid.data(); }
+std::string wifi_get_ssid() {
+  portENTER_CRITICAL(&s_wifi_mux);
+  std::string ssid(s_current_ssid.data());
+  portEXIT_CRITICAL(&s_wifi_mux);
+  return ssid;
+}
 
 }  // namespace coprocessor

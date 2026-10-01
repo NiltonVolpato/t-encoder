@@ -13,6 +13,8 @@ static_assert(FLATBUFFERS_VERSION_MAJOR == 25 &&
               FLATBUFFERS_VERSION_REVISION == 19,
              "Non-compatible flatbuffers version included");
 
+#include "media_generated.h"
+
 namespace CoprocessorProto {
 
 struct WifiStatus;
@@ -96,11 +98,16 @@ enum Request : uint8_t {
   Request_StreamChunk = 5,
   Request_Hello = 6,
   Request_BatteryStatus = 7,
+  Request_Media_Action = 8,
+  Request_Media_VolumeCommand = 9,
+  Request_Media_Subscribe = 10,
+  Request_Media_UnsubscribeAll = 11,
+  Request_Media_GetTopology = 12,
   Request_MIN = Request_NONE,
-  Request_MAX = Request_BatteryStatus
+  Request_MAX = Request_Media_GetTopology
 };
 
-inline const Request (&EnumValuesRequest())[8] {
+inline const Request (&EnumValuesRequest())[13] {
   static const Request values[] = {
     Request_NONE,
     Request_Heartbeat,
@@ -109,13 +116,18 @@ inline const Request (&EnumValuesRequest())[8] {
     Request_StopProvisioning,
     Request_StreamChunk,
     Request_Hello,
-    Request_BatteryStatus
+    Request_BatteryStatus,
+    Request_Media_Action,
+    Request_Media_VolumeCommand,
+    Request_Media_Subscribe,
+    Request_Media_UnsubscribeAll,
+    Request_Media_GetTopology
   };
   return values;
 }
 
 inline const char * const *EnumNamesRequest() {
-  static const char * const names[9] = {
+  static const char * const names[14] = {
     "NONE",
     "Heartbeat",
     "WifiConnectRequest",
@@ -124,13 +136,18 @@ inline const char * const *EnumNamesRequest() {
     "StreamChunk",
     "Hello",
     "BatteryStatus",
+    "Media_Action",
+    "Media_VolumeCommand",
+    "Media_Subscribe",
+    "Media_UnsubscribeAll",
+    "Media_GetTopology",
     nullptr
   };
   return names;
 }
 
 inline const char *EnumNameRequest(Request e) {
-  if (::flatbuffers::IsOutRange(e, Request_NONE, Request_BatteryStatus)) return "";
+  if (::flatbuffers::IsOutRange(e, Request_NONE, Request_Media_GetTopology)) return "";
   const size_t index = static_cast<size_t>(e);
   return EnumNamesRequest()[index];
 }
@@ -167,6 +184,26 @@ template<> struct RequestTraits<CoprocessorProto::BatteryStatus> {
   static const Request enum_value = Request_BatteryStatus;
 };
 
+template<> struct RequestTraits<CoprocessorProto::Media::Action> {
+  static const Request enum_value = Request_Media_Action;
+};
+
+template<> struct RequestTraits<CoprocessorProto::Media::VolumeCommand> {
+  static const Request enum_value = Request_Media_VolumeCommand;
+};
+
+template<> struct RequestTraits<CoprocessorProto::Media::Subscribe> {
+  static const Request enum_value = Request_Media_Subscribe;
+};
+
+template<> struct RequestTraits<CoprocessorProto::Media::UnsubscribeAll> {
+  static const Request enum_value = Request_Media_UnsubscribeAll;
+};
+
+template<> struct RequestTraits<CoprocessorProto::Media::GetTopology> {
+  static const Request enum_value = Request_Media_GetTopology;
+};
+
 template <bool B = false>
 bool VerifyRequest(::flatbuffers::VerifierTemplate<B> &verifier, const void *obj, Request type);
 template <bool B = false>
@@ -180,11 +217,13 @@ enum Response : uint8_t {
   Response_StreamChunk = 4,
   Response_Hello = 5,
   Response_TimeSync = 6,
+  Response_Media_StateUpdate = 7,
+  Response_Media_TopologyUpdate = 8,
   Response_MIN = Response_NONE,
-  Response_MAX = Response_TimeSync
+  Response_MAX = Response_Media_TopologyUpdate
 };
 
-inline const Response (&EnumValuesResponse())[7] {
+inline const Response (&EnumValuesResponse())[9] {
   static const Response values[] = {
     Response_NONE,
     Response_Heartbeat,
@@ -192,13 +231,15 @@ inline const Response (&EnumValuesResponse())[7] {
     Response_ProvisioningStatus,
     Response_StreamChunk,
     Response_Hello,
-    Response_TimeSync
+    Response_TimeSync,
+    Response_Media_StateUpdate,
+    Response_Media_TopologyUpdate
   };
   return values;
 }
 
 inline const char * const *EnumNamesResponse() {
-  static const char * const names[8] = {
+  static const char * const names[10] = {
     "NONE",
     "Heartbeat",
     "WifiStatus",
@@ -206,13 +247,15 @@ inline const char * const *EnumNamesResponse() {
     "StreamChunk",
     "Hello",
     "TimeSync",
+    "Media_StateUpdate",
+    "Media_TopologyUpdate",
     nullptr
   };
   return names;
 }
 
 inline const char *EnumNameResponse(Response e) {
-  if (::flatbuffers::IsOutRange(e, Response_NONE, Response_TimeSync)) return "";
+  if (::flatbuffers::IsOutRange(e, Response_NONE, Response_Media_TopologyUpdate)) return "";
   const size_t index = static_cast<size_t>(e);
   return EnumNamesResponse()[index];
 }
@@ -243,6 +286,14 @@ template<> struct ResponseTraits<CoprocessorProto::Hello> {
 
 template<> struct ResponseTraits<CoprocessorProto::TimeSync> {
   static const Response enum_value = Response_TimeSync;
+};
+
+template<> struct ResponseTraits<CoprocessorProto::Media::StateUpdate> {
+  static const Response enum_value = Response_Media_StateUpdate;
+};
+
+template<> struct ResponseTraits<CoprocessorProto::Media::TopologyUpdate> {
+  static const Response enum_value = Response_Media_TopologyUpdate;
 };
 
 template <bool B = false>
@@ -849,6 +900,21 @@ struct RequestEnvelope FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   const CoprocessorProto::BatteryStatus *message_as_BatteryStatus() const {
     return message_type() == CoprocessorProto::Request_BatteryStatus ? static_cast<const CoprocessorProto::BatteryStatus *>(message()) : nullptr;
   }
+  const CoprocessorProto::Media::Action *message_as_Media_Action() const {
+    return message_type() == CoprocessorProto::Request_Media_Action ? static_cast<const CoprocessorProto::Media::Action *>(message()) : nullptr;
+  }
+  const CoprocessorProto::Media::VolumeCommand *message_as_Media_VolumeCommand() const {
+    return message_type() == CoprocessorProto::Request_Media_VolumeCommand ? static_cast<const CoprocessorProto::Media::VolumeCommand *>(message()) : nullptr;
+  }
+  const CoprocessorProto::Media::Subscribe *message_as_Media_Subscribe() const {
+    return message_type() == CoprocessorProto::Request_Media_Subscribe ? static_cast<const CoprocessorProto::Media::Subscribe *>(message()) : nullptr;
+  }
+  const CoprocessorProto::Media::UnsubscribeAll *message_as_Media_UnsubscribeAll() const {
+    return message_type() == CoprocessorProto::Request_Media_UnsubscribeAll ? static_cast<const CoprocessorProto::Media::UnsubscribeAll *>(message()) : nullptr;
+  }
+  const CoprocessorProto::Media::GetTopology *message_as_Media_GetTopology() const {
+    return message_type() == CoprocessorProto::Request_Media_GetTopology ? static_cast<const CoprocessorProto::Media::GetTopology *>(message()) : nullptr;
+  }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
@@ -885,6 +951,26 @@ template<> inline const CoprocessorProto::Hello *RequestEnvelope::message_as<Cop
 
 template<> inline const CoprocessorProto::BatteryStatus *RequestEnvelope::message_as<CoprocessorProto::BatteryStatus>() const {
   return message_as_BatteryStatus();
+}
+
+template<> inline const CoprocessorProto::Media::Action *RequestEnvelope::message_as<CoprocessorProto::Media::Action>() const {
+  return message_as_Media_Action();
+}
+
+template<> inline const CoprocessorProto::Media::VolumeCommand *RequestEnvelope::message_as<CoprocessorProto::Media::VolumeCommand>() const {
+  return message_as_Media_VolumeCommand();
+}
+
+template<> inline const CoprocessorProto::Media::Subscribe *RequestEnvelope::message_as<CoprocessorProto::Media::Subscribe>() const {
+  return message_as_Media_Subscribe();
+}
+
+template<> inline const CoprocessorProto::Media::UnsubscribeAll *RequestEnvelope::message_as<CoprocessorProto::Media::UnsubscribeAll>() const {
+  return message_as_Media_UnsubscribeAll();
+}
+
+template<> inline const CoprocessorProto::Media::GetTopology *RequestEnvelope::message_as<CoprocessorProto::Media::GetTopology>() const {
+  return message_as_Media_GetTopology();
 }
 
 struct RequestEnvelopeBuilder {
@@ -949,6 +1035,12 @@ struct ResponseEnvelope FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   const CoprocessorProto::TimeSync *message_as_TimeSync() const {
     return message_type() == CoprocessorProto::Response_TimeSync ? static_cast<const CoprocessorProto::TimeSync *>(message()) : nullptr;
   }
+  const CoprocessorProto::Media::StateUpdate *message_as_Media_StateUpdate() const {
+    return message_type() == CoprocessorProto::Response_Media_StateUpdate ? static_cast<const CoprocessorProto::Media::StateUpdate *>(message()) : nullptr;
+  }
+  const CoprocessorProto::Media::TopologyUpdate *message_as_Media_TopologyUpdate() const {
+    return message_type() == CoprocessorProto::Response_Media_TopologyUpdate ? static_cast<const CoprocessorProto::Media::TopologyUpdate *>(message()) : nullptr;
+  }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
@@ -981,6 +1073,14 @@ template<> inline const CoprocessorProto::Hello *ResponseEnvelope::message_as<Co
 
 template<> inline const CoprocessorProto::TimeSync *ResponseEnvelope::message_as<CoprocessorProto::TimeSync>() const {
   return message_as_TimeSync();
+}
+
+template<> inline const CoprocessorProto::Media::StateUpdate *ResponseEnvelope::message_as<CoprocessorProto::Media::StateUpdate>() const {
+  return message_as_Media_StateUpdate();
+}
+
+template<> inline const CoprocessorProto::Media::TopologyUpdate *ResponseEnvelope::message_as<CoprocessorProto::Media::TopologyUpdate>() const {
+  return message_as_Media_TopologyUpdate();
 }
 
 struct ResponseEnvelopeBuilder {
@@ -1048,6 +1148,26 @@ inline bool VerifyRequest(::flatbuffers::VerifierTemplate<B> &verifier, const vo
       auto ptr = reinterpret_cast<const CoprocessorProto::BatteryStatus *>(obj);
       return verifier.VerifyTable(ptr);
     }
+    case Request_Media_Action: {
+      auto ptr = reinterpret_cast<const CoprocessorProto::Media::Action *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case Request_Media_VolumeCommand: {
+      auto ptr = reinterpret_cast<const CoprocessorProto::Media::VolumeCommand *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case Request_Media_Subscribe: {
+      auto ptr = reinterpret_cast<const CoprocessorProto::Media::Subscribe *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case Request_Media_UnsubscribeAll: {
+      auto ptr = reinterpret_cast<const CoprocessorProto::Media::UnsubscribeAll *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case Request_Media_GetTopology: {
+      auto ptr = reinterpret_cast<const CoprocessorProto::Media::GetTopology *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
     default: return true;
   }
 }
@@ -1093,6 +1213,14 @@ inline bool VerifyResponse(::flatbuffers::VerifierTemplate<B> &verifier, const v
     }
     case Response_TimeSync: {
       auto ptr = reinterpret_cast<const CoprocessorProto::TimeSync *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case Response_Media_StateUpdate: {
+      auto ptr = reinterpret_cast<const CoprocessorProto::Media::StateUpdate *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case Response_Media_TopologyUpdate: {
+      auto ptr = reinterpret_cast<const CoprocessorProto::Media::TopologyUpdate *>(obj);
       return verifier.VerifyTable(ptr);
     }
     default: return true;

@@ -17,6 +17,7 @@
 #include "esp_timer.h"
 #include "esp_wifi.h"
 #include "freertos/task.h"
+#include "sonos_controller.h"
 #include "web_server.h"
 #include "wifi_manager.h"
 
@@ -228,6 +229,90 @@ void handle_rx_packet(const uint8_t* payload, size_t payload_len) {
       }
       break;
     }
+    case CoprocessorProto::Request_Media_Action: {
+      auto req = req_env->message_as_Media_Action();
+      if (req && req->endpoint_ip()) {
+        if (req->endpoint_ip()->size() == 0 || req->endpoint_port() == 0) {
+          ESP_LOGW(TAG, "Media.Action dropped: invalid endpoint");
+          break;
+        }
+        if (!wifi_is_connected()) {
+          ESP_LOGW(TAG, "Media.Action dropped: Wi-Fi not connected");
+          break;
+        }
+        ESP_LOGI(TAG, "Media.Action received: ip='%s' port=%u action=%d",
+                 req->endpoint_ip()->c_str(),
+                 static_cast<unsigned>(req->endpoint_port()),
+                 static_cast<int>(req->action()));
+        sonos_post_action(req->endpoint_ip()->c_str(), req->endpoint_port(),
+                          req->action());
+      }
+      break;
+    }
+    case CoprocessorProto::Request_Media_VolumeCommand: {
+      auto req = req_env->message_as_Media_VolumeCommand();
+      if (req && req->endpoint_ip()) {
+        if (req->endpoint_ip()->size() == 0 || req->endpoint_port() == 0) {
+          ESP_LOGW(TAG, "Media.VolumeCommand dropped: invalid endpoint");
+          break;
+        }
+        if (!wifi_is_connected()) {
+          ESP_LOGW(TAG, "Media.VolumeCommand dropped: Wi-Fi not connected");
+          break;
+        }
+        ESP_LOGI(TAG,
+                 "Media.VolumeCommand received: ip='%s' port=%u volume=%d "
+                 "relative=%d",
+                 req->endpoint_ip()->c_str(),
+                 static_cast<unsigned>(req->endpoint_port()),
+                 static_cast<int>(req->volume()),
+                 static_cast<int>(req->is_relative()));
+        sonos_post_volume(req->endpoint_ip()->c_str(), req->endpoint_port(),
+                          req->volume(), req->is_relative());
+      }
+      break;
+    }
+    case CoprocessorProto::Request_Media_Subscribe: {
+      auto req = req_env->message_as_Media_Subscribe();
+      if (req && req->endpoint_ip()) {
+        if (req->endpoint_ip()->size() == 0 || req->endpoint_port() == 0) {
+          ESP_LOGW(TAG, "Media.Subscribe dropped: invalid endpoint");
+          break;
+        }
+        if (!wifi_is_connected()) {
+          ESP_LOGW(TAG, "Media.Subscribe dropped: Wi-Fi not connected");
+          break;
+        }
+        ESP_LOGI(TAG, "Media.Subscribe received: ip='%s' port=%u",
+                 req->endpoint_ip()->c_str(),
+                 static_cast<unsigned>(req->endpoint_port()));
+        sonos_post_subscribe(req->endpoint_ip()->c_str(), req->endpoint_port());
+      }
+      break;
+    }
+    case CoprocessorProto::Request_Media_UnsubscribeAll: {
+      ESP_LOGI(TAG, "Media.UnsubscribeAll received");
+      sonos_post_unsubscribe_all();
+      break;
+    }
+    case CoprocessorProto::Request_Media_GetTopology: {
+      auto req = req_env->message_as_Media_GetTopology();
+      if (req && req->seed_ip()) {
+        if (req->seed_ip()->size() == 0 || req->seed_port() == 0) {
+          ESP_LOGW(TAG, "Media.GetTopology dropped: invalid seed endpoint");
+          break;
+        }
+        if (!wifi_is_connected()) {
+          ESP_LOGW(TAG, "Media.GetTopology dropped: Wi-Fi not connected");
+          break;
+        }
+        ESP_LOGI(TAG, "Media.GetTopology received: seed='%s' port=%u",
+                 req->seed_ip()->c_str(),
+                 static_cast<unsigned>(req->seed_port()));
+        sonos_post_get_topology(req->seed_ip()->c_str(), req->seed_port());
+      }
+      break;
+    }
     default:
       ESP_LOGD(TAG, "Unhandled request type: %d",
                static_cast<int>(req_env->message_type()));
@@ -241,6 +326,7 @@ void uart_rx_task(void* pvParameters) {
   static std::array<uint8_t, BUFFER_CAPACITY> frame_buf{};
   static std::array<uint8_t, BUFFER_CAPACITY> scratch{};
   size_t frame_pos = 0;
+  bool frame_overflow = false;
 
   ESP_LOGI(TAG, "UART RX task started on %d (TX=%d, RX=%d)", UART_PORT,
            UART_TX_PIN, UART_RX_PIN);
@@ -256,6 +342,12 @@ void uart_rx_task(void* pvParameters) {
     for (int i = 0; i < len; i++) {
       uint8_t byte = rx_raw[i];
       if (byte == 0x00) {
+        if (frame_overflow) {
+          // Tail of an oversized frame: discard up to this delimiter.
+          frame_overflow = false;
+          frame_pos = 0;
+          continue;
+        }
         if (frame_pos == 0) {
           continue;  // Skip consecutive delimiters
         }
@@ -296,10 +388,14 @@ void uart_rx_task(void* pvParameters) {
 
         handle_rx_packet(payload, payload_len);
       } else {
+        if (frame_overflow) {
+          continue;  // Discard the tail of the oversized frame
+        }
         if (frame_pos < BUFFER_CAPACITY) {
           frame_buf[frame_pos++] = byte;
         } else {
-          ESP_LOGW(TAG, "Frame buffer overflow, resetting");
+          ESP_LOGW(TAG, "Frame buffer overflow, discarding until delimiter");
+          frame_overflow = true;
           frame_pos = 0;
         }
       }
@@ -351,6 +447,53 @@ void uart_send_time_sync(uint64_t epoch_seconds, uint32_t subsec_micros) {
       CoprocessorProto::CreateTimeSync(fbb, epoch_seconds, subsec_micros);
   auto env = CoprocessorProto::CreateResponseEnvelope(
       fbb, CoprocessorProto::Response_TimeSync, time_sync.Union());
+  send_response_envelope(fbb, env);
+}
+
+void uart_send_media_state_update(const UartMediaStateUpdate& update) {
+  namespace Media = CoprocessorProto::Media;
+  flatbuffers::FlatBufferBuilder fbb(512);
+  auto ip_str = fbb.CreateString(update.endpoint_ip);
+
+  flatbuffers::Offset<Media::TrackMetadata> track_off = 0;
+  if (update.track) {
+    const auto& t = *update.track;
+    auto title = t.title ? fbb.CreateString(*t.title) : 0;
+    auto artist = t.artist ? fbb.CreateString(*t.artist) : 0;
+    auto album = t.album ? fbb.CreateString(*t.album) : 0;
+    track_off = Media::CreateTrackMetadata(
+        fbb, title, artist, album, t.duration_seconds, t.elapsed_seconds);
+  }
+
+  auto state_update =
+      Media::CreateStateUpdate(fbb, ip_str, update.transport_state,
+                               update.volume, update.is_muted, track_off);
+  auto env = CoprocessorProto::CreateResponseEnvelope(
+      fbb, CoprocessorProto::Response_Media_StateUpdate, state_update.Union());
+  send_response_envelope(fbb, env);
+}
+
+void uart_send_media_topology_update(
+    const std::vector<UartMediaGroup>& groups) {
+  namespace Media = CoprocessorProto::Media;
+  flatbuffers::FlatBufferBuilder fbb(2048);
+  std::vector<flatbuffers::Offset<Media::Group>> group_offsets;
+  group_offsets.reserve(groups.size());
+  for (const auto& g : groups) {
+    std::vector<flatbuffers::Offset<Media::Member>> member_offsets;
+    member_offsets.reserve(g.members.size());
+    for (const auto& m : g.members) {
+      member_offsets.push_back(Media::CreateMemberDirect(
+          fbb, m.name.c_str(), m.uuid.c_str(), m.ip.c_str()));
+    }
+    group_offsets.push_back(Media::CreateGroupDirect(
+        fbb, g.id.c_str(), g.name.c_str(), g.coordinator_ip.c_str(),
+        g.coordinator_port, false, &member_offsets));
+  }
+  auto groups_vec = fbb.CreateVector(group_offsets);
+  auto topology = Media::CreateTopologyUpdate(fbb, groups_vec);
+  auto env = CoprocessorProto::CreateResponseEnvelope(
+      fbb, CoprocessorProto::Response_Media_TopologyUpdate, topology.Union());
   send_response_envelope(fbb, env);
 }
 

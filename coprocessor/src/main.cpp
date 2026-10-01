@@ -12,6 +12,7 @@
 #include "freertos/timers.h"
 #include "nvs_flash.h"
 #include "sntp_service.h"
+#include "sonos_controller.h"
 #include "uart_protocol.h"
 #include "web_server.h"
 #include "wifi_manager.h"
@@ -78,8 +79,8 @@ void periodic_status_log_timer(TimerHandle_t xTimer) {
   auto uptime_sec = static_cast<uint32_t>(esp_timer_get_time() / 1000000);
   uint32_t free_heap_kb = esp_get_free_heap_size() / 1024;
   bool connected = wifi_is_connected();
-  std::string_view ssid = wifi_get_ssid();
-  std::string_view ip = wifi_get_ip();
+  std::string ssid = wifi_get_ssid();
+  std::string ip = wifi_get_ip();
   int8_t rssi = 0;
   if (connected) {
     wifi_ap_record_t ap_info;
@@ -122,6 +123,10 @@ extern "C" void app_main() {
 
   // Initialize Wi-Fi station manager
   coprocessor::wifi_init(on_wifi_status_changed);
+
+  // Initialize Sonos/UPnP media controller (task + command queue). GENA
+  // subscriptions only happen on explicit Media.Subscribe commands.
+  coprocessor::sonos_controller_init();
 
   // Start 10-second periodic status heartbeat timer
   TimerHandle_t status_timer =

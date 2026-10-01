@@ -5,6 +5,1785 @@ extern crate alloc;
 #[allow(unused_imports, dead_code)]
 pub mod coprocessor_proto {
 
+    #[allow(unused_imports, dead_code)]
+    pub mod media {
+
+        #[deprecated(
+            since = "2.0.0",
+            note = "Use associated constants instead. This will no longer be generated in 2021."
+        )]
+        pub const ENUM_MIN_TRANSPORT_STATE: u8 = 0;
+        #[deprecated(
+            since = "2.0.0",
+            note = "Use associated constants instead. This will no longer be generated in 2021."
+        )]
+        pub const ENUM_MAX_TRANSPORT_STATE: u8 = 3;
+        #[deprecated(
+            since = "2.0.0",
+            note = "Use associated constants instead. This will no longer be generated in 2021."
+        )]
+        #[allow(non_camel_case_types)]
+        pub const ENUM_VALUES_TRANSPORT_STATE: [TransportState; 4] = [
+            TransportState::Stopped,
+            TransportState::Playing,
+            TransportState::Paused,
+            TransportState::Transitioning,
+        ];
+
+        #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+        #[repr(transparent)]
+        pub struct TransportState(pub u8);
+        #[allow(non_upper_case_globals)]
+        impl TransportState {
+            pub const Stopped: Self = Self(0);
+            pub const Playing: Self = Self(1);
+            pub const Paused: Self = Self(2);
+            pub const Transitioning: Self = Self(3);
+
+            pub const ENUM_MIN: u8 = 0;
+            pub const ENUM_MAX: u8 = 3;
+            pub const ENUM_VALUES: &'static [Self] =
+                &[Self::Stopped, Self::Playing, Self::Paused, Self::Transitioning];
+            /// Returns the variant's name or "" if unknown.
+            pub fn variant_name(self) -> Option<&'static str> {
+                match self {
+                    Self::Stopped => Some("Stopped"),
+                    Self::Playing => Some("Playing"),
+                    Self::Paused => Some("Paused"),
+                    Self::Transitioning => Some("Transitioning"),
+                    _ => None,
+                }
+            }
+        }
+        impl ::core::fmt::Debug for TransportState {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
+                if let Some(name) = self.variant_name() {
+                    f.write_str(name)
+                } else {
+                    f.write_fmt(format_args!("<UNKNOWN {:?}>", self.0))
+                }
+            }
+        }
+        impl<'a> ::flatbuffers::Follow<'a> for TransportState {
+            type Inner = Self;
+            #[inline]
+            unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+                let b = unsafe { ::flatbuffers::read_scalar_at::<u8>(buf, loc) };
+                Self(b)
+            }
+        }
+
+        impl ::flatbuffers::Push for TransportState {
+            type Output = TransportState;
+            #[inline]
+            unsafe fn push(&self, dst: &mut [u8], _written_len: usize) {
+                unsafe { ::flatbuffers::emplace_scalar::<u8>(dst, self.0) };
+            }
+        }
+
+        impl ::flatbuffers::EndianScalar for TransportState {
+            type Scalar = u8;
+            #[inline]
+            fn to_little_endian(self) -> u8 {
+                self.0.to_le()
+            }
+            #[inline]
+            #[allow(clippy::wrong_self_convention)]
+            fn from_little_endian(v: u8) -> Self {
+                let b = u8::from_le(v);
+                Self(b)
+            }
+        }
+
+        impl<'a> ::flatbuffers::Verifiable for TransportState {
+            #[inline]
+            fn run_verifier(
+                v: &mut ::flatbuffers::Verifier,
+                pos: usize,
+            ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
+                u8::run_verifier(v, pos)
+            }
+        }
+
+        impl ::flatbuffers::SimpleToVerifyInSlice for TransportState {}
+        #[deprecated(
+            since = "2.0.0",
+            note = "Use associated constants instead. This will no longer be generated in 2021."
+        )]
+        pub const ENUM_MIN_ACTION_TYPE: u8 = 0;
+        #[deprecated(
+            since = "2.0.0",
+            note = "Use associated constants instead. This will no longer be generated in 2021."
+        )]
+        pub const ENUM_MAX_ACTION_TYPE: u8 = 5;
+        #[deprecated(
+            since = "2.0.0",
+            note = "Use associated constants instead. This will no longer be generated in 2021."
+        )]
+        #[allow(non_camel_case_types)]
+        pub const ENUM_VALUES_ACTION_TYPE: [ActionType; 6] = [
+            ActionType::Play,
+            ActionType::Pause,
+            ActionType::TogglePlayPause,
+            ActionType::Next,
+            ActionType::Previous,
+            ActionType::Stop,
+        ];
+
+        #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+        #[repr(transparent)]
+        pub struct ActionType(pub u8);
+        #[allow(non_upper_case_globals)]
+        impl ActionType {
+            pub const Play: Self = Self(0);
+            pub const Pause: Self = Self(1);
+            pub const TogglePlayPause: Self = Self(2);
+            pub const Next: Self = Self(3);
+            pub const Previous: Self = Self(4);
+            pub const Stop: Self = Self(5);
+
+            pub const ENUM_MIN: u8 = 0;
+            pub const ENUM_MAX: u8 = 5;
+            pub const ENUM_VALUES: &'static [Self] = &[
+                Self::Play,
+                Self::Pause,
+                Self::TogglePlayPause,
+                Self::Next,
+                Self::Previous,
+                Self::Stop,
+            ];
+            /// Returns the variant's name or "" if unknown.
+            pub fn variant_name(self) -> Option<&'static str> {
+                match self {
+                    Self::Play => Some("Play"),
+                    Self::Pause => Some("Pause"),
+                    Self::TogglePlayPause => Some("TogglePlayPause"),
+                    Self::Next => Some("Next"),
+                    Self::Previous => Some("Previous"),
+                    Self::Stop => Some("Stop"),
+                    _ => None,
+                }
+            }
+        }
+        impl ::core::fmt::Debug for ActionType {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
+                if let Some(name) = self.variant_name() {
+                    f.write_str(name)
+                } else {
+                    f.write_fmt(format_args!("<UNKNOWN {:?}>", self.0))
+                }
+            }
+        }
+        impl<'a> ::flatbuffers::Follow<'a> for ActionType {
+            type Inner = Self;
+            #[inline]
+            unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+                let b = unsafe { ::flatbuffers::read_scalar_at::<u8>(buf, loc) };
+                Self(b)
+            }
+        }
+
+        impl ::flatbuffers::Push for ActionType {
+            type Output = ActionType;
+            #[inline]
+            unsafe fn push(&self, dst: &mut [u8], _written_len: usize) {
+                unsafe { ::flatbuffers::emplace_scalar::<u8>(dst, self.0) };
+            }
+        }
+
+        impl ::flatbuffers::EndianScalar for ActionType {
+            type Scalar = u8;
+            #[inline]
+            fn to_little_endian(self) -> u8 {
+                self.0.to_le()
+            }
+            #[inline]
+            #[allow(clippy::wrong_self_convention)]
+            fn from_little_endian(v: u8) -> Self {
+                let b = u8::from_le(v);
+                Self(b)
+            }
+        }
+
+        impl<'a> ::flatbuffers::Verifiable for ActionType {
+            #[inline]
+            fn run_verifier(
+                v: &mut ::flatbuffers::Verifier,
+                pos: usize,
+            ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
+                u8::run_verifier(v, pos)
+            }
+        }
+
+        impl ::flatbuffers::SimpleToVerifyInSlice for ActionType {}
+        pub enum ActionOffset {}
+        #[derive(Copy, Clone, PartialEq)]
+
+        pub struct Action<'a> {
+            pub _tab: ::flatbuffers::Table<'a>,
+        }
+
+        impl<'a> ::flatbuffers::Follow<'a> for Action<'a> {
+            type Inner = Action<'a>;
+            #[inline]
+            unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+                Self { _tab: unsafe { ::flatbuffers::Table::new(buf, loc) } }
+            }
+        }
+
+        impl<'a> Action<'a> {
+            pub const VT_ENDPOINT_IP: ::flatbuffers::VOffsetT = 4;
+            pub const VT_ENDPOINT_PORT: ::flatbuffers::VOffsetT = 6;
+            pub const VT_ACTION: ::flatbuffers::VOffsetT = 8;
+
+            #[inline]
+            pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
+                Action { _tab: table }
+            }
+            #[allow(unused_mut)]
+            pub fn create<
+                'bldr: 'args,
+                'args: 'mut_bldr,
+                'mut_bldr,
+                A: ::flatbuffers::Allocator + 'bldr,
+            >(
+                _fbb: &'mut_bldr mut ::flatbuffers::FlatBufferBuilder<'bldr, A>,
+                args: &'args ActionArgs<'args>,
+            ) -> ::flatbuffers::WIPOffset<Action<'bldr>> {
+                let mut builder = ActionBuilder::new(_fbb);
+                if let Some(x) = args.endpoint_ip {
+                    builder.add_endpoint_ip(x);
+                }
+                builder.add_endpoint_port(args.endpoint_port);
+                builder.add_action(args.action);
+                builder.finish()
+            }
+
+            #[inline]
+            pub fn endpoint_ip(&self) -> Option<&'a str> {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe {
+                    self._tab
+                        .get::<::flatbuffers::ForwardsUOffset<&str>>(Action::VT_ENDPOINT_IP, None)
+                }
+            }
+            #[inline]
+            pub fn endpoint_port(&self) -> u16 {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe { self._tab.get::<u16>(Action::VT_ENDPOINT_PORT, Some(1400)).unwrap() }
+            }
+            #[inline]
+            pub fn action(&self) -> ActionType {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe {
+                    self._tab.get::<ActionType>(Action::VT_ACTION, Some(ActionType::Play)).unwrap()
+                }
+            }
+        }
+
+        impl ::flatbuffers::Verifiable for Action<'_> {
+            #[inline]
+            fn run_verifier(
+                v: &mut ::flatbuffers::Verifier,
+                pos: usize,
+            ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
+                v.visit_table(pos)?
+                    .visit_field::<::flatbuffers::ForwardsUOffset<&str>>(
+                        "endpoint_ip",
+                        Self::VT_ENDPOINT_IP,
+                        false,
+                    )?
+                    .visit_field::<u16>("endpoint_port", Self::VT_ENDPOINT_PORT, false)?
+                    .visit_field::<ActionType>("action", Self::VT_ACTION, false)?
+                    .finish();
+                Ok(())
+            }
+        }
+        pub struct ActionArgs<'a> {
+            pub endpoint_ip: Option<::flatbuffers::WIPOffset<&'a str>>,
+            pub endpoint_port: u16,
+            pub action: ActionType,
+        }
+        impl<'a> Default for ActionArgs<'a> {
+            #[inline]
+            fn default() -> Self {
+                ActionArgs { endpoint_ip: None, endpoint_port: 1400, action: ActionType::Play }
+            }
+        }
+
+        pub struct ActionBuilder<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> {
+            fbb_: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+            start_: ::flatbuffers::WIPOffset<::flatbuffers::TableUnfinishedWIPOffset>,
+        }
+        impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> ActionBuilder<'a, 'b, A> {
+            #[inline]
+            pub fn add_endpoint_ip(&mut self, endpoint_ip: ::flatbuffers::WIPOffset<&'b str>) {
+                self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(
+                    Action::VT_ENDPOINT_IP,
+                    endpoint_ip,
+                );
+            }
+            #[inline]
+            pub fn add_endpoint_port(&mut self, endpoint_port: u16) {
+                self.fbb_.push_slot::<u16>(Action::VT_ENDPOINT_PORT, endpoint_port, 1400);
+            }
+            #[inline]
+            pub fn add_action(&mut self, action: ActionType) {
+                self.fbb_.push_slot::<ActionType>(Action::VT_ACTION, action, ActionType::Play);
+            }
+            #[inline]
+            pub fn new(
+                _fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+            ) -> ActionBuilder<'a, 'b, A> {
+                let start = _fbb.start_table();
+                ActionBuilder { fbb_: _fbb, start_: start }
+            }
+            #[inline]
+            pub fn finish(self) -> ::flatbuffers::WIPOffset<Action<'a>> {
+                let o = self.fbb_.end_table(self.start_);
+                ::flatbuffers::WIPOffset::new(o.value())
+            }
+        }
+
+        impl ::core::fmt::Debug for Action<'_> {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                let mut ds = f.debug_struct("Action");
+                ds.field("endpoint_ip", &self.endpoint_ip());
+                ds.field("endpoint_port", &self.endpoint_port());
+                ds.field("action", &self.action());
+                ds.finish()
+            }
+        }
+        pub enum VolumeCommandOffset {}
+        #[derive(Copy, Clone, PartialEq)]
+
+        pub struct VolumeCommand<'a> {
+            pub _tab: ::flatbuffers::Table<'a>,
+        }
+
+        impl<'a> ::flatbuffers::Follow<'a> for VolumeCommand<'a> {
+            type Inner = VolumeCommand<'a>;
+            #[inline]
+            unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+                Self { _tab: unsafe { ::flatbuffers::Table::new(buf, loc) } }
+            }
+        }
+
+        impl<'a> VolumeCommand<'a> {
+            pub const VT_ENDPOINT_IP: ::flatbuffers::VOffsetT = 4;
+            pub const VT_ENDPOINT_PORT: ::flatbuffers::VOffsetT = 6;
+            pub const VT_VOLUME: ::flatbuffers::VOffsetT = 8;
+            pub const VT_IS_RELATIVE: ::flatbuffers::VOffsetT = 10;
+
+            #[inline]
+            pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
+                VolumeCommand { _tab: table }
+            }
+            #[allow(unused_mut)]
+            pub fn create<
+                'bldr: 'args,
+                'args: 'mut_bldr,
+                'mut_bldr,
+                A: ::flatbuffers::Allocator + 'bldr,
+            >(
+                _fbb: &'mut_bldr mut ::flatbuffers::FlatBufferBuilder<'bldr, A>,
+                args: &'args VolumeCommandArgs<'args>,
+            ) -> ::flatbuffers::WIPOffset<VolumeCommand<'bldr>> {
+                let mut builder = VolumeCommandBuilder::new(_fbb);
+                if let Some(x) = args.endpoint_ip {
+                    builder.add_endpoint_ip(x);
+                }
+                builder.add_volume(args.volume);
+                builder.add_endpoint_port(args.endpoint_port);
+                builder.add_is_relative(args.is_relative);
+                builder.finish()
+            }
+
+            #[inline]
+            pub fn endpoint_ip(&self) -> Option<&'a str> {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe {
+                    self._tab.get::<::flatbuffers::ForwardsUOffset<&str>>(
+                        VolumeCommand::VT_ENDPOINT_IP,
+                        None,
+                    )
+                }
+            }
+            #[inline]
+            pub fn endpoint_port(&self) -> u16 {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe {
+                    self._tab.get::<u16>(VolumeCommand::VT_ENDPOINT_PORT, Some(1400)).unwrap()
+                }
+            }
+            #[inline]
+            pub fn volume(&self) -> i16 {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe { self._tab.get::<i16>(VolumeCommand::VT_VOLUME, Some(0)).unwrap() }
+            }
+            #[inline]
+            pub fn is_relative(&self) -> bool {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe {
+                    self._tab.get::<bool>(VolumeCommand::VT_IS_RELATIVE, Some(false)).unwrap()
+                }
+            }
+        }
+
+        impl ::flatbuffers::Verifiable for VolumeCommand<'_> {
+            #[inline]
+            fn run_verifier(
+                v: &mut ::flatbuffers::Verifier,
+                pos: usize,
+            ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
+                v.visit_table(pos)?
+                    .visit_field::<::flatbuffers::ForwardsUOffset<&str>>(
+                        "endpoint_ip",
+                        Self::VT_ENDPOINT_IP,
+                        false,
+                    )?
+                    .visit_field::<u16>("endpoint_port", Self::VT_ENDPOINT_PORT, false)?
+                    .visit_field::<i16>("volume", Self::VT_VOLUME, false)?
+                    .visit_field::<bool>("is_relative", Self::VT_IS_RELATIVE, false)?
+                    .finish();
+                Ok(())
+            }
+        }
+        pub struct VolumeCommandArgs<'a> {
+            pub endpoint_ip: Option<::flatbuffers::WIPOffset<&'a str>>,
+            pub endpoint_port: u16,
+            pub volume: i16,
+            pub is_relative: bool,
+        }
+        impl<'a> Default for VolumeCommandArgs<'a> {
+            #[inline]
+            fn default() -> Self {
+                VolumeCommandArgs {
+                    endpoint_ip: None,
+                    endpoint_port: 1400,
+                    volume: 0,
+                    is_relative: false,
+                }
+            }
+        }
+
+        pub struct VolumeCommandBuilder<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> {
+            fbb_: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+            start_: ::flatbuffers::WIPOffset<::flatbuffers::TableUnfinishedWIPOffset>,
+        }
+        impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> VolumeCommandBuilder<'a, 'b, A> {
+            #[inline]
+            pub fn add_endpoint_ip(&mut self, endpoint_ip: ::flatbuffers::WIPOffset<&'b str>) {
+                self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(
+                    VolumeCommand::VT_ENDPOINT_IP,
+                    endpoint_ip,
+                );
+            }
+            #[inline]
+            pub fn add_endpoint_port(&mut self, endpoint_port: u16) {
+                self.fbb_.push_slot::<u16>(VolumeCommand::VT_ENDPOINT_PORT, endpoint_port, 1400);
+            }
+            #[inline]
+            pub fn add_volume(&mut self, volume: i16) {
+                self.fbb_.push_slot::<i16>(VolumeCommand::VT_VOLUME, volume, 0);
+            }
+            #[inline]
+            pub fn add_is_relative(&mut self, is_relative: bool) {
+                self.fbb_.push_slot::<bool>(VolumeCommand::VT_IS_RELATIVE, is_relative, false);
+            }
+            #[inline]
+            pub fn new(
+                _fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+            ) -> VolumeCommandBuilder<'a, 'b, A> {
+                let start = _fbb.start_table();
+                VolumeCommandBuilder { fbb_: _fbb, start_: start }
+            }
+            #[inline]
+            pub fn finish(self) -> ::flatbuffers::WIPOffset<VolumeCommand<'a>> {
+                let o = self.fbb_.end_table(self.start_);
+                ::flatbuffers::WIPOffset::new(o.value())
+            }
+        }
+
+        impl ::core::fmt::Debug for VolumeCommand<'_> {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                let mut ds = f.debug_struct("VolumeCommand");
+                ds.field("endpoint_ip", &self.endpoint_ip());
+                ds.field("endpoint_port", &self.endpoint_port());
+                ds.field("volume", &self.volume());
+                ds.field("is_relative", &self.is_relative());
+                ds.finish()
+            }
+        }
+        pub enum SubscribeOffset {}
+        #[derive(Copy, Clone, PartialEq)]
+
+        pub struct Subscribe<'a> {
+            pub _tab: ::flatbuffers::Table<'a>,
+        }
+
+        impl<'a> ::flatbuffers::Follow<'a> for Subscribe<'a> {
+            type Inner = Subscribe<'a>;
+            #[inline]
+            unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+                Self { _tab: unsafe { ::flatbuffers::Table::new(buf, loc) } }
+            }
+        }
+
+        impl<'a> Subscribe<'a> {
+            pub const VT_ENDPOINT_IP: ::flatbuffers::VOffsetT = 4;
+            pub const VT_ENDPOINT_PORT: ::flatbuffers::VOffsetT = 6;
+
+            #[inline]
+            pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
+                Subscribe { _tab: table }
+            }
+            #[allow(unused_mut)]
+            pub fn create<
+                'bldr: 'args,
+                'args: 'mut_bldr,
+                'mut_bldr,
+                A: ::flatbuffers::Allocator + 'bldr,
+            >(
+                _fbb: &'mut_bldr mut ::flatbuffers::FlatBufferBuilder<'bldr, A>,
+                args: &'args SubscribeArgs<'args>,
+            ) -> ::flatbuffers::WIPOffset<Subscribe<'bldr>> {
+                let mut builder = SubscribeBuilder::new(_fbb);
+                if let Some(x) = args.endpoint_ip {
+                    builder.add_endpoint_ip(x);
+                }
+                builder.add_endpoint_port(args.endpoint_port);
+                builder.finish()
+            }
+
+            #[inline]
+            pub fn endpoint_ip(&self) -> Option<&'a str> {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe {
+                    self._tab.get::<::flatbuffers::ForwardsUOffset<&str>>(
+                        Subscribe::VT_ENDPOINT_IP,
+                        None,
+                    )
+                }
+            }
+            #[inline]
+            pub fn endpoint_port(&self) -> u16 {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe { self._tab.get::<u16>(Subscribe::VT_ENDPOINT_PORT, Some(1400)).unwrap() }
+            }
+        }
+
+        impl ::flatbuffers::Verifiable for Subscribe<'_> {
+            #[inline]
+            fn run_verifier(
+                v: &mut ::flatbuffers::Verifier,
+                pos: usize,
+            ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
+                v.visit_table(pos)?
+                    .visit_field::<::flatbuffers::ForwardsUOffset<&str>>(
+                        "endpoint_ip",
+                        Self::VT_ENDPOINT_IP,
+                        false,
+                    )?
+                    .visit_field::<u16>("endpoint_port", Self::VT_ENDPOINT_PORT, false)?
+                    .finish();
+                Ok(())
+            }
+        }
+        pub struct SubscribeArgs<'a> {
+            pub endpoint_ip: Option<::flatbuffers::WIPOffset<&'a str>>,
+            pub endpoint_port: u16,
+        }
+        impl<'a> Default for SubscribeArgs<'a> {
+            #[inline]
+            fn default() -> Self {
+                SubscribeArgs { endpoint_ip: None, endpoint_port: 1400 }
+            }
+        }
+
+        pub struct SubscribeBuilder<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> {
+            fbb_: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+            start_: ::flatbuffers::WIPOffset<::flatbuffers::TableUnfinishedWIPOffset>,
+        }
+        impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> SubscribeBuilder<'a, 'b, A> {
+            #[inline]
+            pub fn add_endpoint_ip(&mut self, endpoint_ip: ::flatbuffers::WIPOffset<&'b str>) {
+                self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(
+                    Subscribe::VT_ENDPOINT_IP,
+                    endpoint_ip,
+                );
+            }
+            #[inline]
+            pub fn add_endpoint_port(&mut self, endpoint_port: u16) {
+                self.fbb_.push_slot::<u16>(Subscribe::VT_ENDPOINT_PORT, endpoint_port, 1400);
+            }
+            #[inline]
+            pub fn new(
+                _fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+            ) -> SubscribeBuilder<'a, 'b, A> {
+                let start = _fbb.start_table();
+                SubscribeBuilder { fbb_: _fbb, start_: start }
+            }
+            #[inline]
+            pub fn finish(self) -> ::flatbuffers::WIPOffset<Subscribe<'a>> {
+                let o = self.fbb_.end_table(self.start_);
+                ::flatbuffers::WIPOffset::new(o.value())
+            }
+        }
+
+        impl ::core::fmt::Debug for Subscribe<'_> {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                let mut ds = f.debug_struct("Subscribe");
+                ds.field("endpoint_ip", &self.endpoint_ip());
+                ds.field("endpoint_port", &self.endpoint_port());
+                ds.finish()
+            }
+        }
+        pub enum UnsubscribeAllOffset {}
+        #[derive(Copy, Clone, PartialEq)]
+
+        pub struct UnsubscribeAll<'a> {
+            pub _tab: ::flatbuffers::Table<'a>,
+        }
+
+        impl<'a> ::flatbuffers::Follow<'a> for UnsubscribeAll<'a> {
+            type Inner = UnsubscribeAll<'a>;
+            #[inline]
+            unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+                Self { _tab: unsafe { ::flatbuffers::Table::new(buf, loc) } }
+            }
+        }
+
+        impl<'a> UnsubscribeAll<'a> {
+            #[inline]
+            pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
+                UnsubscribeAll { _tab: table }
+            }
+            #[allow(unused_mut)]
+            pub fn create<
+                'bldr: 'args,
+                'args: 'mut_bldr,
+                'mut_bldr,
+                A: ::flatbuffers::Allocator + 'bldr,
+            >(
+                _fbb: &'mut_bldr mut ::flatbuffers::FlatBufferBuilder<'bldr, A>,
+                _args: &'args UnsubscribeAllArgs,
+            ) -> ::flatbuffers::WIPOffset<UnsubscribeAll<'bldr>> {
+                let mut builder = UnsubscribeAllBuilder::new(_fbb);
+                builder.finish()
+            }
+        }
+
+        impl ::flatbuffers::Verifiable for UnsubscribeAll<'_> {
+            #[inline]
+            fn run_verifier(
+                v: &mut ::flatbuffers::Verifier,
+                pos: usize,
+            ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
+                v.visit_table(pos)?.finish();
+                Ok(())
+            }
+        }
+        pub struct UnsubscribeAllArgs {}
+        impl<'a> Default for UnsubscribeAllArgs {
+            #[inline]
+            fn default() -> Self {
+                UnsubscribeAllArgs {}
+            }
+        }
+
+        pub struct UnsubscribeAllBuilder<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> {
+            fbb_: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+            start_: ::flatbuffers::WIPOffset<::flatbuffers::TableUnfinishedWIPOffset>,
+        }
+        impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> UnsubscribeAllBuilder<'a, 'b, A> {
+            #[inline]
+            pub fn new(
+                _fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+            ) -> UnsubscribeAllBuilder<'a, 'b, A> {
+                let start = _fbb.start_table();
+                UnsubscribeAllBuilder { fbb_: _fbb, start_: start }
+            }
+            #[inline]
+            pub fn finish(self) -> ::flatbuffers::WIPOffset<UnsubscribeAll<'a>> {
+                let o = self.fbb_.end_table(self.start_);
+                ::flatbuffers::WIPOffset::new(o.value())
+            }
+        }
+
+        impl ::core::fmt::Debug for UnsubscribeAll<'_> {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                let mut ds = f.debug_struct("UnsubscribeAll");
+                ds.finish()
+            }
+        }
+        pub enum GetTopologyOffset {}
+        #[derive(Copy, Clone, PartialEq)]
+
+        pub struct GetTopology<'a> {
+            pub _tab: ::flatbuffers::Table<'a>,
+        }
+
+        impl<'a> ::flatbuffers::Follow<'a> for GetTopology<'a> {
+            type Inner = GetTopology<'a>;
+            #[inline]
+            unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+                Self { _tab: unsafe { ::flatbuffers::Table::new(buf, loc) } }
+            }
+        }
+
+        impl<'a> GetTopology<'a> {
+            pub const VT_SEED_IP: ::flatbuffers::VOffsetT = 4;
+            pub const VT_SEED_PORT: ::flatbuffers::VOffsetT = 6;
+
+            #[inline]
+            pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
+                GetTopology { _tab: table }
+            }
+            #[allow(unused_mut)]
+            pub fn create<
+                'bldr: 'args,
+                'args: 'mut_bldr,
+                'mut_bldr,
+                A: ::flatbuffers::Allocator + 'bldr,
+            >(
+                _fbb: &'mut_bldr mut ::flatbuffers::FlatBufferBuilder<'bldr, A>,
+                args: &'args GetTopologyArgs<'args>,
+            ) -> ::flatbuffers::WIPOffset<GetTopology<'bldr>> {
+                let mut builder = GetTopologyBuilder::new(_fbb);
+                if let Some(x) = args.seed_ip {
+                    builder.add_seed_ip(x);
+                }
+                builder.add_seed_port(args.seed_port);
+                builder.finish()
+            }
+
+            #[inline]
+            pub fn seed_ip(&self) -> Option<&'a str> {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe {
+                    self._tab
+                        .get::<::flatbuffers::ForwardsUOffset<&str>>(GetTopology::VT_SEED_IP, None)
+                }
+            }
+            #[inline]
+            pub fn seed_port(&self) -> u16 {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe { self._tab.get::<u16>(GetTopology::VT_SEED_PORT, Some(1400)).unwrap() }
+            }
+        }
+
+        impl ::flatbuffers::Verifiable for GetTopology<'_> {
+            #[inline]
+            fn run_verifier(
+                v: &mut ::flatbuffers::Verifier,
+                pos: usize,
+            ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
+                v.visit_table(pos)?
+                    .visit_field::<::flatbuffers::ForwardsUOffset<&str>>(
+                        "seed_ip",
+                        Self::VT_SEED_IP,
+                        false,
+                    )?
+                    .visit_field::<u16>("seed_port", Self::VT_SEED_PORT, false)?
+                    .finish();
+                Ok(())
+            }
+        }
+        pub struct GetTopologyArgs<'a> {
+            pub seed_ip: Option<::flatbuffers::WIPOffset<&'a str>>,
+            pub seed_port: u16,
+        }
+        impl<'a> Default for GetTopologyArgs<'a> {
+            #[inline]
+            fn default() -> Self {
+                GetTopologyArgs { seed_ip: None, seed_port: 1400 }
+            }
+        }
+
+        pub struct GetTopologyBuilder<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> {
+            fbb_: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+            start_: ::flatbuffers::WIPOffset<::flatbuffers::TableUnfinishedWIPOffset>,
+        }
+        impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> GetTopologyBuilder<'a, 'b, A> {
+            #[inline]
+            pub fn add_seed_ip(&mut self, seed_ip: ::flatbuffers::WIPOffset<&'b str>) {
+                self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(
+                    GetTopology::VT_SEED_IP,
+                    seed_ip,
+                );
+            }
+            #[inline]
+            pub fn add_seed_port(&mut self, seed_port: u16) {
+                self.fbb_.push_slot::<u16>(GetTopology::VT_SEED_PORT, seed_port, 1400);
+            }
+            #[inline]
+            pub fn new(
+                _fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+            ) -> GetTopologyBuilder<'a, 'b, A> {
+                let start = _fbb.start_table();
+                GetTopologyBuilder { fbb_: _fbb, start_: start }
+            }
+            #[inline]
+            pub fn finish(self) -> ::flatbuffers::WIPOffset<GetTopology<'a>> {
+                let o = self.fbb_.end_table(self.start_);
+                ::flatbuffers::WIPOffset::new(o.value())
+            }
+        }
+
+        impl ::core::fmt::Debug for GetTopology<'_> {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                let mut ds = f.debug_struct("GetTopology");
+                ds.field("seed_ip", &self.seed_ip());
+                ds.field("seed_port", &self.seed_port());
+                ds.finish()
+            }
+        }
+        pub enum TrackMetadataOffset {}
+        #[derive(Copy, Clone, PartialEq)]
+
+        pub struct TrackMetadata<'a> {
+            pub _tab: ::flatbuffers::Table<'a>,
+        }
+
+        impl<'a> ::flatbuffers::Follow<'a> for TrackMetadata<'a> {
+            type Inner = TrackMetadata<'a>;
+            #[inline]
+            unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+                Self { _tab: unsafe { ::flatbuffers::Table::new(buf, loc) } }
+            }
+        }
+
+        impl<'a> TrackMetadata<'a> {
+            pub const VT_TITLE: ::flatbuffers::VOffsetT = 4;
+            pub const VT_ARTIST: ::flatbuffers::VOffsetT = 6;
+            pub const VT_ALBUM: ::flatbuffers::VOffsetT = 8;
+            pub const VT_DURATION_SECONDS: ::flatbuffers::VOffsetT = 10;
+            pub const VT_ELAPSED_SECONDS: ::flatbuffers::VOffsetT = 12;
+
+            #[inline]
+            pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
+                TrackMetadata { _tab: table }
+            }
+            #[allow(unused_mut)]
+            pub fn create<
+                'bldr: 'args,
+                'args: 'mut_bldr,
+                'mut_bldr,
+                A: ::flatbuffers::Allocator + 'bldr,
+            >(
+                _fbb: &'mut_bldr mut ::flatbuffers::FlatBufferBuilder<'bldr, A>,
+                args: &'args TrackMetadataArgs<'args>,
+            ) -> ::flatbuffers::WIPOffset<TrackMetadata<'bldr>> {
+                let mut builder = TrackMetadataBuilder::new(_fbb);
+                if let Some(x) = args.elapsed_seconds {
+                    builder.add_elapsed_seconds(x);
+                }
+                if let Some(x) = args.duration_seconds {
+                    builder.add_duration_seconds(x);
+                }
+                if let Some(x) = args.album {
+                    builder.add_album(x);
+                }
+                if let Some(x) = args.artist {
+                    builder.add_artist(x);
+                }
+                if let Some(x) = args.title {
+                    builder.add_title(x);
+                }
+                builder.finish()
+            }
+
+            #[inline]
+            pub fn title(&self) -> Option<&'a str> {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe {
+                    self._tab
+                        .get::<::flatbuffers::ForwardsUOffset<&str>>(TrackMetadata::VT_TITLE, None)
+                }
+            }
+            #[inline]
+            pub fn artist(&self) -> Option<&'a str> {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe {
+                    self._tab
+                        .get::<::flatbuffers::ForwardsUOffset<&str>>(TrackMetadata::VT_ARTIST, None)
+                }
+            }
+            #[inline]
+            pub fn album(&self) -> Option<&'a str> {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe {
+                    self._tab
+                        .get::<::flatbuffers::ForwardsUOffset<&str>>(TrackMetadata::VT_ALBUM, None)
+                }
+            }
+            #[inline]
+            pub fn duration_seconds(&self) -> Option<u32> {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe { self._tab.get::<u32>(TrackMetadata::VT_DURATION_SECONDS, None) }
+            }
+            #[inline]
+            pub fn elapsed_seconds(&self) -> Option<u32> {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe { self._tab.get::<u32>(TrackMetadata::VT_ELAPSED_SECONDS, None) }
+            }
+        }
+
+        impl ::flatbuffers::Verifiable for TrackMetadata<'_> {
+            #[inline]
+            fn run_verifier(
+                v: &mut ::flatbuffers::Verifier,
+                pos: usize,
+            ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
+                v.visit_table(pos)?
+                    .visit_field::<::flatbuffers::ForwardsUOffset<&str>>(
+                        "title",
+                        Self::VT_TITLE,
+                        false,
+                    )?
+                    .visit_field::<::flatbuffers::ForwardsUOffset<&str>>(
+                        "artist",
+                        Self::VT_ARTIST,
+                        false,
+                    )?
+                    .visit_field::<::flatbuffers::ForwardsUOffset<&str>>(
+                        "album",
+                        Self::VT_ALBUM,
+                        false,
+                    )?
+                    .visit_field::<u32>("duration_seconds", Self::VT_DURATION_SECONDS, false)?
+                    .visit_field::<u32>("elapsed_seconds", Self::VT_ELAPSED_SECONDS, false)?
+                    .finish();
+                Ok(())
+            }
+        }
+        pub struct TrackMetadataArgs<'a> {
+            pub title: Option<::flatbuffers::WIPOffset<&'a str>>,
+            pub artist: Option<::flatbuffers::WIPOffset<&'a str>>,
+            pub album: Option<::flatbuffers::WIPOffset<&'a str>>,
+            pub duration_seconds: Option<u32>,
+            pub elapsed_seconds: Option<u32>,
+        }
+        impl<'a> Default for TrackMetadataArgs<'a> {
+            #[inline]
+            fn default() -> Self {
+                TrackMetadataArgs {
+                    title: None,
+                    artist: None,
+                    album: None,
+                    duration_seconds: None,
+                    elapsed_seconds: None,
+                }
+            }
+        }
+
+        pub struct TrackMetadataBuilder<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> {
+            fbb_: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+            start_: ::flatbuffers::WIPOffset<::flatbuffers::TableUnfinishedWIPOffset>,
+        }
+        impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> TrackMetadataBuilder<'a, 'b, A> {
+            #[inline]
+            pub fn add_title(&mut self, title: ::flatbuffers::WIPOffset<&'b str>) {
+                self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(
+                    TrackMetadata::VT_TITLE,
+                    title,
+                );
+            }
+            #[inline]
+            pub fn add_artist(&mut self, artist: ::flatbuffers::WIPOffset<&'b str>) {
+                self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(
+                    TrackMetadata::VT_ARTIST,
+                    artist,
+                );
+            }
+            #[inline]
+            pub fn add_album(&mut self, album: ::flatbuffers::WIPOffset<&'b str>) {
+                self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(
+                    TrackMetadata::VT_ALBUM,
+                    album,
+                );
+            }
+            #[inline]
+            pub fn add_duration_seconds(&mut self, duration_seconds: u32) {
+                self.fbb_
+                    .push_slot_always::<u32>(TrackMetadata::VT_DURATION_SECONDS, duration_seconds);
+            }
+            #[inline]
+            pub fn add_elapsed_seconds(&mut self, elapsed_seconds: u32) {
+                self.fbb_
+                    .push_slot_always::<u32>(TrackMetadata::VT_ELAPSED_SECONDS, elapsed_seconds);
+            }
+            #[inline]
+            pub fn new(
+                _fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+            ) -> TrackMetadataBuilder<'a, 'b, A> {
+                let start = _fbb.start_table();
+                TrackMetadataBuilder { fbb_: _fbb, start_: start }
+            }
+            #[inline]
+            pub fn finish(self) -> ::flatbuffers::WIPOffset<TrackMetadata<'a>> {
+                let o = self.fbb_.end_table(self.start_);
+                ::flatbuffers::WIPOffset::new(o.value())
+            }
+        }
+
+        impl ::core::fmt::Debug for TrackMetadata<'_> {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                let mut ds = f.debug_struct("TrackMetadata");
+                ds.field("title", &self.title());
+                ds.field("artist", &self.artist());
+                ds.field("album", &self.album());
+                ds.field("duration_seconds", &self.duration_seconds());
+                ds.field("elapsed_seconds", &self.elapsed_seconds());
+                ds.finish()
+            }
+        }
+        pub enum StateUpdateOffset {}
+        #[derive(Copy, Clone, PartialEq)]
+
+        pub struct StateUpdate<'a> {
+            pub _tab: ::flatbuffers::Table<'a>,
+        }
+
+        impl<'a> ::flatbuffers::Follow<'a> for StateUpdate<'a> {
+            type Inner = StateUpdate<'a>;
+            #[inline]
+            unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+                Self { _tab: unsafe { ::flatbuffers::Table::new(buf, loc) } }
+            }
+        }
+
+        impl<'a> StateUpdate<'a> {
+            pub const VT_ENDPOINT_IP: ::flatbuffers::VOffsetT = 4;
+            pub const VT_TRANSPORT_STATE: ::flatbuffers::VOffsetT = 6;
+            pub const VT_VOLUME: ::flatbuffers::VOffsetT = 8;
+            pub const VT_IS_MUTED: ::flatbuffers::VOffsetT = 10;
+            pub const VT_TRACK: ::flatbuffers::VOffsetT = 12;
+
+            #[inline]
+            pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
+                StateUpdate { _tab: table }
+            }
+            #[allow(unused_mut)]
+            pub fn create<
+                'bldr: 'args,
+                'args: 'mut_bldr,
+                'mut_bldr,
+                A: ::flatbuffers::Allocator + 'bldr,
+            >(
+                _fbb: &'mut_bldr mut ::flatbuffers::FlatBufferBuilder<'bldr, A>,
+                args: &'args StateUpdateArgs<'args>,
+            ) -> ::flatbuffers::WIPOffset<StateUpdate<'bldr>> {
+                let mut builder = StateUpdateBuilder::new(_fbb);
+                if let Some(x) = args.track {
+                    builder.add_track(x);
+                }
+                if let Some(x) = args.endpoint_ip {
+                    builder.add_endpoint_ip(x);
+                }
+                if let Some(x) = args.is_muted {
+                    builder.add_is_muted(x);
+                }
+                if let Some(x) = args.volume {
+                    builder.add_volume(x);
+                }
+                if let Some(x) = args.transport_state {
+                    builder.add_transport_state(x);
+                }
+                builder.finish()
+            }
+
+            #[inline]
+            pub fn endpoint_ip(&self) -> Option<&'a str> {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe {
+                    self._tab.get::<::flatbuffers::ForwardsUOffset<&str>>(
+                        StateUpdate::VT_ENDPOINT_IP,
+                        None,
+                    )
+                }
+            }
+            #[inline]
+            pub fn transport_state(&self) -> Option<TransportState> {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe { self._tab.get::<TransportState>(StateUpdate::VT_TRANSPORT_STATE, None) }
+            }
+            #[inline]
+            pub fn volume(&self) -> Option<u8> {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe { self._tab.get::<u8>(StateUpdate::VT_VOLUME, None) }
+            }
+            #[inline]
+            pub fn is_muted(&self) -> Option<bool> {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe { self._tab.get::<bool>(StateUpdate::VT_IS_MUTED, None) }
+            }
+            #[inline]
+            pub fn track(&self) -> Option<TrackMetadata<'a>> {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe {
+                    self._tab.get::<::flatbuffers::ForwardsUOffset<TrackMetadata>>(
+                        StateUpdate::VT_TRACK,
+                        None,
+                    )
+                }
+            }
+        }
+
+        impl ::flatbuffers::Verifiable for StateUpdate<'_> {
+            #[inline]
+            fn run_verifier(
+                v: &mut ::flatbuffers::Verifier,
+                pos: usize,
+            ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
+                v.visit_table(pos)?
+                    .visit_field::<::flatbuffers::ForwardsUOffset<&str>>(
+                        "endpoint_ip",
+                        Self::VT_ENDPOINT_IP,
+                        false,
+                    )?
+                    .visit_field::<TransportState>(
+                        "transport_state",
+                        Self::VT_TRANSPORT_STATE,
+                        false,
+                    )?
+                    .visit_field::<u8>("volume", Self::VT_VOLUME, false)?
+                    .visit_field::<bool>("is_muted", Self::VT_IS_MUTED, false)?
+                    .visit_field::<::flatbuffers::ForwardsUOffset<TrackMetadata>>(
+                        "track",
+                        Self::VT_TRACK,
+                        false,
+                    )?
+                    .finish();
+                Ok(())
+            }
+        }
+        pub struct StateUpdateArgs<'a> {
+            pub endpoint_ip: Option<::flatbuffers::WIPOffset<&'a str>>,
+            pub transport_state: Option<TransportState>,
+            pub volume: Option<u8>,
+            pub is_muted: Option<bool>,
+            pub track: Option<::flatbuffers::WIPOffset<TrackMetadata<'a>>>,
+        }
+        impl<'a> Default for StateUpdateArgs<'a> {
+            #[inline]
+            fn default() -> Self {
+                StateUpdateArgs {
+                    endpoint_ip: None,
+                    transport_state: None,
+                    volume: None,
+                    is_muted: None,
+                    track: None,
+                }
+            }
+        }
+
+        pub struct StateUpdateBuilder<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> {
+            fbb_: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+            start_: ::flatbuffers::WIPOffset<::flatbuffers::TableUnfinishedWIPOffset>,
+        }
+        impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> StateUpdateBuilder<'a, 'b, A> {
+            #[inline]
+            pub fn add_endpoint_ip(&mut self, endpoint_ip: ::flatbuffers::WIPOffset<&'b str>) {
+                self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(
+                    StateUpdate::VT_ENDPOINT_IP,
+                    endpoint_ip,
+                );
+            }
+            #[inline]
+            pub fn add_transport_state(&mut self, transport_state: TransportState) {
+                self.fbb_.push_slot_always::<TransportState>(
+                    StateUpdate::VT_TRANSPORT_STATE,
+                    transport_state,
+                );
+            }
+            #[inline]
+            pub fn add_volume(&mut self, volume: u8) {
+                self.fbb_.push_slot_always::<u8>(StateUpdate::VT_VOLUME, volume);
+            }
+            #[inline]
+            pub fn add_is_muted(&mut self, is_muted: bool) {
+                self.fbb_.push_slot_always::<bool>(StateUpdate::VT_IS_MUTED, is_muted);
+            }
+            #[inline]
+            pub fn add_track(&mut self, track: ::flatbuffers::WIPOffset<TrackMetadata<'b>>) {
+                self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<TrackMetadata>>(
+                    StateUpdate::VT_TRACK,
+                    track,
+                );
+            }
+            #[inline]
+            pub fn new(
+                _fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+            ) -> StateUpdateBuilder<'a, 'b, A> {
+                let start = _fbb.start_table();
+                StateUpdateBuilder { fbb_: _fbb, start_: start }
+            }
+            #[inline]
+            pub fn finish(self) -> ::flatbuffers::WIPOffset<StateUpdate<'a>> {
+                let o = self.fbb_.end_table(self.start_);
+                ::flatbuffers::WIPOffset::new(o.value())
+            }
+        }
+
+        impl ::core::fmt::Debug for StateUpdate<'_> {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                let mut ds = f.debug_struct("StateUpdate");
+                ds.field("endpoint_ip", &self.endpoint_ip());
+                ds.field("transport_state", &self.transport_state());
+                ds.field("volume", &self.volume());
+                ds.field("is_muted", &self.is_muted());
+                ds.field("track", &self.track());
+                ds.finish()
+            }
+        }
+        pub enum MemberOffset {}
+        #[derive(Copy, Clone, PartialEq)]
+
+        pub struct Member<'a> {
+            pub _tab: ::flatbuffers::Table<'a>,
+        }
+
+        impl<'a> ::flatbuffers::Follow<'a> for Member<'a> {
+            type Inner = Member<'a>;
+            #[inline]
+            unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+                Self { _tab: unsafe { ::flatbuffers::Table::new(buf, loc) } }
+            }
+        }
+
+        impl<'a> Member<'a> {
+            pub const VT_NAME: ::flatbuffers::VOffsetT = 4;
+            pub const VT_UUID: ::flatbuffers::VOffsetT = 6;
+            pub const VT_IP: ::flatbuffers::VOffsetT = 8;
+
+            #[inline]
+            pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
+                Member { _tab: table }
+            }
+            #[allow(unused_mut)]
+            pub fn create<
+                'bldr: 'args,
+                'args: 'mut_bldr,
+                'mut_bldr,
+                A: ::flatbuffers::Allocator + 'bldr,
+            >(
+                _fbb: &'mut_bldr mut ::flatbuffers::FlatBufferBuilder<'bldr, A>,
+                args: &'args MemberArgs<'args>,
+            ) -> ::flatbuffers::WIPOffset<Member<'bldr>> {
+                let mut builder = MemberBuilder::new(_fbb);
+                if let Some(x) = args.ip {
+                    builder.add_ip(x);
+                }
+                if let Some(x) = args.uuid {
+                    builder.add_uuid(x);
+                }
+                if let Some(x) = args.name {
+                    builder.add_name(x);
+                }
+                builder.finish()
+            }
+
+            #[inline]
+            pub fn name(&self) -> Option<&'a str> {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe {
+                    self._tab.get::<::flatbuffers::ForwardsUOffset<&str>>(Member::VT_NAME, None)
+                }
+            }
+            #[inline]
+            pub fn uuid(&self) -> Option<&'a str> {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe {
+                    self._tab.get::<::flatbuffers::ForwardsUOffset<&str>>(Member::VT_UUID, None)
+                }
+            }
+            #[inline]
+            pub fn ip(&self) -> Option<&'a str> {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe {
+                    self._tab.get::<::flatbuffers::ForwardsUOffset<&str>>(Member::VT_IP, None)
+                }
+            }
+        }
+
+        impl ::flatbuffers::Verifiable for Member<'_> {
+            #[inline]
+            fn run_verifier(
+                v: &mut ::flatbuffers::Verifier,
+                pos: usize,
+            ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
+                v.visit_table(pos)?
+                    .visit_field::<::flatbuffers::ForwardsUOffset<&str>>(
+                        "name",
+                        Self::VT_NAME,
+                        false,
+                    )?
+                    .visit_field::<::flatbuffers::ForwardsUOffset<&str>>(
+                        "uuid",
+                        Self::VT_UUID,
+                        false,
+                    )?
+                    .visit_field::<::flatbuffers::ForwardsUOffset<&str>>("ip", Self::VT_IP, false)?
+                    .finish();
+                Ok(())
+            }
+        }
+        pub struct MemberArgs<'a> {
+            pub name: Option<::flatbuffers::WIPOffset<&'a str>>,
+            pub uuid: Option<::flatbuffers::WIPOffset<&'a str>>,
+            pub ip: Option<::flatbuffers::WIPOffset<&'a str>>,
+        }
+        impl<'a> Default for MemberArgs<'a> {
+            #[inline]
+            fn default() -> Self {
+                MemberArgs { name: None, uuid: None, ip: None }
+            }
+        }
+
+        pub struct MemberBuilder<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> {
+            fbb_: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+            start_: ::flatbuffers::WIPOffset<::flatbuffers::TableUnfinishedWIPOffset>,
+        }
+        impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> MemberBuilder<'a, 'b, A> {
+            #[inline]
+            pub fn add_name(&mut self, name: ::flatbuffers::WIPOffset<&'b str>) {
+                self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(Member::VT_NAME, name);
+            }
+            #[inline]
+            pub fn add_uuid(&mut self, uuid: ::flatbuffers::WIPOffset<&'b str>) {
+                self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(Member::VT_UUID, uuid);
+            }
+            #[inline]
+            pub fn add_ip(&mut self, ip: ::flatbuffers::WIPOffset<&'b str>) {
+                self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(Member::VT_IP, ip);
+            }
+            #[inline]
+            pub fn new(
+                _fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+            ) -> MemberBuilder<'a, 'b, A> {
+                let start = _fbb.start_table();
+                MemberBuilder { fbb_: _fbb, start_: start }
+            }
+            #[inline]
+            pub fn finish(self) -> ::flatbuffers::WIPOffset<Member<'a>> {
+                let o = self.fbb_.end_table(self.start_);
+                ::flatbuffers::WIPOffset::new(o.value())
+            }
+        }
+
+        impl ::core::fmt::Debug for Member<'_> {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                let mut ds = f.debug_struct("Member");
+                ds.field("name", &self.name());
+                ds.field("uuid", &self.uuid());
+                ds.field("ip", &self.ip());
+                ds.finish()
+            }
+        }
+        pub enum GroupOffset {}
+        #[derive(Copy, Clone, PartialEq)]
+
+        pub struct Group<'a> {
+            pub _tab: ::flatbuffers::Table<'a>,
+        }
+
+        impl<'a> ::flatbuffers::Follow<'a> for Group<'a> {
+            type Inner = Group<'a>;
+            #[inline]
+            unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+                Self { _tab: unsafe { ::flatbuffers::Table::new(buf, loc) } }
+            }
+        }
+
+        impl<'a> Group<'a> {
+            pub const VT_ID: ::flatbuffers::VOffsetT = 4;
+            pub const VT_NAME: ::flatbuffers::VOffsetT = 6;
+            pub const VT_COORDINATOR_IP: ::flatbuffers::VOffsetT = 8;
+            pub const VT_COORDINATOR_PORT: ::flatbuffers::VOffsetT = 10;
+            pub const VT_IS_PLAYING: ::flatbuffers::VOffsetT = 12;
+            pub const VT_MEMBERS: ::flatbuffers::VOffsetT = 14;
+
+            #[inline]
+            pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
+                Group { _tab: table }
+            }
+            #[allow(unused_mut)]
+            pub fn create<
+                'bldr: 'args,
+                'args: 'mut_bldr,
+                'mut_bldr,
+                A: ::flatbuffers::Allocator + 'bldr,
+            >(
+                _fbb: &'mut_bldr mut ::flatbuffers::FlatBufferBuilder<'bldr, A>,
+                args: &'args GroupArgs<'args>,
+            ) -> ::flatbuffers::WIPOffset<Group<'bldr>> {
+                let mut builder = GroupBuilder::new(_fbb);
+                if let Some(x) = args.members {
+                    builder.add_members(x);
+                }
+                if let Some(x) = args.coordinator_ip {
+                    builder.add_coordinator_ip(x);
+                }
+                if let Some(x) = args.name {
+                    builder.add_name(x);
+                }
+                if let Some(x) = args.id {
+                    builder.add_id(x);
+                }
+                builder.add_coordinator_port(args.coordinator_port);
+                builder.add_is_playing(args.is_playing);
+                builder.finish()
+            }
+
+            #[inline]
+            pub fn id(&self) -> Option<&'a str> {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe { self._tab.get::<::flatbuffers::ForwardsUOffset<&str>>(Group::VT_ID, None) }
+            }
+            #[inline]
+            pub fn name(&self) -> Option<&'a str> {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe {
+                    self._tab.get::<::flatbuffers::ForwardsUOffset<&str>>(Group::VT_NAME, None)
+                }
+            }
+            #[inline]
+            pub fn coordinator_ip(&self) -> Option<&'a str> {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe {
+                    self._tab
+                        .get::<::flatbuffers::ForwardsUOffset<&str>>(Group::VT_COORDINATOR_IP, None)
+                }
+            }
+            #[inline]
+            pub fn coordinator_port(&self) -> u16 {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe { self._tab.get::<u16>(Group::VT_COORDINATOR_PORT, Some(1400)).unwrap() }
+            }
+            #[inline]
+            pub fn is_playing(&self) -> bool {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe { self._tab.get::<bool>(Group::VT_IS_PLAYING, Some(false)).unwrap() }
+            }
+            #[inline]
+            pub fn members(
+                &self,
+            ) -> Option<::flatbuffers::Vector<'a, ::flatbuffers::ForwardsUOffset<Member<'a>>>>
+            {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe {
+                    self._tab.get::<::flatbuffers::ForwardsUOffset<
+                        ::flatbuffers::Vector<'a, ::flatbuffers::ForwardsUOffset<Member>>,
+                    >>(Group::VT_MEMBERS, None)
+                }
+            }
+        }
+
+        impl ::flatbuffers::Verifiable for Group<'_> {
+            #[inline]
+            fn run_verifier(
+                v: &mut ::flatbuffers::Verifier,
+                pos: usize,
+            ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
+                v.visit_table(pos)?
+                    .visit_field::<::flatbuffers::ForwardsUOffset<&str>>("id", Self::VT_ID, false)?
+                    .visit_field::<::flatbuffers::ForwardsUOffset<&str>>(
+                        "name",
+                        Self::VT_NAME,
+                        false,
+                    )?
+                    .visit_field::<::flatbuffers::ForwardsUOffset<&str>>(
+                        "coordinator_ip",
+                        Self::VT_COORDINATOR_IP,
+                        false,
+                    )?
+                    .visit_field::<u16>("coordinator_port", Self::VT_COORDINATOR_PORT, false)?
+                    .visit_field::<bool>("is_playing", Self::VT_IS_PLAYING, false)?
+                    .visit_field::<::flatbuffers::ForwardsUOffset<
+                        ::flatbuffers::Vector<'_, ::flatbuffers::ForwardsUOffset<Member>>,
+                    >>("members", Self::VT_MEMBERS, false)?
+                    .finish();
+                Ok(())
+            }
+        }
+        pub struct GroupArgs<'a> {
+            pub id: Option<::flatbuffers::WIPOffset<&'a str>>,
+            pub name: Option<::flatbuffers::WIPOffset<&'a str>>,
+            pub coordinator_ip: Option<::flatbuffers::WIPOffset<&'a str>>,
+            pub coordinator_port: u16,
+            pub is_playing: bool,
+            pub members: Option<
+                ::flatbuffers::WIPOffset<
+                    ::flatbuffers::Vector<'a, ::flatbuffers::ForwardsUOffset<Member<'a>>>,
+                >,
+            >,
+        }
+        impl<'a> Default for GroupArgs<'a> {
+            #[inline]
+            fn default() -> Self {
+                GroupArgs {
+                    id: None,
+                    name: None,
+                    coordinator_ip: None,
+                    coordinator_port: 1400,
+                    is_playing: false,
+                    members: None,
+                }
+            }
+        }
+
+        pub struct GroupBuilder<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> {
+            fbb_: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+            start_: ::flatbuffers::WIPOffset<::flatbuffers::TableUnfinishedWIPOffset>,
+        }
+        impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> GroupBuilder<'a, 'b, A> {
+            #[inline]
+            pub fn add_id(&mut self, id: ::flatbuffers::WIPOffset<&'b str>) {
+                self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(Group::VT_ID, id);
+            }
+            #[inline]
+            pub fn add_name(&mut self, name: ::flatbuffers::WIPOffset<&'b str>) {
+                self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(Group::VT_NAME, name);
+            }
+            #[inline]
+            pub fn add_coordinator_ip(
+                &mut self,
+                coordinator_ip: ::flatbuffers::WIPOffset<&'b str>,
+            ) {
+                self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(
+                    Group::VT_COORDINATOR_IP,
+                    coordinator_ip,
+                );
+            }
+            #[inline]
+            pub fn add_coordinator_port(&mut self, coordinator_port: u16) {
+                self.fbb_.push_slot::<u16>(Group::VT_COORDINATOR_PORT, coordinator_port, 1400);
+            }
+            #[inline]
+            pub fn add_is_playing(&mut self, is_playing: bool) {
+                self.fbb_.push_slot::<bool>(Group::VT_IS_PLAYING, is_playing, false);
+            }
+            #[inline]
+            pub fn add_members(
+                &mut self,
+                members: ::flatbuffers::WIPOffset<
+                    ::flatbuffers::Vector<'b, ::flatbuffers::ForwardsUOffset<Member<'b>>>,
+                >,
+            ) {
+                self.fbb_
+                    .push_slot_always::<::flatbuffers::WIPOffset<_>>(Group::VT_MEMBERS, members);
+            }
+            #[inline]
+            pub fn new(
+                _fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+            ) -> GroupBuilder<'a, 'b, A> {
+                let start = _fbb.start_table();
+                GroupBuilder { fbb_: _fbb, start_: start }
+            }
+            #[inline]
+            pub fn finish(self) -> ::flatbuffers::WIPOffset<Group<'a>> {
+                let o = self.fbb_.end_table(self.start_);
+                ::flatbuffers::WIPOffset::new(o.value())
+            }
+        }
+
+        impl ::core::fmt::Debug for Group<'_> {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                let mut ds = f.debug_struct("Group");
+                ds.field("id", &self.id());
+                ds.field("name", &self.name());
+                ds.field("coordinator_ip", &self.coordinator_ip());
+                ds.field("coordinator_port", &self.coordinator_port());
+                ds.field("is_playing", &self.is_playing());
+                ds.field("members", &self.members());
+                ds.finish()
+            }
+        }
+        pub enum TopologyUpdateOffset {}
+        #[derive(Copy, Clone, PartialEq)]
+
+        pub struct TopologyUpdate<'a> {
+            pub _tab: ::flatbuffers::Table<'a>,
+        }
+
+        impl<'a> ::flatbuffers::Follow<'a> for TopologyUpdate<'a> {
+            type Inner = TopologyUpdate<'a>;
+            #[inline]
+            unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+                Self { _tab: unsafe { ::flatbuffers::Table::new(buf, loc) } }
+            }
+        }
+
+        impl<'a> TopologyUpdate<'a> {
+            pub const VT_GROUPS: ::flatbuffers::VOffsetT = 4;
+
+            #[inline]
+            pub unsafe fn init_from_table(table: ::flatbuffers::Table<'a>) -> Self {
+                TopologyUpdate { _tab: table }
+            }
+            #[allow(unused_mut)]
+            pub fn create<
+                'bldr: 'args,
+                'args: 'mut_bldr,
+                'mut_bldr,
+                A: ::flatbuffers::Allocator + 'bldr,
+            >(
+                _fbb: &'mut_bldr mut ::flatbuffers::FlatBufferBuilder<'bldr, A>,
+                args: &'args TopologyUpdateArgs<'args>,
+            ) -> ::flatbuffers::WIPOffset<TopologyUpdate<'bldr>> {
+                let mut builder = TopologyUpdateBuilder::new(_fbb);
+                if let Some(x) = args.groups {
+                    builder.add_groups(x);
+                }
+                builder.finish()
+            }
+
+            #[inline]
+            pub fn groups(
+                &self,
+            ) -> Option<::flatbuffers::Vector<'a, ::flatbuffers::ForwardsUOffset<Group<'a>>>>
+            {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe {
+                    self._tab.get::<::flatbuffers::ForwardsUOffset<
+                        ::flatbuffers::Vector<'a, ::flatbuffers::ForwardsUOffset<Group>>,
+                    >>(TopologyUpdate::VT_GROUPS, None)
+                }
+            }
+        }
+
+        impl ::flatbuffers::Verifiable for TopologyUpdate<'_> {
+            #[inline]
+            fn run_verifier(
+                v: &mut ::flatbuffers::Verifier,
+                pos: usize,
+            ) -> Result<(), ::flatbuffers::InvalidFlatbuffer> {
+                v.visit_table(pos)?
+                    .visit_field::<::flatbuffers::ForwardsUOffset<
+                        ::flatbuffers::Vector<'_, ::flatbuffers::ForwardsUOffset<Group>>,
+                    >>("groups", Self::VT_GROUPS, false)?
+                    .finish();
+                Ok(())
+            }
+        }
+        pub struct TopologyUpdateArgs<'a> {
+            pub groups: Option<
+                ::flatbuffers::WIPOffset<
+                    ::flatbuffers::Vector<'a, ::flatbuffers::ForwardsUOffset<Group<'a>>>,
+                >,
+            >,
+        }
+        impl<'a> Default for TopologyUpdateArgs<'a> {
+            #[inline]
+            fn default() -> Self {
+                TopologyUpdateArgs { groups: None }
+            }
+        }
+
+        pub struct TopologyUpdateBuilder<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> {
+            fbb_: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+            start_: ::flatbuffers::WIPOffset<::flatbuffers::TableUnfinishedWIPOffset>,
+        }
+        impl<'a: 'b, 'b, A: ::flatbuffers::Allocator + 'a> TopologyUpdateBuilder<'a, 'b, A> {
+            #[inline]
+            pub fn add_groups(
+                &mut self,
+                groups: ::flatbuffers::WIPOffset<
+                    ::flatbuffers::Vector<'b, ::flatbuffers::ForwardsUOffset<Group<'b>>>,
+                >,
+            ) {
+                self.fbb_.push_slot_always::<::flatbuffers::WIPOffset<_>>(
+                    TopologyUpdate::VT_GROUPS,
+                    groups,
+                );
+            }
+            #[inline]
+            pub fn new(
+                _fbb: &'b mut ::flatbuffers::FlatBufferBuilder<'a, A>,
+            ) -> TopologyUpdateBuilder<'a, 'b, A> {
+                let start = _fbb.start_table();
+                TopologyUpdateBuilder { fbb_: _fbb, start_: start }
+            }
+            #[inline]
+            pub fn finish(self) -> ::flatbuffers::WIPOffset<TopologyUpdate<'a>> {
+                let o = self.fbb_.end_table(self.start_);
+                ::flatbuffers::WIPOffset::new(o.value())
+            }
+        }
+
+        impl ::core::fmt::Debug for TopologyUpdate<'_> {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                let mut ds = f.debug_struct("TopologyUpdate");
+                ds.field("groups", &self.groups());
+                ds.finish()
+            }
+        }
+    } // pub mod Media
+
     #[deprecated(
         since = "2.0.0",
         note = "Use associated constants instead. This will no longer be generated in 2021."
@@ -112,13 +1891,13 @@ pub mod coprocessor_proto {
         since = "2.0.0",
         note = "Use associated constants instead. This will no longer be generated in 2021."
     )]
-    pub const ENUM_MAX_REQUEST: u8 = 7;
+    pub const ENUM_MAX_REQUEST: u8 = 12;
     #[deprecated(
         since = "2.0.0",
         note = "Use associated constants instead. This will no longer be generated in 2021."
     )]
     #[allow(non_camel_case_types)]
-    pub const ENUM_VALUES_REQUEST: [Request; 8] = [
+    pub const ENUM_VALUES_REQUEST: [Request; 13] = [
         Request::NONE,
         Request::Heartbeat,
         Request::WifiConnectRequest,
@@ -127,6 +1906,11 @@ pub mod coprocessor_proto {
         Request::StreamChunk,
         Request::Hello,
         Request::BatteryStatus,
+        Request::Media_Action,
+        Request::Media_VolumeCommand,
+        Request::Media_Subscribe,
+        Request::Media_UnsubscribeAll,
+        Request::Media_GetTopology,
     ];
 
     #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -142,9 +1926,14 @@ pub mod coprocessor_proto {
         pub const StreamChunk: Self = Self(5);
         pub const Hello: Self = Self(6);
         pub const BatteryStatus: Self = Self(7);
+        pub const Media_Action: Self = Self(8);
+        pub const Media_VolumeCommand: Self = Self(9);
+        pub const Media_Subscribe: Self = Self(10);
+        pub const Media_UnsubscribeAll: Self = Self(11);
+        pub const Media_GetTopology: Self = Self(12);
 
         pub const ENUM_MIN: u8 = 0;
-        pub const ENUM_MAX: u8 = 7;
+        pub const ENUM_MAX: u8 = 12;
         pub const ENUM_VALUES: &'static [Self] = &[
             Self::NONE,
             Self::Heartbeat,
@@ -154,6 +1943,11 @@ pub mod coprocessor_proto {
             Self::StreamChunk,
             Self::Hello,
             Self::BatteryStatus,
+            Self::Media_Action,
+            Self::Media_VolumeCommand,
+            Self::Media_Subscribe,
+            Self::Media_UnsubscribeAll,
+            Self::Media_GetTopology,
         ];
         /// Returns the variant's name or "" if unknown.
         pub fn variant_name(self) -> Option<&'static str> {
@@ -166,6 +1960,11 @@ pub mod coprocessor_proto {
                 Self::StreamChunk => Some("StreamChunk"),
                 Self::Hello => Some("Hello"),
                 Self::BatteryStatus => Some("BatteryStatus"),
+                Self::Media_Action => Some("Media_Action"),
+                Self::Media_VolumeCommand => Some("Media_VolumeCommand"),
+                Self::Media_Subscribe => Some("Media_Subscribe"),
+                Self::Media_UnsubscribeAll => Some("Media_UnsubscribeAll"),
+                Self::Media_GetTopology => Some("Media_GetTopology"),
                 _ => None,
             }
         }
@@ -232,13 +2031,13 @@ pub mod coprocessor_proto {
         since = "2.0.0",
         note = "Use associated constants instead. This will no longer be generated in 2021."
     )]
-    pub const ENUM_MAX_RESPONSE: u8 = 6;
+    pub const ENUM_MAX_RESPONSE: u8 = 8;
     #[deprecated(
         since = "2.0.0",
         note = "Use associated constants instead. This will no longer be generated in 2021."
     )]
     #[allow(non_camel_case_types)]
-    pub const ENUM_VALUES_RESPONSE: [Response; 7] = [
+    pub const ENUM_VALUES_RESPONSE: [Response; 9] = [
         Response::NONE,
         Response::Heartbeat,
         Response::WifiStatus,
@@ -246,6 +2045,8 @@ pub mod coprocessor_proto {
         Response::StreamChunk,
         Response::Hello,
         Response::TimeSync,
+        Response::Media_StateUpdate,
+        Response::Media_TopologyUpdate,
     ];
 
     #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -260,9 +2061,11 @@ pub mod coprocessor_proto {
         pub const StreamChunk: Self = Self(4);
         pub const Hello: Self = Self(5);
         pub const TimeSync: Self = Self(6);
+        pub const Media_StateUpdate: Self = Self(7);
+        pub const Media_TopologyUpdate: Self = Self(8);
 
         pub const ENUM_MIN: u8 = 0;
-        pub const ENUM_MAX: u8 = 6;
+        pub const ENUM_MAX: u8 = 8;
         pub const ENUM_VALUES: &'static [Self] = &[
             Self::NONE,
             Self::Heartbeat,
@@ -271,6 +2074,8 @@ pub mod coprocessor_proto {
             Self::StreamChunk,
             Self::Hello,
             Self::TimeSync,
+            Self::Media_StateUpdate,
+            Self::Media_TopologyUpdate,
         ];
         /// Returns the variant's name or "" if unknown.
         pub fn variant_name(self) -> Option<&'static str> {
@@ -282,6 +2087,8 @@ pub mod coprocessor_proto {
                 Self::StreamChunk => Some("StreamChunk"),
                 Self::Hello => Some("Hello"),
                 Self::TimeSync => Some("TimeSync"),
+                Self::Media_StateUpdate => Some("Media_StateUpdate"),
+                Self::Media_TopologyUpdate => Some("Media_TopologyUpdate"),
                 _ => None,
             }
         }
@@ -1709,6 +3516,81 @@ pub mod coprocessor_proto {
                 None
             }
         }
+
+        #[inline]
+        #[allow(non_snake_case)]
+        pub fn message_as_media_action(&self) -> Option<media::Action<'a>> {
+            if self.message_type() == Request::Media_Action {
+                self.message().map(|t| {
+                    // Safety:
+                    // Created from a valid Table for this object
+                    // Which contains a valid union in this slot
+                    unsafe { media::Action::init_from_table(t) }
+                })
+            } else {
+                None
+            }
+        }
+
+        #[inline]
+        #[allow(non_snake_case)]
+        pub fn message_as_media_volume_command(&self) -> Option<media::VolumeCommand<'a>> {
+            if self.message_type() == Request::Media_VolumeCommand {
+                self.message().map(|t| {
+                    // Safety:
+                    // Created from a valid Table for this object
+                    // Which contains a valid union in this slot
+                    unsafe { media::VolumeCommand::init_from_table(t) }
+                })
+            } else {
+                None
+            }
+        }
+
+        #[inline]
+        #[allow(non_snake_case)]
+        pub fn message_as_media_subscribe(&self) -> Option<media::Subscribe<'a>> {
+            if self.message_type() == Request::Media_Subscribe {
+                self.message().map(|t| {
+                    // Safety:
+                    // Created from a valid Table for this object
+                    // Which contains a valid union in this slot
+                    unsafe { media::Subscribe::init_from_table(t) }
+                })
+            } else {
+                None
+            }
+        }
+
+        #[inline]
+        #[allow(non_snake_case)]
+        pub fn message_as_media_unsubscribe_all(&self) -> Option<media::UnsubscribeAll<'a>> {
+            if self.message_type() == Request::Media_UnsubscribeAll {
+                self.message().map(|t| {
+                    // Safety:
+                    // Created from a valid Table for this object
+                    // Which contains a valid union in this slot
+                    unsafe { media::UnsubscribeAll::init_from_table(t) }
+                })
+            } else {
+                None
+            }
+        }
+
+        #[inline]
+        #[allow(non_snake_case)]
+        pub fn message_as_media_get_topology(&self) -> Option<media::GetTopology<'a>> {
+            if self.message_type() == Request::Media_GetTopology {
+                self.message().map(|t| {
+                    // Safety:
+                    // Created from a valid Table for this object
+                    // Which contains a valid union in this slot
+                    unsafe { media::GetTopology::init_from_table(t) }
+                })
+            } else {
+                None
+            }
+        }
     }
 
     impl ::flatbuffers::Verifiable for RequestEnvelope<'_> {
@@ -1727,6 +3609,11 @@ pub mod coprocessor_proto {
           Request::StreamChunk => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<StreamChunk>>("Request::StreamChunk", pos),
           Request::Hello => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<Hello>>("Request::Hello", pos),
           Request::BatteryStatus => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<BatteryStatus>>("Request::BatteryStatus", pos),
+          Request::Media_Action => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<media::Action>>("Request::Media_Action", pos),
+          Request::Media_VolumeCommand => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<media::VolumeCommand>>("Request::Media_VolumeCommand", pos),
+          Request::Media_Subscribe => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<media::Subscribe>>("Request::Media_Subscribe", pos),
+          Request::Media_UnsubscribeAll => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<media::UnsubscribeAll>>("Request::Media_UnsubscribeAll", pos),
+          Request::Media_GetTopology => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<media::GetTopology>>("Request::Media_GetTopology", pos),
           _ => Ok(()),
         }
      })?
@@ -1849,6 +3736,56 @@ pub mod coprocessor_proto {
                 }
                 Request::BatteryStatus => {
                     if let Some(x) = self.message_as_battery_status() {
+                        ds.field("message", &x)
+                    } else {
+                        ds.field(
+                            "message",
+                            &"InvalidFlatbuffer: Union discriminant does not match value.",
+                        )
+                    }
+                }
+                Request::Media_Action => {
+                    if let Some(x) = self.message_as_media_action() {
+                        ds.field("message", &x)
+                    } else {
+                        ds.field(
+                            "message",
+                            &"InvalidFlatbuffer: Union discriminant does not match value.",
+                        )
+                    }
+                }
+                Request::Media_VolumeCommand => {
+                    if let Some(x) = self.message_as_media_volume_command() {
+                        ds.field("message", &x)
+                    } else {
+                        ds.field(
+                            "message",
+                            &"InvalidFlatbuffer: Union discriminant does not match value.",
+                        )
+                    }
+                }
+                Request::Media_Subscribe => {
+                    if let Some(x) = self.message_as_media_subscribe() {
+                        ds.field("message", &x)
+                    } else {
+                        ds.field(
+                            "message",
+                            &"InvalidFlatbuffer: Union discriminant does not match value.",
+                        )
+                    }
+                }
+                Request::Media_UnsubscribeAll => {
+                    if let Some(x) = self.message_as_media_unsubscribe_all() {
+                        ds.field("message", &x)
+                    } else {
+                        ds.field(
+                            "message",
+                            &"InvalidFlatbuffer: Union discriminant does not match value.",
+                        )
+                    }
+                }
+                Request::Media_GetTopology => {
+                    if let Some(x) = self.message_as_media_get_topology() {
                         ds.field("message", &x)
                     } else {
                         ds.field(
@@ -2018,6 +3955,36 @@ pub mod coprocessor_proto {
                 None
             }
         }
+
+        #[inline]
+        #[allow(non_snake_case)]
+        pub fn message_as_media_state_update(&self) -> Option<media::StateUpdate<'a>> {
+            if self.message_type() == Response::Media_StateUpdate {
+                self.message().map(|t| {
+                    // Safety:
+                    // Created from a valid Table for this object
+                    // Which contains a valid union in this slot
+                    unsafe { media::StateUpdate::init_from_table(t) }
+                })
+            } else {
+                None
+            }
+        }
+
+        #[inline]
+        #[allow(non_snake_case)]
+        pub fn message_as_media_topology_update(&self) -> Option<media::TopologyUpdate<'a>> {
+            if self.message_type() == Response::Media_TopologyUpdate {
+                self.message().map(|t| {
+                    // Safety:
+                    // Created from a valid Table for this object
+                    // Which contains a valid union in this slot
+                    unsafe { media::TopologyUpdate::init_from_table(t) }
+                })
+            } else {
+                None
+            }
+        }
     }
 
     impl ::flatbuffers::Verifiable for ResponseEnvelope<'_> {
@@ -2035,6 +4002,8 @@ pub mod coprocessor_proto {
           Response::StreamChunk => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<StreamChunk>>("Response::StreamChunk", pos),
           Response::Hello => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<Hello>>("Response::Hello", pos),
           Response::TimeSync => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<TimeSync>>("Response::TimeSync", pos),
+          Response::Media_StateUpdate => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<media::StateUpdate>>("Response::Media_StateUpdate", pos),
+          Response::Media_TopologyUpdate => v.verify_union_variant::<::flatbuffers::ForwardsUOffset<media::TopologyUpdate>>("Response::Media_TopologyUpdate", pos),
           _ => Ok(()),
         }
      })?
@@ -2147,6 +4116,26 @@ pub mod coprocessor_proto {
                 }
                 Response::TimeSync => {
                     if let Some(x) = self.message_as_time_sync() {
+                        ds.field("message", &x)
+                    } else {
+                        ds.field(
+                            "message",
+                            &"InvalidFlatbuffer: Union discriminant does not match value.",
+                        )
+                    }
+                }
+                Response::Media_StateUpdate => {
+                    if let Some(x) = self.message_as_media_state_update() {
+                        ds.field("message", &x)
+                    } else {
+                        ds.field(
+                            "message",
+                            &"InvalidFlatbuffer: Union discriminant does not match value.",
+                        )
+                    }
+                }
+                Response::Media_TopologyUpdate => {
+                    if let Some(x) = self.message_as_media_topology_update() {
                         ds.field("message", &x)
                     } else {
                         ds.field(

@@ -9,7 +9,7 @@ FMT_STAMP := .pio/build/esp32dev/.fmt.stamp
 FMT_CHECK_STAMP := .pio/build/esp32dev/.fmt_check.stamp
 
 FMT_SRCS := $(wildcard src/*.cpp) $(wildcard src/*.h)
-SRCS := $(FMT_SRCS) $(wildcard src/CMakeLists.txt) $(wildcard src/web/*) \
+SRCS := $(FMT_SRCS) $(wildcard src/CMakeLists.txt) $(wildcard src/idf_component.yml) $(wildcard src/web/*) \
         $(wildcard include/*.h) platformio.ini CMakeLists.txt sdkconfig.defaults
 
 all: build

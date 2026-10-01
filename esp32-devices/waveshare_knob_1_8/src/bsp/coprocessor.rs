@@ -38,7 +38,6 @@ pub fn get_wifi_ssid() -> heapless::String<32> {
     WIFI_SSID.lock(|cell| cell.borrow().clone())
 }
 
-#[derive(Debug, Clone)]
 pub enum CoprocessorCommand {
     StartProvisioning { timeout_seconds: u32 },
     StopProvisioning,
@@ -239,7 +238,7 @@ pub async fn coprocessor_task(
                 Either::First(_) => {
                     let mut builder = flatbuffers::FlatBufferBuilder::new();
                     let batt_status = crate::bsp::battery::get_battery_status();
-                    let batt_off = proto::BatteryStatus::create(&mut builder, &batt_status.into());
+                    let batt_off = proto::BatteryStatus::create(&mut builder, &batt_status);
                     let hb = proto::Heartbeat::create(
                         &mut builder,
                         &proto::HeartbeatArgs {
@@ -313,7 +312,7 @@ pub async fn coprocessor_task(
                             )
                         }
                         CoprocessorCommand::BatteryStatus(status) => {
-                            let batt = proto::BatteryStatus::create(&mut builder, &status.into());
+                            let batt = proto::BatteryStatus::create(&mut builder, &status);
                             proto::RequestEnvelope::create(
                                 &mut builder,
                                 &proto::RequestEnvelopeArgs {

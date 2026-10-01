@@ -1,17 +1,17 @@
 .PHONY: all clean
 
-FBS := coprocessor.fbs
-CPP_OUT := ../coprocessor/include/coprocessor_generated.h
+FBS := coprocessor.fbs media.fbs
+CPP_OUT := ../coprocessor/include/coprocessor_generated.h ../coprocessor/include/media_generated.h
 RUST_OUT := ../portable/crates/coprocessor/src/coprocessor_generated.rs
+STAMP := .flatc.stamp
 
-all: $(CPP_OUT) $(RUST_OUT)
+all: $(STAMP)
 
-$(CPP_OUT): $(FBS)
+$(STAMP): $(FBS)
 	flatc --cpp -o ../coprocessor/include/ $(FBS)
-
-$(RUST_OUT): $(FBS)
-	flatc --rust -o ../portable/crates/coprocessor/src/ $(FBS)
+	flatc --rust --gen-all -o ../portable/crates/coprocessor/src/ coprocessor.fbs
 	rustup run nightly rustfmt $(RUST_OUT)
+	touch $(STAMP)
 
 clean:
-	rm -f $(CPP_OUT) $(RUST_OUT)
+	rm -f $(CPP_OUT) $(RUST_OUT) ../portable/crates/coprocessor/src/media_generated.rs $(STAMP)

@@ -16,6 +16,7 @@
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
+#include "sonos_controller.h"
 #include "wifi_manager.h"
 
 namespace {
@@ -242,8 +243,8 @@ std::string build_status_json() {
   bool plugged = g_battery_plugged.load();
 
   bool wifi_conn = coprocessor::wifi_is_connected();
-  std::string_view ssid = coprocessor::wifi_get_ssid();
-  std::string_view ip = coprocessor::wifi_get_ip();
+  std::string ssid = coprocessor::wifi_get_ssid();
+  std::string ip = coprocessor::wifi_get_ip();
   int8_t rssi = 0;
   if (wifi_conn) {
     wifi_ap_record_t ap_info = {};
@@ -367,6 +368,65 @@ esp_err_t ws_handler(httpd_req_t* req) {
   return ESP_OK;
 }
 
+// Spam guard state for the GENA NOTIFY endpoint (rate detection only, no
+// throttling).
+uint32_t g_notify_window_start_ms = 0;
+uint32_t g_notify_count = 0;
+bool g_notify_warned = false;
+
+// Handles UPnP GENA NOTIFY requests from subscribed Sonos speakers. The body
+// is forwarded to the Sonos task for parsing; nothing heavy runs here.
+esp_err_t media_notify_handler(httpd_req_t* req) {
+  uint32_t now_ms = static_cast<uint32_t>(esp_timer_get_time() / 1000);
+  if (now_ms - g_notify_window_start_ms >= 1000) {
+    g_notify_window_start_ms = now_ms;
+    g_notify_count = 0;
+    g_notify_warned = false;
+  }
+  g_notify_count++;
+  if (g_notify_count > 10 && !g_notify_warned) {
+    g_notify_warned = true;
+    ESP_LOGW(TAG, "NOTIFY flood detected: >10 requests/second");
+  }
+
+  char sid[160] = {};
+  if (httpd_req_get_hdr_value_str(req, "SID", sid, sizeof(sid)) != ESP_OK) {
+    sid[0] = '\0';
+  }
+
+  std::string body;
+  int remaining = req->content_len;
+  if (remaining > 16 * 1024) {
+    ESP_LOGW(TAG, "NOTIFY body too large (%d bytes), rejecting", remaining);
+    return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "body too large");
+  }
+  if (remaining > 0) {
+    body.reserve(remaining);
+    char buf[256];
+    while (remaining > 0) {
+      int chunk = remaining < static_cast<int>(sizeof(buf))
+                      ? remaining
+                      : static_cast<int>(sizeof(buf));
+      int n = httpd_req_recv(req, buf, chunk);
+      if (n <= 0) {
+        if (n == HTTPD_SOCK_ERR_TIMEOUT) {
+          continue;
+        }
+        ESP_LOGW(TAG, "NOTIFY body recv failed: %d", n);
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "recv failed");
+      }
+      body.append(buf, n);
+      remaining -= n;
+    }
+  }
+
+  // Acknowledge promptly, then hand off to the Sonos task.
+  esp_err_t ret = httpd_resp_send(req, nullptr, 0);
+  coprocessor::sonos_post_notify(sid, std::move(body));
+  return ret;
+}
+
 }  // namespace
 
 namespace coprocessor {
@@ -420,7 +480,18 @@ esp_err_t web_server_start() {
   };
   httpd_register_uri_handler(g_server, &ws_uri);
 
-  ESP_LOGI(TAG, "Web server running: /, /api/status, /ws (WebSocket)");
+  httpd_uri_t notify_uri = {
+      .uri = "/media/notify",
+      .method = HTTP_NOTIFY,
+      .handler = media_notify_handler,
+      .user_ctx = nullptr,
+      .is_websocket = false,
+  };
+  httpd_register_uri_handler(g_server, &notify_uri);
+
+  ESP_LOGI(TAG,
+           "Web server running: /, /api/status, /ws (WebSocket), /media/notify "
+           "(GENA)");
   return ESP_OK;
 }
 

@@ -4,10 +4,14 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
+#include <string>
 #include <string_view>
+#include <vector>
 
 #include "coprocessor_generated.h"
 #include "hal/uart_types.h"
+#include "media_generated.h"
 
 namespace coprocessor {
 
@@ -32,5 +36,38 @@ void uart_send_provisioning_status(CoprocessorProto::ProvisioningState state);
 void uart_send_hello();
 void uart_send_time_sync(uint64_t epoch_seconds, uint32_t subsec_micros);
 bool uart_is_linked();
+
+struct UartMediaTrackMetadata {
+  std::optional<std::string> title;
+  std::optional<std::string> artist;
+  std::optional<std::string> album;
+  std::optional<uint32_t> duration_seconds;
+  std::optional<uint32_t> elapsed_seconds;
+};
+
+struct UartMediaStateUpdate {
+  std::string endpoint_ip;
+  std::optional<CoprocessorProto::Media::TransportState> transport_state;
+  std::optional<uint8_t> volume;
+  std::optional<bool> is_muted;
+  std::optional<UartMediaTrackMetadata> track;
+};
+
+struct UartMediaMember {
+  std::string name;
+  std::string uuid;
+  std::string ip;
+};
+
+struct UartMediaGroup {
+  std::string id;
+  std::string name;
+  std::string coordinator_ip;
+  uint16_t coordinator_port = 1400;
+  std::vector<UartMediaMember> members;
+};
+
+void uart_send_media_state_update(const UartMediaStateUpdate& update);
+void uart_send_media_topology_update(const std::vector<UartMediaGroup>& groups);
 
 }  // namespace coprocessor

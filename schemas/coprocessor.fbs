@@ -1,6 +1,8 @@
 // Copyright © 2026 Nilton Volpato
 // SPDX-License-Identifier: MIT
 
+include "media.fbs";
+
 namespace CoprocessorProto;
 
 // Status of Wi-Fi connection reported by the co-processor
@@ -78,6 +80,11 @@ union Request {
     StreamChunk,
     Hello,
     BatteryStatus,
+    Media.Action,
+    Media.VolumeCommand,
+    Media.Subscribe,
+    Media.UnsubscribeAll,
+    Media.GetTopology,
 }
 
 // Union of all Responses / Events (Co-processor -> S3)
@@ -88,6 +95,8 @@ union Response {
     StreamChunk,
     Hello,
     TimeSync,
+    Media.StateUpdate,
+    Media.TopologyUpdate,
 }
 
 table RequestEnvelope {
