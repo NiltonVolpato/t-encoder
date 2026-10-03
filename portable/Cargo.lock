@@ -195,6 +195,7 @@ dependencies = [
  "baker",
  "slint",
  "theme",
+ "zune-jpeg",
 ]
 
 [[package]]

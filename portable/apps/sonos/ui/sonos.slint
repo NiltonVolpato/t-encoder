@@ -1,7 +1,32 @@
 // Copyright © 2026 Nilton Volpato
 // SPDX-License-Identifier: MIT
 
-import { AppWindow, Theme, AppInfo, TextSm, TextXlBold } from "@theme";
+import { AppWindow, Theme, AppInfo, TextSm, TextBase, TextBaseBold, TextLgBold, TextXlBold } from "@theme";
+
+export struct SonosGroupCard {
+    name: string,
+    members: [string],
+    playing_summary: string,
+    is_playing: bool,
+}
+
+export struct SonosState {
+    mode: int, // 0 = Group Selector, 1 = Now Playing
+    groups: [SonosGroupCard],
+    selected_group: int,
+    active_group_name: string,
+    track_title: string,
+    track_artist: string,
+    track_album: string,
+    remaining_str: string,
+    elapsed_str: string,
+    progress_ratio: float, // 0.0 .. 1.0
+    volume: int, // 0 .. 100
+    volume_visible: bool,
+    is_playing: bool,
+    accent: color,
+    status: string,
+}
 
 export global SonosInfo {
     out property <AppInfo> info: {
@@ -11,10 +36,221 @@ export global SonosInfo {
     };
 }
 
+component MarqueeText inherits Rectangle {
+    in property <string> text;
+    in property <color> text_color: #ffffff;
+    in property <length> font_size: 20px;
+    in property <int> font_weight: 700;
+
+    clip: true;
+
+    private property <length> text_width: txt.preferred-width;
+    private property <length> max_scroll: Math.max(0px, text_width - self.width);
+    private property <bool> overflow: max_scroll > 0px;
+    private property <length> offset: 0px;
+    private property <float> r: 0.15;
+
+    animate offset {
+        duration: Math.max(2s, max_scroll / 30px * 1s);
+        delay: 1.5s;
+        iteration-count: -1;
+        direction: alternate;
+        easing: cubic-bezier(0.25, 0.0, 0.75, 1);
+    }
+
+    init => {
+        if self.overflow {
+            self.offset = self.max_scroll;
+        }
+    }
+
+    changed text => {
+        self.offset = 0px;
+        if self.overflow {
+            self.offset = self.max_scroll;
+        }
+    }
+
+    txt := Text {
+        font-family: Theme.font-family;
+        x: root.overflow ? -root.offset : 0px;
+        width: root.overflow ? self.preferred-width : parent.width;
+        horizontal-alignment: root.overflow ? left : center;
+        text: root.text;
+        color: root.text_color;
+        font-size: root.font_size;
+        font-weight: root.font_weight;
+    }
+}
+
+component EqualizerSegment inherits Rectangle {
+    in property <int> index;
+    in property <int> cur_level;
+    in property <int> peak_level;
+    in property <bool> is_playing;
+
+    width: 8px;
+    height: 4px;
+
+    private property <bool> is_lit: root.is_playing && (
+        root.index < root.cur_level ||
+        (root.peak_level > root.cur_level && root.index == root.peak_level - 1)
+    );
+
+    background: self.is_lit ? (
+        root.index >= 6 ? #ef4444 :
+        root.index >= 4 ? #eab308 :
+        #22c55e
+    ) : (
+        root.index >= 6 ? #2e1212 :
+        root.index >= 4 ? #2e250b :
+        #0c2b18
+    );
+}
+
+component EqualizerBar inherits Rectangle {
+    in property <duration> period: 600ms;
+    in property <duration> phase: 0ms;
+    in property <float> max_amplitude: 1.0;
+    in property <bool> is_playing: true;
+
+    width: 8px;
+    height: 46px;
+
+    private property <float> raw_wave: Math.abs(Math.sin(180deg * (animation-tick() + root.phase) / root.period));
+    private property <int> cur_level: root.is_playing ? Math.floor(raw_wave * root.max_amplitude * 8.99) : 0;
+    private property <int> peak_level: 0;
+    private property <int> peak_hold_ticks: 0;
+
+    Timer {
+        interval: 60ms;
+        running: root.is_playing;
+        triggered => {
+            if root.cur_level >= root.peak_level {
+                root.peak_level = root.cur_level;
+                root.peak_hold_ticks = 6;
+            } else if root.peak_hold_ticks > 0 {
+                root.peak_hold_ticks -= 1;
+            } else if root.peak_level > 0 {
+                root.peak_level -= 1;
+            }
+        }
+    }
+
+    VerticalLayout {
+        alignment: space-between;
+        padding: 0px;
+        spacing: 2px;
+
+        EqualizerSegment { index: 7; cur_level: root.cur_level; peak_level: root.peak_level; is_playing: root.is_playing; }
+        EqualizerSegment { index: 6; cur_level: root.cur_level; peak_level: root.peak_level; is_playing: root.is_playing; }
+        EqualizerSegment { index: 5; cur_level: root.cur_level; peak_level: root.peak_level; is_playing: root.is_playing; }
+        EqualizerSegment { index: 4; cur_level: root.cur_level; peak_level: root.peak_level; is_playing: root.is_playing; }
+        EqualizerSegment { index: 3; cur_level: root.cur_level; peak_level: root.peak_level; is_playing: root.is_playing; }
+        EqualizerSegment { index: 2; cur_level: root.cur_level; peak_level: root.peak_level; is_playing: root.is_playing; }
+        EqualizerSegment { index: 1; cur_level: root.cur_level; peak_level: root.peak_level; is_playing: root.is_playing; }
+        EqualizerSegment { index: 0; cur_level: root.cur_level; peak_level: root.peak_level; is_playing: root.is_playing; }
+    }
+}
+
+component AudioEqualizer inherits Rectangle {
+    in property <color> bar_color: #F87000;
+    in property <bool> is_playing: true;
+    in property <float> speed: 1.0;
+
+    width: 50px;
+    height: 50px;
+
+    HorizontalLayout {
+        alignment: space-around;
+        padding: 0px;
+        spacing: 4px;
+
+        EqualizerBar {
+            max_amplitude: 0.95;
+            period: 750ms / root.speed;
+            phase: 0ms;
+            is_playing: root.is_playing;
+        }
+        EqualizerBar {
+            max_amplitude: 0.70;
+            period: 500ms / root.speed;
+            phase: 120ms;
+            is_playing: root.is_playing;
+        }
+        EqualizerBar {
+            max_amplitude: 1.00;
+            period: 850ms / root.speed;
+            phase: 250ms;
+            is_playing: root.is_playing;
+        }
+        EqualizerBar {
+            max_amplitude: 0.85;
+            period: 620ms / root.speed;
+            phase: 70ms;
+            is_playing: root.is_playing;
+        }
+    }
+}
+
 export component SonosApp inherits AppWindow {
     title: "Sonos";
-    background: #f59e0b;
+    background: #000000;
+    enable-gestures: false;
 
+    out property <length> screen_size: root.width;
+    private property <length> cx: root.width / 2;
+    private property <length> cy: root.height / 2;
+    in-out property <length> drag_offset: 0px;
+    in-out property <bool> is_dragging: false;
+
+    in-out property <bool> show_remaining: true;
+    in-out property <image> album_art;
+
+    in-out property <SonosState> state: {
+        mode: 0,
+        selected_group: 0,
+        active_group_name: "Kitchen",
+        track_title: "NEVER NEVER (Extended Club Remaster)",
+        track_artist: "Marc Moon",
+        track_album: "Marc Moon EP",
+        remaining_str: "-02:15",
+        elapsed_str: "00:45",
+        progress_ratio: 0.25,
+        volume: 25,
+        volume_visible: false,
+        is_playing: true,
+        accent: #F87000,
+        status: "Online",
+        groups: [
+            {
+                name: "Kitchen",
+                members: ["Kitchen"],
+                playing_summary: "NEVER NEVER (Extended Club Remaster) - Marc Moon",
+                is_playing: true,
+            },
+            {
+                name: "Office",
+                members: ["Office"],
+                playing_summary: "Paused",
+                is_playing: false,
+            },
+            {
+                name: "Living Room",
+                members: ["Living Room", "Sub"],
+                playing_summary: "Not Playing",
+                is_playing: false,
+            },
+        ],
+    };
+
+    callback toggle_play_pause();
+    callback toggle_time_display();
+    callback next_track();
+    callback previous_track();
+    callback adjust_volume(int);
+    callback select_group(int);
+    callback set_mode(int);
     callback exit();
 
     forward-focus: dial-focus;
@@ -24,30 +260,356 @@ export component SonosApp inherits AppWindow {
                 root.exit();
                 return accept;
             }
+            if event.text == Key.LeftArrow || event.text == Key.DownArrow {
+                if root.state.mode == 0 {
+                    root.select_group(Math.max(0, root.state.selected_group - 1));
+                } else {
+                    root.adjust_volume(-2);
+                }
+                return accept;
+            }
+            if event.text == Key.RightArrow || event.text == Key.UpArrow {
+                if root.state.mode == 0 {
+                    root.select_group(Math.min(root.state.groups.length - 1, root.state.selected_group + 1));
+                } else {
+                    root.adjust_volume(2);
+                }
+                return accept;
+            }
+            if event.text == Key.Return || event.text == " " {
+                if root.state.mode == 0 {
+                    root.set_mode(1);
+                } else {
+                    root.toggle_play_pause();
+                }
+                return accept;
+            }
             reject
         }
     }
 
+    // Scroll / rotary dial emulation via mouse wheel
     TouchArea {
-        clicked => { root.exit(); }
+        scroll-event(event) => {
+            if root.state.mode == 0 {
+                if event.delta-y < 0px {
+                    root.select_group(Math.min(root.state.groups.length - 1, root.state.selected_group + 1));
+                }
+                if event.delta-y > 0px {
+                    root.select_group(Math.max(0, root.state.selected_group - 1));
+                }
+            } else {
+                if event.delta-y < 0px {
+                    root.adjust_volume(2);
+                }
+                if event.delta-y > 0px {
+                    root.adjust_volume(-2);
+                }
+            }
+            accept
+        }
     }
 
-    VerticalLayout {
-        alignment: center;
-        spacing: 12px;
-
-        TextXlBold {
-            text: "Sonos";
-            color: white;
+    // =========================================================================
+    // Mode 0: Speaker Group Selector (Level 1 - Full Screen per Group)
+    // =========================================================================
+    if state.mode == 0: Rectangle {
+        // Top Category Header
+        TextSm {
+            y: parent.height * 0.10;
+            width: parent.width;
+            text: "SONOS GROUPS";
+            color: #718096;
+            letter-spacing: 2px;
             horizontal-alignment: center;
         }
 
+        // Carousel strip: translates horizontally as selected_group changes + drag_offset
+        Rectangle {
+            width: parent.width;
+            height: parent.height;
+            x: - root.state.selected_group * parent.width + root.drag_offset;
+            animate x {
+                duration: 250ms;
+                easing: ease-out;
+                enabled: !root.is_dragging;
+            }
+
+            for group[i] in root.state.groups: Rectangle {
+                x: i * parent.width;
+                width: parent.width;
+                height: parent.height;
+
+                VerticalLayout {
+                    y: (parent.height - 180px) / 2;
+                    x: (parent.width - 240px) / 2;
+                    width: 240px;
+                    height: 180px;
+                    alignment: center;
+                    spacing: 8px;
+
+                    // Member Rooms List (20px, 700 - matches TextLgBold)
+                    for member in group.members: TextLgBold {
+                        width: parent.width;
+                        text: member;
+                        color: #a0aec0;
+                        horizontal-alignment: center;
+                        overflow: elide;
+                    }
+
+                    // Now Playing Status Pill
+                    Rectangle {
+                        height: 32px;
+
+                        HorizontalLayout {
+                            padding-left: 12px;
+                            padding-right: 12px;
+                            alignment: center;
+
+                            TextBase {
+                                text: (group.is_playing ? "▶  " : "") + (group.playing_summary != "" ? group.playing_summary : "Not Playing");
+                                color: group.is_playing ? root.state.accent : #a0aec0;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Carousel Touch Area (captures horizontal drag and vertical swipe up to exit)
+        TouchArea {
+            width: parent.width;
+            height: parent.height;
+
+            pointer-event(event) => {
+                if event.button == PointerEventButton.left && event.kind == PointerEventKind.down {
+                    root.is_dragging = false;
+                    root.drag_offset = 0px;
+                }
+                if event.button == PointerEventButton.left && (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
+                    let delta_x = self.mouse-x - self.pressed-x;
+                    let delta_y = self.mouse-y - self.pressed-y;
+                    let abs_x = Math.abs(delta_x);
+                    let abs_y = Math.abs(delta_y);
+
+                    if root.is_dragging {
+                        root.is_dragging = false;
+                        if root.drag_offset < -parent.width / 4 && root.state.selected_group + 1 < root.state.groups.length {
+                            root.select_group(root.state.selected_group + 1);
+                        } else if root.drag_offset > parent.width / 4 && root.state.selected_group > 0 {
+                            root.select_group(root.state.selected_group - 1);
+                        }
+                        root.drag_offset = 0px;
+                    } else if event.kind == PointerEventKind.up && abs_x < 5px && abs_y < 5px {
+                        root.set_mode(1);
+                    }
+                }
+            }
+
+            moved => {
+                if self.enabled && self.pressed {
+                    let delta_x = self.mouse-x - self.pressed-x;
+                    let delta_y = self.mouse-y - self.pressed-y;
+
+                    // Vertical swipe up exits to launcher (matching old app)
+                    if delta_y < -50px && Math.abs(delta_x) < 25px {
+                        root.exit();
+                        return;
+                    }
+
+                    if Math.abs(delta_x) >= 5px {
+                        root.is_dragging = true;
+                    }
+                    if root.is_dragging {
+                        if root.state.selected_group == 0 && delta_x > 0px {
+                            root.drag_offset = Math.min(delta_x / 3, 40px);
+                        } else if root.state.selected_group == root.state.groups.length - 1 && delta_x < 0px {
+                            root.drag_offset = Math.max(delta_x / 3, -40px);
+                        } else {
+                            root.drag_offset = delta_x;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Navigation Hint
         TextSm {
-            text: "TAP OR ESC TO EXIT";
-            color: white.darker(0.2);
+            y: parent.height * 0.76;
+            width: parent.width;
+            text: "PRESS TO CONTROL";
+            color: #718096;
             horizontal-alignment: center;
-            letter-spacing: 1.5px;
+        }
+
+        // Bottom Page Indicator Dots
+        HorizontalLayout {
+            y: parent.height * 0.85;
+            alignment: center;
+            spacing: 8px;
+
+            for group[i] in root.state.groups: Rectangle {
+                width: 8px;
+                height: 8px;
+                border-radius: 4px;
+                background: i == root.state.selected_group ? root.state.accent : #ffffff.with-alpha(0.3);
+                animate background { duration: 180ms; easing: ease-out; }
+            }
+        }
+    }
+
+    // =========================================================================
+    // Mode 1: Now Playing (Level 2)
+    // =========================================================================
+    if state.mode == 1: Rectangle {
+        width: 100%;
+        height: 100%;
+
+        // Background album art (decoded & resampled to screen size in PSRAM with dimming pre-applied)
+        if root.album_art.width > 0: Image {
+            source: root.album_art;
+            width: 100%;
+            height: 100%;
+        }
+
+        // Upper Deck: Track Title, Artist, Album (wide marquee area)
+        VerticalLayout {
+            y: root.cy - 110px;
+            x: (parent.width - self.width) / 2;
+            width: parent.width - 60px;
+            height: 70px;
+            spacing: 2px;
+            alignment: center;
+
+            // Track Title with native Slint Marquee
+            MarqueeText {
+                width: parent.width;
+                height: 28px;
+                text: root.state.track_title != "" ? root.state.track_title : "No Track";
+                text_color: #ffffff;
+                font_size: 22px;
+                font-weight: 700;
+            }
+
+            // Artist Name
+            TextBase {
+                width: parent.width;
+                text: root.state.track_artist != "" ? root.state.track_artist : "Unknown Artist";
+                color: #ffffff;
+                horizontal-alignment: center;
+                overflow: elide;
+            }
+
+            // Album Name
+            if root.state.track_album != "": TextSm {
+                width: parent.width;
+                text: root.state.track_album;
+                color: #a0aec0;
+                horizontal-alignment: center;
+                overflow: elide;
+            }
+        }
+
+        // Center Deck: Audio Equalizer (when playing) & Play Indicator (when paused)
+        if root.state.is_playing: AudioEqualizer {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            is_playing: true;
+        }
+
+        // Play indicator: circumcenter of the 178x178 triangle is at (66.375px, 88.5px).
+        // Position at (cx - 66.375px, cy - 88.5px) so all vertices are equidistant from the center.
+        if !root.state.is_playing: Image {
+            source: @image-url("../assets/play.png");
+            x: root.cx - 66.375px;
+            y: root.cy - 88.5px;
+            width: 178px;
+            height: 178px;
+        }
+
+        // Lower Deck: Time Display (touch to toggle remaining vs elapsed, 20px 700 - matches TextLgBold)
+        TextLgBold {
+            y: root.cy + 62px;
+            width: parent.width;
+            text: root.show_remaining ?
+                (root.state.remaining_str != "" ? root.state.remaining_str : "--:--") :
+                (root.state.elapsed_str != "" ? root.state.elapsed_str : "00:00");
+            color: root.state.accent;
+            horizontal-alignment: center;
+        }
+
+        // Temporary Volume HUD overlay (16px, 700 - matches TextBaseBold)
+        if root.state.volume_visible: Rectangle {
+            y: root.cy + 106px;
+            x: (parent.width - 130px) / 2;
+            width: 130px;
+            height: 36px;
+            border-radius: 18px;
+            background: #12151c;
+            border-width: 1.5px;
+            border-color: root.state.accent;
+
+            TextBaseBold {
+                width: parent.width;
+                height: parent.height;
+                text: "VOL " + root.state.volume + "%";
+                color: #ffffff;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+
+        // Navigation hint
+        if !root.state.volume_visible: TextSm {
+            y: root.cy + 114px;
+            width: parent.width;
+            text: "SWIPE UP FOR GROUPS";
+            color: #ffffff.with-alpha(0.8);
+            horizontal-alignment: center;
+        }
+
+        // Single Unified Mode 1 Touch Area:
+        // Handles taps (movement < 5px) and swipes (movement >= 5px) without competing child TouchAreas
+        TouchArea {
+            width: 100%;
+            height: 100%;
+
+            pointer-event(event) => {
+                if event.button == PointerEventButton.left && (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
+                    let delta_x = self.mouse-x - self.pressed-x;
+                    let delta_y = self.mouse-y - self.pressed-y;
+                    let abs_x = Math.abs(delta_x);
+                    let abs_y = Math.abs(delta_y);
+
+                    if abs_x < 5px && abs_y < 5px {
+                        // TAP GESTURE: movement < 5px
+                        if self.pressed-y >= root.cy + 50px && self.pressed-y < root.cy + 95px {
+                            // Lower deck tap -> Toggle remaining vs elapsed time
+                            root.show_remaining = !root.show_remaining;
+                            root.toggle_time_display();
+                        } else if self.pressed-y >= root.cy + 95px {
+                            // Bottom area tap -> Return to groups
+                            root.set_mode(0);
+                        } else {
+                            // Center deck and upper deck tap -> Play / Pause toggle
+                            root.toggle_play_pause();
+                        }
+                    } else {
+                        // SWIPE GESTURE: movement >= 5px
+                        if abs_x > abs_y && abs_x >= 20px {
+                            if delta_x < 0px {
+                                root.next_track();
+                            } else {
+                                root.previous_track();
+                            }
+                        } else if abs_y > abs_x && delta_y < -20px {
+                            root.set_mode(0);
+                        }
+                    }
+                }
+            }
         }
     }
 }
-
