@@ -25,6 +25,10 @@ name    = "rotary_injector_test"
 harness = false
 name    = "rotary_manual_log_test"
 
+[[test]]
+harness = false
+name    = "fill_benchmark"
+
 [lib]
 test = false
 

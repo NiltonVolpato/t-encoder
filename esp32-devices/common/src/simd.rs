@@ -3,21 +3,13 @@
 
 //! ESP32-S3 Xtensa LX7 128-bit PIE SIMD hardware acceleration.
 //!
-//! Wraps routines from `third_party/esp_simd` (by Mike Liu) and Unexpected Maker / Larry Bank
+//! Wraps local assembly routines and Unexpected Maker / Larry Bank routines
 //! to accelerate pixel buffer operations using 128-bit vector registers (`q0`–`q7`).
 
 unsafe extern "C" {
-    /// Fills an `int16_t` array with a constant value using PIE SIMD.
+    /// Fills an array of RGB565 (`u16`) pixels with a constant value using PIE SIMD.
     /// Requires `a` to be 16-byte (128-bit) aligned.
-    pub fn simd_fill_i16(a: *mut i16, val: *const i16, size: usize) -> i32;
-
-    /// Zeros an `int16_t` array using PIE SIMD.
-    /// Requires `a` to be 16-byte (128-bit) aligned.
-    pub fn simd_zeros_i16(a: *mut i16, size: usize) -> i32;
-
-    /// Copies an `int16_t` array using PIE SIMD.
-    /// Requires `a` and `result` to be 16-byte (128-bit) aligned.
-    pub fn simd_copy_i16(a: *const i16, result: *mut i16, size: usize) -> i32;
+    pub fn simd_fill_color(a: *mut u16, val: *const u16, size: usize) -> i32;
 
     /// Blends a constant RGB565 color over big-endian destination pixels using PIE SIMD.
     /// Requires `bg` and `dest` to be 16-byte aligned, count a multiple of 8.
@@ -64,10 +56,10 @@ pub fn enable_pie() {
     }
 }
 
-/// Fills a slice of 16-bit pixels using 128-bit PIE SIMD instructions.
+/// Fills a slice of 16-bit RGB565 pixels using 128-bit PIE SIMD instructions.
 ///
 /// Automatically handles 0..7 unaligned prefix pixels with scalar stores to reach
-/// a 16-byte boundary, then invokes `simd_fill_i16` for hardware-accelerated 128-bit
+/// a 16-byte boundary, then invokes `simd_fill_color` for hardware-accelerated 128-bit
 /// stores (8 pixels per loop iteration).
 #[inline]
 pub fn fill_slice<T: Copy>(slice: &mut [T], value: T) {
@@ -91,10 +83,10 @@ pub fn fill_slice<T: Copy>(slice: &mut [T], value: T) {
 
     // 2. SIMD fill the remaining 16-byte aligned slice
     if remaining > 0 {
-        let val_raw = unsafe { core::mem::transmute_copy::<T, i16>(&value) };
+        let val_raw = unsafe { core::mem::transmute_copy::<T, u16>(&value) };
         #[cfg(target_arch = "xtensa")]
         unsafe {
-            simd_fill_i16(ptr as *mut i16, &val_raw, remaining);
+            simd_fill_color(ptr as *mut u16, &val_raw, remaining);
         }
         #[cfg(not(target_arch = "xtensa"))]
         {
@@ -103,6 +95,67 @@ pub fn fill_slice<T: Copy>(slice: &mut [T], value: T) {
                     *ptr.add(i) = value;
                 }
             }
+        }
+    }
+}
+
+/// Fills a slice of 16-bit pixels using scalar `u32` stores, four at a time.
+///
+/// Candidate replacement for [`fill_slice`] that avoids the PIE SIMD dependency.
+/// It only needs 4-byte alignment, so the scalar prefix is much shorter than the
+/// 16-byte alignment required by the SIMD path, while still writing 8 pixels per
+/// loop iteration.
+#[inline]
+pub fn fill_slice_scalar_u32<T: Copy>(slice: &mut [T], value: T) {
+    assert_eq!(core::mem::size_of::<T>(), 2);
+    let len = slice.len();
+    if len == 0 {
+        return;
+    }
+
+    let val_u16 = unsafe { core::mem::transmute_copy::<T, u16>(&value) };
+    let val_u32 = (val_u16 as u32) | ((val_u16 as u32) << 16);
+
+    let mut ptr = slice.as_mut_ptr() as *mut u16;
+    let mut remaining = len;
+
+    // 1. Scalar prefix to reach 4-byte alignment
+    while (ptr as usize & 0x3) != 0 && remaining > 0 {
+        unsafe {
+            *ptr = val_u16;
+            ptr = ptr.add(1);
+        }
+        remaining -= 1;
+    }
+
+    // 2. Unrolled loop: 8 pixels (4 x u32) per iteration
+    let mut u32_ptr = ptr as *mut u32;
+    let mut words = remaining / 2;
+    while words >= 4 {
+        unsafe {
+            *u32_ptr.add(0) = val_u32;
+            *u32_ptr.add(1) = val_u32;
+            *u32_ptr.add(2) = val_u32;
+            *u32_ptr.add(3) = val_u32;
+            u32_ptr = u32_ptr.add(4);
+        }
+        words -= 4;
+    }
+
+    // 3. Remaining whole u32 words
+    for _ in 0..words {
+        unsafe {
+            *u32_ptr = val_u32;
+            u32_ptr = u32_ptr.add(1);
+        }
+    }
+
+    // 4. Scalar tail (at most one u16)
+    remaining &= 1;
+    ptr = u32_ptr as *mut u16;
+    if remaining > 0 {
+        unsafe {
+            *ptr = val_u16;
         }
     }
 }
